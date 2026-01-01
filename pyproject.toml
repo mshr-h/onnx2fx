@@ -22,6 +22,7 @@ dev = [
     "onnxruntime>=1.23.2",
     "ruff>=0.14.4",
     "torchvision>=0.24.0",
+    "pytest>=9.0.2",
 ]
 
 [tool.pytest.ini_options]
