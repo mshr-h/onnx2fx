@@ -6,10 +6,12 @@ from . import arithmetic
 from . import activation
 from . import tensor
 from . import reduction
+from . import nn
 
 __all__ = [
     "arithmetic",
     "activation",
     "tensor",
     "reduction",
+    "nn",
 ]

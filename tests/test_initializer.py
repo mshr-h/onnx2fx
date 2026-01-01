@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 
-import pytest
 import torch
 import onnx
 
@@ -39,7 +38,13 @@ class TestInitializer:
             onnx.helper.make_opsetid("", 15)
         ])
 
-        # This will fail because MatMul is not implemented yet
-        # But we can test that initializer loading doesn't crash
-        with pytest.raises(NotImplementedError, match="MatMul"):
-            convert(model)
+        # Convert model with initializer
+        fx_model = convert(model)
+
+        # Test that the model works correctly
+        x = torch.randn(2, 4)
+        with torch.no_grad():
+            result = fx_model(x)
+
+        expected = torch.matmul(x, torch.from_numpy(weight_data))
+        assert torch.allclose(result, expected, atol=1e-5)
