@@ -164,8 +164,19 @@ class GraphBuilder:
                 raise NotImplementedError(f"Unsupported ONNX op type: {node.op_type}")
             fx_node = handler(self, node)
 
-            # TODO: Handle multiple outputs (Sequence, Dict)
-            self.env[node.output[0]] = fx_node
+            # Handle multiple outputs
+            if len(node.output) == 1:
+                self.env[node.output[0]] = fx_node
+            else:
+                # For multi-output nodes, fx_node should be a tuple or we extract via getitem
+                for i, output_name in enumerate(node.output):
+                    if output_name:  # Skip empty output names
+                        # Create a getitem node to extract each output
+                        getitem_node = self.graph.call_function(
+                            lambda x, idx=i: x[idx] if isinstance(x, (tuple, list)) else x,
+                            args=(fx_node, i),
+                        )
+                        self.env[output_name] = getitem_node
 
     def _create_outputs(self) -> None:
         output_nodes = [self.get_value(value.name) for value in self.model.graph.output]

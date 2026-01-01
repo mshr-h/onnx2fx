@@ -9,6 +9,7 @@ from . import reduction
 from . import nn
 from . import advanced
 from . import attention
+from . import control
 
 __all__ = [
     "arithmetic",
@@ -18,4 +19,5 @@ __all__ = [
     "nn",
     "advanced",
     "attention",
+    "control",
 ]
