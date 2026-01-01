@@ -3,13 +3,10 @@ from typing import Dict, List, Optional, Tuple, Sequence
 
 import torch
 import onnx
+from onnx import numpy_helper
 
 from .op_registry import OP_REGISTRY
-
-
-_DTYPE_MAP: Dict[int, torch.dtype] = {
-    onnx.TensorProto.FLOAT: torch.float32,
-}
+from .utils.dtype import DTYPE_MAP
 
 
 class GraphBuilder:
@@ -21,19 +18,50 @@ class GraphBuilder:
         self.model: onnx.ModelProto = model
         self.graph: torch.fx.Graph = torch.fx.Graph()
         self.value_info_map = self._create_value_info_map()
+        self.initializer_map = self._create_initializer_map()
         self.input_names: List[str] = []
         self.env: Dict[str, torch.fx.Node] = {}
+        self._constants: Dict[str, torch.Tensor] = {}
 
     def build(self) -> torch.fx.GraphModule:
+        self._load_initializers()
         self._create_placeholders()
         self._convert_nodes()
         self._create_outputs()
-        module = torch.fx.GraphModule(torch.nn.Module(), self.graph)
+        root_module = torch.nn.Module()
+        # Register constants as buffers
+        for name, tensor in self._constants.items():
+            root_module.register_buffer(name.replace(".", "_"), tensor)
+        module = torch.fx.GraphModule(root_module, self.graph)
         module.graph.lint()
         return module
 
     def get_value(self, name: str) -> torch.fx.Node:
+        """Get a value (node) by name from the environment.
+
+        Parameters
+        ----------
+        name : str
+            The name of the value.
+
+        Returns
+        -------
+        torch.fx.Node
+            The corresponding FX node.
+
+        Raises
+        ------
+        KeyError
+            If the name is not found in the environment.
+        """
+        if name not in self.env:
+            raise KeyError(f"Value '{name}' not found in environment. "
+                          f"Available: {list(self.env.keys())}")
         return self.env[name]
+
+    def has_value(self, name: str) -> bool:
+        """Check if a value exists in the environment."""
+        return name in self.env
 
     def call_function(
         self,
@@ -70,7 +98,7 @@ class GraphBuilder:
         def extract_tensor_dtype(value: onnx.ValueInfoProto) -> Optional[torch.dtype]:
             """Extract the Torch dtype that corresponds to a value info."""
 
-            return _DTYPE_MAP.get(value.type.tensor_type.elem_type)
+            return DTYPE_MAP.get(value.type.tensor_type.elem_type)
 
         info_map = {}
         for value_info in (
@@ -84,8 +112,39 @@ class GraphBuilder:
             )
         return info_map
 
+    def _create_initializer_map(self) -> Dict[str, torch.Tensor]:
+        """Build a mapping from initializer names to PyTorch tensors."""
+        init_map = {}
+        for initializer in self.model.graph.initializer:
+            np_array = numpy_helper.to_array(initializer)
+            init_map[initializer.name] = torch.from_numpy(np_array.copy())
+        return init_map
+
+    def _load_initializers(self) -> None:
+        """Load ONNX initializers as constant nodes in the FX graph."""
+        for name, tensor in self.initializer_map.items():
+            # Store in constants dict for later registration as buffers
+            safe_name = name.replace(".", "_").replace("/", "_")
+            self._constants[safe_name] = tensor
+
+            # Create a get_attr node to access the buffer
+            fx_node = self.graph.get_attr(safe_name)
+            fx_node.meta["onnx_op_type"] = "Initializer"
+            fx_node.meta["onnx_name"] = name
+            fx_node.meta["onnx_shape"] = list(tensor.shape)
+            fx_node.meta["onnx_dtype"] = tensor.dtype
+            self.env[name] = fx_node
+
     def _create_placeholders(self) -> None:
+        """Create FX placeholder nodes for graph inputs.
+
+        Note: Inputs that are already loaded as initializers are skipped.
+        """
         for value in self.model.graph.input:
+            # Skip if already loaded as initializer
+            if value.name in self.env:
+                continue
+
             placeholder = self.graph.placeholder(value.name)
             info = self.value_info_map.get(value.name)
             placeholder.meta["onnx_shape"] = info[0] if info else None
