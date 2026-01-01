@@ -5,7 +5,7 @@ import torch
 import onnx
 from onnx import numpy_helper
 
-from .op_registry import OP_REGISTRY
+from .op_registry import OP_REGISTRY, get_handler
 from .utils.dtype import DTYPE_MAP
 
 # Import ops module to register all operators
@@ -159,9 +159,14 @@ class GraphBuilder:
 
     def _convert_nodes(self) -> None:
         for node in self.model.graph.node:
-            handler = OP_REGISTRY.get(node.op_type)
+            # Get handler with domain support
+            domain = node.domain if node.domain else ""
+            handler = get_handler(node.op_type, domain)
             if handler is None:
-                raise NotImplementedError(f"Unsupported ONNX op type: {node.op_type}")
+                domain_str = f" (domain: {domain})" if domain else ""
+                raise NotImplementedError(
+                    f"Unsupported ONNX op type: {node.op_type}{domain_str}"
+                )
             fx_node = handler(self, node)
 
             # Handle multiple outputs
