@@ -7,6 +7,7 @@ from . import activation
 from . import tensor
 from . import reduction
 from . import nn
+from . import advanced
 
 __all__ = [
     "arithmetic",
@@ -14,4 +15,5 @@ __all__ = [
     "tensor",
     "reduction",
     "nn",
+    "advanced",
 ]
