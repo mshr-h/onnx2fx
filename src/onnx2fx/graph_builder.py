@@ -8,6 +8,9 @@ from onnx import numpy_helper
 from .op_registry import OP_REGISTRY
 from .utils.dtype import DTYPE_MAP
 
+# Import ops module to register all operators
+from . import ops  # noqa: F401
+
 
 class GraphBuilder:
     def __init__(self, model: onnx.ModelProto):
