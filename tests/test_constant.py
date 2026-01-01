@@ -3,7 +3,7 @@
 import torch
 import onnx
 from onnxscript import FLOAT, script
-from onnxscript import opset15 as op
+from onnxscript import opset22 as op
 
 from onnx2fx.converter import convert
 
