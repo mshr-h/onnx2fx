@@ -33,12 +33,16 @@ def reduce_sum(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     axes = _get_reduction_axes(node, builder)
     keepdims = get_attribute(node, "keepdims", 1)
 
-    if axes is None:
-        return builder.call_function(torch.sum, args=(x,))
+    def _reduce_sum(t, axes, keepdims):
+        if axes is None:
+            return torch.sum(t)
+        if isinstance(axes, torch.Tensor):
+            axes = tuple(axes.tolist())
+        elif isinstance(axes, (list, tuple)):
+            axes = tuple(axes)
+        return torch.sum(t, dim=axes, keepdim=keepdims)
 
-    return builder.call_function(
-        torch.sum, args=(x,), kwargs={"dim": axes, "keepdim": bool(keepdims)}
-    )
+    return builder.call_function(_reduce_sum, args=(x, axes, bool(keepdims)))
 
 
 @register("ReduceMean")
@@ -48,12 +52,16 @@ def reduce_mean(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     axes = _get_reduction_axes(node, builder)
     keepdims = get_attribute(node, "keepdims", 1)
 
-    if axes is None:
-        return builder.call_function(torch.mean, args=(x,))
+    def _reduce_mean(t, axes, keepdims):
+        if axes is None:
+            return torch.mean(t)
+        if isinstance(axes, torch.Tensor):
+            axes = tuple(axes.tolist())
+        elif isinstance(axes, (list, tuple)):
+            axes = tuple(axes)
+        return torch.mean(t, dim=axes, keepdim=keepdims)
 
-    return builder.call_function(
-        torch.mean, args=(x,), kwargs={"dim": axes, "keepdim": bool(keepdims)}
-    )
+    return builder.call_function(_reduce_mean, args=(x, axes, bool(keepdims)))
 
 
 @register("ReduceMax")
@@ -137,6 +145,10 @@ def reduce_l1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         abs_t = torch.abs(t)
         if axes is None:
             return torch.sum(abs_t)
+        if isinstance(axes, torch.Tensor):
+            axes = tuple(axes.tolist())
+        elif isinstance(axes, (list, tuple)):
+            axes = tuple(axes)
         return torch.sum(abs_t, dim=axes, keepdim=keepdims)
 
     return builder.call_function(_reduce_l1, args=(x, axes, bool(keepdims)))
@@ -149,12 +161,16 @@ def reduce_l2(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     axes = _get_reduction_axes(node, builder)
     keepdims = get_attribute(node, "keepdims", 1)
 
-    if axes is None:
-        return builder.call_function(torch.norm, args=(x,))
+    def _reduce_l2(t, axes, keepdims):
+        if axes is None:
+            return torch.norm(t)
+        if isinstance(axes, torch.Tensor):
+            axes = tuple(axes.tolist())
+        elif isinstance(axes, (list, tuple)):
+            axes = tuple(axes)
+        return torch.norm(t, dim=axes, keepdim=keepdims)
 
-    return builder.call_function(
-        torch.norm, args=(x,), kwargs={"dim": axes, "keepdim": bool(keepdims)}
-    )
+    return builder.call_function(_reduce_l2, args=(x, axes, bool(keepdims)))
 
 
 @register("ReduceLogSum")
@@ -167,6 +183,10 @@ def reduce_log_sum(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
     def _reduce_log_sum(t, axes, keepdims):
         if axes is None:
             return torch.log(torch.sum(t))
+        if isinstance(axes, torch.Tensor):
+            axes = tuple(axes.tolist())
+        elif isinstance(axes, (list, tuple)):
+            axes = tuple(axes)
         return torch.log(torch.sum(t, dim=axes, keepdim=keepdims))
 
     return builder.call_function(_reduce_log_sum, args=(x, axes, bool(keepdims)))
@@ -179,12 +199,16 @@ def reduce_log_sum_exp(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.f
     axes = _get_reduction_axes(node, builder)
     keepdims = get_attribute(node, "keepdims", 1)
 
-    if axes is None:
-        return builder.call_function(torch.logsumexp, args=(x, tuple(range(x.dim()))))
+    def _reduce_log_sum_exp(t, axes, keepdims):
+        if axes is None:
+            return torch.logsumexp(t, dim=tuple(range(t.dim())))
+        if isinstance(axes, torch.Tensor):
+            axes = tuple(axes.tolist())
+        elif isinstance(axes, (list, tuple)):
+            axes = tuple(axes)
+        return torch.logsumexp(t, dim=axes, keepdim=keepdims)
 
-    return builder.call_function(
-        torch.logsumexp, args=(x, axes), kwargs={"keepdim": bool(keepdims)}
-    )
+    return builder.call_function(_reduce_log_sum_exp, args=(x, axes, bool(keepdims)))
 
 
 @register("ReduceSumSquare")
@@ -198,6 +222,10 @@ def reduce_sum_square(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
         sq = torch.square(t)
         if axes is None:
             return torch.sum(sq)
+        if isinstance(axes, torch.Tensor):
+            axes = tuple(axes.tolist())
+        elif isinstance(axes, (list, tuple)):
+            axes = tuple(axes)
         return torch.sum(sq, dim=axes, keepdim=keepdims)
 
     return builder.call_function(_reduce_sum_square, args=(x, axes, bool(keepdims)))

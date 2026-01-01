@@ -82,7 +82,13 @@ def reshape(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Reshape tensor to a new shape."""
     x = builder.get_value(node.input[0])
     shape = builder.get_value(node.input[1])
-    return builder.call_function(torch.reshape, args=(x, shape))
+
+    def _reshape(t, shape):
+        if isinstance(shape, torch.Tensor):
+            shape = tuple(shape.tolist())
+        return torch.reshape(t, shape)
+
+    return builder.call_function(_reshape, args=(x, shape))
 
 
 @register("Transpose")
