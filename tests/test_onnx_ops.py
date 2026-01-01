@@ -5,23 +5,23 @@ import torch
 from onnx2fx.converter import convert
 
 
-@script()
-def add_script(x: FLOAT, y: FLOAT) -> FLOAT:
-    add = op.Add(x, y)
-    return add
+class TestAddOps:
+    """Test models with different data types."""
 
+    @script()
+    def add_script(x: FLOAT, y: FLOAT) -> FLOAT:
+        return op.Add(x, y)
 
-def test_add_operation():
-    example_input1 = torch.randn(2, 4)
-    example_input2 = torch.randn(2, 4)
-    onnx_model = add_script.to_model_proto()
+    def test_float32_model(self):
+        """Test float32 model conversion."""
+        x = torch.randn(2, 4, dtype=torch.float32)
+        y = torch.randn(2, 4, dtype=torch.float32)
+        onnx_model = self.add_script.to_model_proto()
 
-    # eager mode evaluation
-    eager_output = add_script(example_input1.numpy(), example_input2.numpy())
+        fx_model = convert(onnx_model)
 
-    fx_model = convert(onnx_model)
+        with torch.no_grad():
+            fx_output = fx_model(x, y)
 
-    with torch.no_grad():
-        fx_output = fx_model(example_input1, example_input2)
-
-    assert torch.allclose(torch.from_numpy(eager_output), fx_output), "❌Outputs do not match!"
+        expected = x + y
+        assert torch.allclose(fx_output, expected), "Float32 output mismatch!"
