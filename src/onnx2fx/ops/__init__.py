@@ -8,6 +8,7 @@ from . import tensor
 from . import reduction
 from . import nn
 from . import advanced
+from . import attention
 
 __all__ = [
     "arithmetic",
@@ -16,4 +17,5 @@ __all__ = [
     "reduction",
     "nn",
     "advanced",
+    "attention",
 ]

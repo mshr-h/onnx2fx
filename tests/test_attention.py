@@ -1,0 +1,501 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Tests for attention and transformer related operators."""
+
+import numpy as np
+import onnx
+import onnxscript
+import pytest
+import torch
+from onnxscript import opset22 as op
+
+from onnx2fx import convert
+
+
+class TestLogSoftmaxOp:
+    """Test LogSoftmax operator."""
+
+    def test_log_softmax(self):
+        @onnxscript.script()
+        def log_softmax_model(x: onnxscript.FLOAT[2, 3, 4]) -> onnxscript.FLOAT[2, 3, 4]:
+            return op.LogSoftmax(x, axis=-1)
+
+        model = log_softmax_model.to_model_proto()
+        fx_module = convert(model)
+
+        x = torch.randn(2, 3, 4)
+        expected = torch.nn.functional.log_softmax(x, dim=-1)
+
+        result = fx_module(x)
+        torch.testing.assert_close(result, expected)
+
+
+class TestHardmaxOp:
+    """Test Hardmax operator."""
+
+    def test_hardmax(self):
+        @onnxscript.script()
+        def hardmax_model(x: onnxscript.FLOAT[2, 5]) -> onnxscript.FLOAT[2, 5]:
+            return op.Hardmax(x, axis=-1)
+
+        model = hardmax_model.to_model_proto()
+        fx_module = convert(model)
+
+        x = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0], [5.0, 4.0, 3.0, 2.0, 1.0]])
+        expected = torch.tensor([[0.0, 0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 0.0, 0.0]])
+
+        result = fx_module(x)
+        torch.testing.assert_close(result, expected)
+
+
+class TestQuantizationOps:
+    """Test quantization operators."""
+
+    def test_quantize_linear(self):
+        @onnxscript.script()
+        def quantize_model(
+            x: onnxscript.FLOAT[3, 4],
+            scale: onnxscript.FLOAT[1],
+            zero_point: onnxscript.UINT8[1],
+        ) -> onnxscript.UINT8[3, 4]:
+            return op.QuantizeLinear(x, scale, zero_point)
+
+        model = quantize_model.to_model_proto()
+        fx_module = convert(model)
+
+        x = torch.tensor([[0.0, 1.0, 2.0, 3.0], [4.0, 5.0, 6.0, 7.0], [8.0, 9.0, 10.0, 11.0]])
+        scale = torch.tensor([0.1])
+        zero_point = torch.tensor([128], dtype=torch.uint8)
+
+        result = fx_module(x, scale, zero_point)
+        assert result.dtype == torch.uint8
+        assert result.shape == (3, 4)
+
+    def test_dequantize_linear(self):
+        @onnxscript.script()
+        def dequantize_model(
+            x: onnxscript.UINT8[3, 4],
+            scale: onnxscript.FLOAT[1],
+            zero_point: onnxscript.UINT8[1],
+        ) -> onnxscript.FLOAT[3, 4]:
+            return op.DequantizeLinear(x, scale, zero_point)
+
+        model = dequantize_model.to_model_proto()
+        fx_module = convert(model)
+
+        x = torch.tensor(
+            [[128, 138, 148, 158], [168, 178, 188, 198], [208, 218, 228, 238]], dtype=torch.uint8
+        )
+        scale = torch.tensor([0.1])
+        zero_point = torch.tensor([128], dtype=torch.uint8)
+
+        result = fx_module(x, scale, zero_point)
+        expected = (x.float() - zero_point.float()) * scale
+
+        torch.testing.assert_close(result, expected)
+
+
+class TestSequenceOps:
+    """Test sequence operators."""
+
+    def test_sequence_construct_and_at(self):
+        # Create model using raw ONNX nodes
+        from onnx import TensorProto, helper
+
+        # SequenceConstruct + SequenceAt
+        a_input = helper.make_tensor_value_info("a", TensorProto.FLOAT, [2, 3])
+        b_input = helper.make_tensor_value_info("b", TensorProto.FLOAT, [2, 3])
+        pos_input = helper.make_tensor_value_info("pos", TensorProto.INT64, [])
+        output = helper.make_tensor_value_info("output", TensorProto.FLOAT, [2, 3])
+
+        seq_node = helper.make_node("SequenceConstruct", ["a", "b"], ["seq"], name="seq_construct")
+        at_node = helper.make_node("SequenceAt", ["seq", "pos"], ["output"], name="seq_at")
+
+        graph = helper.make_graph([seq_node, at_node], "seq_test", [a_input, b_input, pos_input], [output])
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        a = torch.randn(2, 3)
+        b = torch.randn(2, 3)
+        pos = torch.tensor(1, dtype=torch.int64)
+
+        result = fx_module(a, b, pos)
+        torch.testing.assert_close(result, b)
+
+    def test_sequence_length(self):
+        from onnx import TensorProto, helper
+
+        a_input = helper.make_tensor_value_info("a", TensorProto.FLOAT, [2, 3])
+        b_input = helper.make_tensor_value_info("b", TensorProto.FLOAT, [2, 3])
+        c_input = helper.make_tensor_value_info("c", TensorProto.FLOAT, [2, 3])
+        output = helper.make_tensor_value_info("length", TensorProto.INT64, [])
+
+        seq_node = helper.make_node("SequenceConstruct", ["a", "b", "c"], ["seq"], name="seq_construct")
+        len_node = helper.make_node("SequenceLength", ["seq"], ["length"], name="seq_len")
+
+        graph = helper.make_graph([seq_node, len_node], "seq_len_test", [a_input, b_input, c_input], [output])
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        a = torch.randn(2, 3)
+        b = torch.randn(2, 3)
+        c = torch.randn(2, 3)
+
+        result = fx_module(a, b, c)
+        assert result.item() == 3
+
+
+class TestConcatFromSequence:
+    """Test ConcatFromSequence operator."""
+
+    def test_concat_from_sequence(self):
+        from onnx import TensorProto, helper
+
+        a_input = helper.make_tensor_value_info("a", TensorProto.FLOAT, [2, 3])
+        b_input = helper.make_tensor_value_info("b", TensorProto.FLOAT, [2, 3])
+        output = helper.make_tensor_value_info("output", TensorProto.FLOAT, [4, 3])
+
+        seq_node = helper.make_node("SequenceConstruct", ["a", "b"], ["seq"], name="seq_construct")
+        concat_node = helper.make_node(
+            "ConcatFromSequence", ["seq"], ["output"], name="concat", axis=0
+        )
+
+        graph = helper.make_graph([seq_node, concat_node], "concat_seq_test", [a_input, b_input], [output])
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        a = torch.randn(2, 3)
+        b = torch.randn(2, 3)
+
+        result = fx_module(a, b)
+        expected = torch.cat([a, b], dim=0)
+        torch.testing.assert_close(result, expected)
+
+    def test_concat_from_sequence_new_axis(self):
+        from onnx import TensorProto, helper
+
+        a_input = helper.make_tensor_value_info("a", TensorProto.FLOAT, [2, 3])
+        b_input = helper.make_tensor_value_info("b", TensorProto.FLOAT, [2, 3])
+        output = helper.make_tensor_value_info("output", TensorProto.FLOAT, [2, 2, 3])
+
+        seq_node = helper.make_node("SequenceConstruct", ["a", "b"], ["seq"], name="seq_construct")
+        concat_node = helper.make_node(
+            "ConcatFromSequence", ["seq"], ["output"], name="concat", axis=0, new_axis=1
+        )
+
+        graph = helper.make_graph([seq_node, concat_node], "stack_seq_test", [a_input, b_input], [output])
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        a = torch.randn(2, 3)
+        b = torch.randn(2, 3)
+
+        result = fx_module(a, b)
+        expected = torch.stack([a, b], dim=0)
+        torch.testing.assert_close(result, expected)
+
+
+class TestGatherScatterND:
+    """Test GatherND and ScatterND operators."""
+
+    def test_gather_nd_simple(self):
+        @onnxscript.script()
+        def gather_nd_model(
+            data: onnxscript.FLOAT[2, 2],
+            indices: onnxscript.INT64[2, 2],
+        ) -> onnxscript.FLOAT[2]:
+            return op.GatherND(data, indices)
+
+        model = gather_nd_model.to_model_proto()
+        fx_module = convert(model)
+
+        data = torch.tensor([[0.0, 1.0], [2.0, 3.0]])
+        indices = torch.tensor([[0, 0], [1, 1]], dtype=torch.int64)
+
+        result = fx_module(data, indices)
+        expected = torch.tensor([0.0, 3.0])
+        torch.testing.assert_close(result, expected)
+
+
+class TestLossOps:
+    """Test loss function operators."""
+
+    def test_softmax_cross_entropy_loss(self):
+        from onnx import TensorProto, helper
+
+        scores_input = helper.make_tensor_value_info("scores", TensorProto.FLOAT, [3, 5])
+        labels_input = helper.make_tensor_value_info("labels", TensorProto.INT64, [3])
+        output = helper.make_tensor_value_info("loss", TensorProto.FLOAT, [])
+
+        loss_node = helper.make_node(
+            "SoftmaxCrossEntropyLoss",
+            ["scores", "labels"],
+            ["loss"],
+            name="loss",
+            reduction="mean",
+        )
+
+        graph = helper.make_graph([loss_node], "loss_test", [scores_input, labels_input], [output])
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        scores = torch.randn(3, 5)
+        labels = torch.tensor([1, 0, 4], dtype=torch.int64)
+
+        result = fx_module(scores, labels)
+        expected = torch.nn.functional.cross_entropy(scores, labels, reduction="mean")
+        torch.testing.assert_close(result, expected)
+
+    def test_nll_loss(self):
+        from onnx import TensorProto, helper
+
+        input_info = helper.make_tensor_value_info("input", TensorProto.FLOAT, [3, 5])
+        target_info = helper.make_tensor_value_info("target", TensorProto.INT64, [3])
+        output = helper.make_tensor_value_info("loss", TensorProto.FLOAT, [])
+
+        loss_node = helper.make_node(
+            "NegativeLogLikelihoodLoss",
+            ["input", "target"],
+            ["loss"],
+            name="nll_loss",
+            reduction="mean",
+        )
+
+        graph = helper.make_graph([loss_node], "nll_test", [input_info, target_info], [output])
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        # Input should be log-probabilities for NLL loss
+        input_tensor = torch.nn.functional.log_softmax(torch.randn(3, 5), dim=-1)
+        target = torch.tensor([1, 0, 4], dtype=torch.int64)
+
+        result = fx_module(input_tensor, target)
+        expected = torch.nn.functional.nll_loss(input_tensor, target, reduction="mean")
+        torch.testing.assert_close(result, expected)
+
+
+class TestAttentionOp:
+    """Test Attention operator (Microsoft custom domain)."""
+
+    def test_attention_basic(self):
+        """Test basic attention without mask."""
+        import math
+        from onnx import TensorProto, helper
+
+        batch_size = 2
+        seq_len = 4
+        hidden_size = 6
+
+        # Attention inputs: input, weight, bias
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        weight_info = helper.make_tensor_value_info(
+            "weight", TensorProto.FLOAT, [hidden_size, 3 * hidden_size]
+        )
+        bias_info = helper.make_tensor_value_info(
+            "bias", TensorProto.FLOAT, [3 * hidden_size]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+
+        attention_node = helper.make_node(
+            "Attention",
+            ["input", "weight", "bias"],
+            ["output"],
+            name="attention",
+            num_heads=2,
+        )
+
+        graph = helper.make_graph(
+            [attention_node],
+            "attention_test",
+            [input_info, weight_info, bias_info],
+            [output_info],
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        # Create test inputs
+        input_tensor = torch.randn(batch_size, seq_len, hidden_size)
+        weight = torch.randn(hidden_size, 3 * hidden_size)
+        bias = torch.randn(3 * hidden_size)
+
+        # Run the converted model
+        result = fx_module(input_tensor, weight, bias)
+
+        # Compute expected using scaled_dot_product_attention
+        qkv = torch.matmul(input_tensor, weight) + bias
+        q, k, v = qkv.chunk(3, dim=-1)
+        expected = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+
+        torch.testing.assert_close(result, expected)
+
+    def test_attention_without_bias(self):
+        """Test attention without bias."""
+        import math
+        from onnx import TensorProto, helper
+
+        batch_size = 2
+        seq_len = 4
+        hidden_size = 8
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        weight_info = helper.make_tensor_value_info(
+            "weight", TensorProto.FLOAT, [hidden_size, 3 * hidden_size]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+
+        # Empty string for optional bias input
+        attention_node = helper.make_node(
+            "Attention",
+            ["input", "weight", ""],
+            ["output"],
+            name="attention_no_bias",
+            num_heads=2,
+        )
+
+        graph = helper.make_graph(
+            [attention_node],
+            "attention_no_bias_test",
+            [input_info, weight_info],
+            [output_info],
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        input_tensor = torch.randn(batch_size, seq_len, hidden_size)
+        weight = torch.randn(hidden_size, 3 * hidden_size)
+
+        result = fx_module(input_tensor, weight)
+
+        # Compute expected using scaled_dot_product_attention
+        qkv = torch.matmul(input_tensor, weight)
+        q, k, v = qkv.chunk(3, dim=-1)
+        expected = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+
+        torch.testing.assert_close(result, expected)
+
+    def test_attention_unidirectional(self):
+        """Test causal (unidirectional) attention."""
+        import math
+        from onnx import TensorProto, helper
+
+        batch_size = 1
+        seq_len = 4
+        hidden_size = 6
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        weight_info = helper.make_tensor_value_info(
+            "weight", TensorProto.FLOAT, [hidden_size, 3 * hidden_size]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+
+        attention_node = helper.make_node(
+            "Attention",
+            ["input", "weight", ""],
+            ["output"],
+            name="causal_attention",
+            num_heads=1,
+            unidirectional=1,
+        )
+
+        graph = helper.make_graph(
+            [attention_node],
+            "causal_attention_test",
+            [input_info, weight_info],
+            [output_info],
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        input_tensor = torch.randn(batch_size, seq_len, hidden_size)
+        weight = torch.randn(hidden_size, 3 * hidden_size)
+
+        result = fx_module(input_tensor, weight)
+
+        # Compute expected using scaled_dot_product_attention with is_causal=True
+        qkv = torch.matmul(input_tensor, weight)
+        q, k, v = qkv.chunk(3, dim=-1)
+        expected = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=True)
+
+        torch.testing.assert_close(result, expected)
+
+
+class TestSkipLayerNormalization:
+    """Test SkipLayerNormalization operator."""
+
+    def test_skip_layer_norm(self):
+        """Test skip connection + layer normalization."""
+        from onnx import TensorProto, helper
+
+        batch_size = 2
+        seq_len = 4
+        hidden_size = 8
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        skip_info = helper.make_tensor_value_info(
+            "skip", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        gamma_info = helper.make_tensor_value_info(
+            "gamma", TensorProto.FLOAT, [hidden_size]
+        )
+        beta_info = helper.make_tensor_value_info(
+            "beta", TensorProto.FLOAT, [hidden_size]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+
+        skip_ln_node = helper.make_node(
+            "SkipLayerNormalization",
+            ["input", "skip", "gamma", "beta"],
+            ["output"],
+            name="skip_layer_norm",
+            epsilon=1e-5,
+        )
+
+        graph = helper.make_graph(
+            [skip_ln_node],
+            "skip_ln_test",
+            [input_info, skip_info, gamma_info, beta_info],
+            [output_info],
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        input_tensor = torch.randn(batch_size, seq_len, hidden_size)
+        skip_tensor = torch.randn(batch_size, seq_len, hidden_size)
+        gamma = torch.randn(hidden_size)
+        beta = torch.randn(hidden_size)
+
+        result = fx_module(input_tensor, skip_tensor, gamma, beta)
+
+        # Manual computation
+        hidden = input_tensor + skip_tensor
+        expected = torch.nn.functional.layer_norm(
+            hidden, (hidden_size,), weight=gamma, bias=beta, eps=1e-5
+        )
+
+        torch.testing.assert_close(result, expected)
+
