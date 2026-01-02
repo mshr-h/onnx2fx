@@ -9,7 +9,8 @@ Yet another ONNX to PyTorch FX converter.
 ## Features
 
 - **Simple API**: Convert ONNX models with a single function call
-- **Extensive Operator Support**: 150+ ONNX operators including standard and Microsoft domain operators
+- **Extensive Operator Support**: 170+ ONNX operators including standard and Microsoft domain operators
+- **Multi-Opset Version Support**: Automatic selection of version-specific operator handlers based on model opset
 - **Custom Operator Registration**: Easily extend support for unsupported or custom ONNX operators
 - **PyTorch FX Output**: Get a `torch.fx.GraphModule` for easy inspection, optimization, and compilation
 - **Dynamic Shape Support**: Handle models with dynamic input dimensions
@@ -106,6 +107,18 @@ def bias_gelu(builder, node):
     )
 ```
 
+### Multi-Opset Version Support
+
+The library automatically selects the appropriate operator handler based on the model's opset version. For operators with version-specific behavior (e.g., `Softmax` changed default axis in opset 13), the correct implementation is used automatically:
+
+```python
+from onnx2fx import convert
+
+# Models with different opset versions are handled automatically
+fx_module_v11 = convert("model_opset11.onnx")  # Uses opset 11 semantics
+fx_module_v17 = convert("model_opset17.onnx")  # Uses opset 17 semantics
+```
+
 ### Querying Supported Operators
 
 ```python
@@ -137,7 +150,7 @@ domains = get_registered_domains()  # ['', 'com.microsoft']
 
 #### Activation Functions
 - Relu, LeakyRelu, PRelu, Elu, Selu, Celu
-- Sigmoid, HardSigmoid, Tanh
+- Sigmoid, HardSigmoid, HardSwish, Tanh
 - Softmax, LogSoftmax, Hardmax
 - Softplus, Softsign
 - Gelu, Silu, Mish
@@ -171,7 +184,7 @@ domains = get_registered_domains()  # ['', 'com.microsoft']
 #### Tensor Manipulation
 - Reshape, Transpose, Squeeze, Unsqueeze
 - Concat, Split, Slice, Gather, GatherElements, GatherND
-- Scatter, ScatterElements, ScatterND
+- ScatterElements, ScatterND
 - Expand, Tile, Flatten
 - Pad, Resize
 - Shape, Size
@@ -200,10 +213,23 @@ domains = get_registered_domains()  # ['', 'com.microsoft']
 
 #### Other
 - Einsum, TopK, NonZero, NonMaxSuppression
-- OneHot, Range, EyeLike
+- OneHot, Range, EyeLike, Det
 - Unique, Compress, Trilu
 - DepthToSpace, SpaceToDepth
 - ReverseSequence, CumSum
+- Resize, StringNormalizer
+
+#### Random & Sampling
+- RandomNormal, RandomNormalLike
+- RandomUniform, RandomUniformLike
+- Multinomial, Bernoulli
+
+#### Optional & Type Operations
+- Optional, OptionalGetElement, OptionalHasElement
+- Select
+
+#### Loss Functions
+- NegativeLogLikelihoodLoss, SoftmaxCrossEntropyLoss
 
 ### Microsoft Domain (`com.microsoft`)
 
