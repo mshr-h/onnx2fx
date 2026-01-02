@@ -30,7 +30,7 @@ class TestEinsumOps:
         x = torch.randn(2, 3)
         y = torch.randn(3, 4)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
 
         expected = torch.einsum("ij,jk->ik", x, y)
@@ -54,7 +54,7 @@ class TestEinsumOps:
         x = torch.randn(2, 3, 4)
         y = torch.randn(2, 4, 5)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
 
         expected = torch.einsum("bij,bjk->bik", x, y)
@@ -79,21 +79,21 @@ class TestTrigOps:
     def test_sin(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.sin_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.sin(x))
 
     def test_cos(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.cos_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.cos(x))
 
     def test_tan(self):
         x = torch.randn(2, 4) * 0.5  # Avoid large values
         fx_model = convert(self.tan_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.tan(x), atol=1e-5)
 
@@ -112,14 +112,14 @@ class TestMathOps:
     def test_erf(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.erf_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.erf(x))
 
     def test_isnan(self):
         x = torch.tensor([1.0, float('nan'), 2.0, float('nan')])
         fx_model = convert(self.isnan_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.equal(result, torch.isnan(x))
 
@@ -147,7 +147,7 @@ class TestRangeOp:
         limit = torch.tensor(5.0)
         delta = torch.tensor(1.0)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(start, limit, delta)
 
         expected = torch.arange(0.0, 5.0, 1.0)
@@ -173,7 +173,7 @@ class TestCumSumOp:
         x = torch.randn(2, 4)
         axis = torch.tensor(1)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, axis)
 
         expected = torch.cumsum(x, dim=1)
@@ -197,7 +197,7 @@ class TestTriluOp:
 
         x = torch.randn(3, 3)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
 
         expected = torch.triu(x)
@@ -217,7 +217,7 @@ class TestTriluOp:
 
         x = torch.randn(3, 3)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
 
         expected = torch.tril(x)
@@ -249,7 +249,7 @@ class TestResizeOp:
         roi = torch.tensor([])
         scales = torch.tensor([1.0, 1.0, 2.0, 2.0])
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, roi, scales)
 
         assert result.shape == (1, 1, 4, 4)
@@ -272,7 +272,7 @@ class TestSpaceDepthOps:
 
         x = torch.randn(1, 4, 2, 2)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
 
         assert result.shape == (1, 1, 4, 4)
@@ -291,7 +291,7 @@ class TestSpaceDepthOps:
 
         x = torch.randn(1, 1, 4, 4)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
 
         assert result.shape == (1, 4, 2, 2)

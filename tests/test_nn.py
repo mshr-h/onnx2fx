@@ -20,7 +20,7 @@ class TestMatMulOps:
         x = torch.randn(2, 3)
         y = torch.randn(3, 4)
         fx_model = convert(self.matmul_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.allclose(result, torch.matmul(x, y))
 
@@ -28,7 +28,7 @@ class TestMatMulOps:
         x = torch.randn(2, 3, 4)
         y = torch.randn(2, 4, 5)
         fx_model = convert(self.matmul_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.allclose(result, torch.matmul(x, y))
 
@@ -57,7 +57,7 @@ class TestGemmOp:
         B = torch.randn(3, 4)
         C = torch.randn(4)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(A, B, C)
 
         expected = torch.matmul(A, B) + C
@@ -86,7 +86,7 @@ class TestConvOps:
         x = torch.randn(1, 3, 8, 8)
         w = torch.randn(16, 3, 3, 3)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, w)
 
         expected = torch.nn.functional.conv2d(x, w, padding=1)
@@ -113,7 +113,7 @@ class TestConvOps:
         w = torch.randn(16, 3, 3, 3)
         b = torch.randn(16)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, w, b)
 
         expected = torch.nn.functional.conv2d(x, w, bias=b)
@@ -140,7 +140,7 @@ class TestPoolingOps:
 
         x = torch.randn(1, 3, 8, 8)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
 
         expected = torch.nn.functional.max_pool2d(x, kernel_size=2, stride=2)
@@ -163,7 +163,7 @@ class TestPoolingOps:
 
         x = torch.randn(1, 3, 8, 8)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
 
         expected = torch.nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
@@ -183,7 +183,7 @@ class TestPoolingOps:
 
         x = torch.randn(1, 3, 8, 8)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
 
         expected = x.mean(dim=(2, 3), keepdim=True)
@@ -222,7 +222,7 @@ class TestNormalizationOps:
         mean = torch.zeros(3)
         var = torch.ones(3)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, scale, bias, mean, var)
 
         expected = torch.nn.functional.batch_norm(x, mean, var, scale, bias, eps=1e-5)
@@ -253,7 +253,7 @@ class TestNormalizationOps:
         scale = torch.ones(4)
         bias = torch.zeros(4)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, scale, bias)
 
         expected = torch.nn.functional.layer_norm(x, [4], scale, bias, eps=1e-5)
@@ -277,7 +277,7 @@ class TestDropout:
 
         x = torch.randn(2, 3)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
 
         # In inference mode, dropout should be identity

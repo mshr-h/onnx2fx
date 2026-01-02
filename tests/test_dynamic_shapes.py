@@ -63,7 +63,7 @@ class TestDynamicBatchSize(unittest.TestCase):
         # Test with different batch sizes
         for batch_size in [1, 4, 8, 16]:
             test_input = torch.randn(batch_size, 64)
-            with torch.no_grad():
+            with torch.inference_mode():
                 expected = model(test_input)
                 result = fx_module(test_input)
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
@@ -100,7 +100,7 @@ class TestDynamicBatchSize(unittest.TestCase):
         # Test with different batch sizes
         for batch_size in [1, 4, 8]:
             test_input = torch.randn(batch_size, 3, 32, 32)
-            with torch.no_grad():
+            with torch.inference_mode():
                 expected = model(test_input)
                 result = fx_module(test_input)
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
@@ -141,7 +141,7 @@ class TestDynamicSequenceLength(unittest.TestCase):
         # Test with different sequence lengths
         for seq_len in [5, 10, 20, 50]:
             test_input = torch.randn(2, seq_len, 64)
-            with torch.no_grad():
+            with torch.inference_mode():
                 expected = model(test_input)
                 result = fx_module(test_input)
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
@@ -175,7 +175,7 @@ class TestDynamicSequenceLength(unittest.TestCase):
         # Test with different sequence lengths
         for seq_len in [5, 10, 20]:
             test_input = torch.randn(2, seq_len, 64)
-            with torch.no_grad():
+            with torch.inference_mode():
                 expected = model(test_input)
                 result = fx_module(test_input)
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-4)
@@ -218,7 +218,7 @@ class TestDynamicImageSize(unittest.TestCase):
         # Test with different image sizes
         for h, w in [(32, 32), (64, 64), (128, 96)]:
             test_input = torch.randn(1, 3, h, w)
-            with torch.no_grad():
+            with torch.inference_mode():
                 expected = model(test_input)
                 result = fx_module(test_input)
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
@@ -255,7 +255,7 @@ class TestDynamicReshape(unittest.TestCase):
         # Test with different batch sizes
         for batch_size in [1, 4, 8]:
             test_input = torch.randn(batch_size, 3, 8, 8)
-            with torch.no_grad():
+            with torch.inference_mode():
                 expected = model(test_input)
                 result = fx_module(test_input)
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
@@ -286,7 +286,7 @@ class TestDynamicReshape(unittest.TestCase):
         # Test with different batch sizes
         for batch_size in [1, 4, 8]:
             test_input = torch.randn(batch_size, 64)
-            with torch.no_grad():
+            with torch.inference_mode():
                 expected = model(test_input)
                 result = fx_module(test_input)
             torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-6)
@@ -322,7 +322,7 @@ class TestDynamicCat(unittest.TestCase):
 
         for batch_size in [1, 4, 8]:
             test_input = torch.randn(batch_size, 32)
-            with torch.no_grad():
+            with torch.inference_mode():
                 expected = model(test_input)
                 result = fx_module(test_input)
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
@@ -352,7 +352,7 @@ class TestDynamicReduce(unittest.TestCase):
 
         for batch_size in [1, 4, 8]:
             test_input = torch.randn(batch_size, 64, 7, 7)
-            with torch.no_grad():
+            with torch.inference_mode():
                 expected = model(test_input)
                 result = fx_module(test_input)
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
@@ -380,7 +380,7 @@ class TestDynamicReduce(unittest.TestCase):
 
         for seq_len in [5, 10, 20]:
             test_input = torch.randn(2, seq_len, 64)
-            with torch.no_grad():
+            with torch.inference_mode():
                 expected = model(test_input)
                 result = fx_module(test_input)
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
@@ -418,7 +418,7 @@ class TestDynamicBroadcast(unittest.TestCase):
         for batch_size in [1, 4]:
             for seq_len in [5, 10, 20]:
                 test_input = torch.randn(batch_size, seq_len, 64)
-                with torch.no_grad():
+                with torch.inference_mode():
                     expected = model(test_input)
                     result = fx_module(test_input)
                 torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-6)
@@ -452,7 +452,7 @@ class TestDynamicSlice(unittest.TestCase):
 
         for seq_len in [10, 20, 40]:
             test_input = torch.randn(2, seq_len, 64)
-            with torch.no_grad():
+            with torch.inference_mode():
                 expected = model(test_input)
                 result = fx_module(test_input)
             torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-6)
@@ -499,7 +499,7 @@ class TestComplexDynamicModels(unittest.TestCase):
         for batch_size in [1, 4]:
             for seq_len in [5, 10, 20]:
                 test_input = torch.randn(batch_size, seq_len, 64)
-                with torch.no_grad():
+                with torch.inference_mode():
                     expected = model(test_input)
                     result = fx_module(test_input)
                 torch.testing.assert_close(result, expected, rtol=1e-3, atol=1e-4)
@@ -544,7 +544,7 @@ class TestComplexDynamicModels(unittest.TestCase):
         for batch_size in [1, 2]:
             for size in [(64, 64), (128, 128)]:
                 test_input = torch.randn(batch_size, 3, *size)
-                with torch.no_grad():
+                with torch.inference_mode():
                     expected = model(test_input)
                     result = fx_module(test_input)
                 torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)

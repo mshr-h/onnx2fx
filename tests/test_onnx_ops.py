@@ -20,7 +20,7 @@ class TestAddOps:
 
         fx_model = convert(onnx_model)
 
-        with torch.no_grad():
+        with torch.inference_mode():
             fx_output = fx_model(x, y)
 
         expected = x + y

@@ -36,7 +36,7 @@ fx_module.graph.print_tabular()
 
 # Run inference just like any torch.nn.Module
 x = torch.randn(1, 3, 224, 224)
-with torch.no_grad():
+with torch.inference_mode():
     y = fx_module(x)
 ```
 

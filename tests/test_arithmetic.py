@@ -40,7 +40,7 @@ class TestBinaryArithmetic:
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
         fx_model = convert(self.sub_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.allclose(result, x - y)
 
@@ -48,7 +48,7 @@ class TestBinaryArithmetic:
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
         fx_model = convert(self.mul_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.allclose(result, x * y)
 
@@ -56,7 +56,7 @@ class TestBinaryArithmetic:
         x = torch.randn(2, 4)
         y = torch.randn(2, 4) + 0.1  # Avoid division by zero
         fx_model = convert(self.div_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.allclose(result, x / y)
 
@@ -64,7 +64,7 @@ class TestBinaryArithmetic:
         x = torch.abs(torch.randn(2, 4)) + 0.1  # Positive values
         y = torch.randn(2, 4)
         fx_model = convert(self.pow_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.allclose(result, torch.pow(x, y), atol=1e-5)
 
@@ -72,7 +72,7 @@ class TestBinaryArithmetic:
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
         fx_model = convert(self.min_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.allclose(result, torch.minimum(x, y))
 
@@ -80,7 +80,7 @@ class TestBinaryArithmetic:
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
         fx_model = convert(self.max_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.allclose(result, torch.maximum(x, y))
 
@@ -119,49 +119,49 @@ class TestUnaryArithmetic:
     def test_neg(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.neg_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, -x)
 
     def test_abs(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.abs_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.abs(x))
 
     def test_sqrt(self):
         x = torch.abs(torch.randn(2, 4)) + 0.1
         fx_model = convert(self.sqrt_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.sqrt(x))
 
     def test_exp(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.exp_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.exp(x))
 
     def test_log(self):
         x = torch.abs(torch.randn(2, 4)) + 0.1
         fx_model = convert(self.log_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.log(x))
 
     def test_ceil(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.ceil_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.ceil(x))
 
     def test_floor(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.floor_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.floor(x))
 
@@ -185,7 +185,7 @@ class TestComparisonOps:
         x = torch.tensor([1.0, 2.0, 3.0])
         y = torch.tensor([1.0, 0.0, 3.0])
         fx_model = convert(self.equal_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.equal(result, torch.eq(x, y))
 
@@ -193,7 +193,7 @@ class TestComparisonOps:
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
         fx_model = convert(self.greater_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.equal(result, torch.gt(x, y))
 
@@ -201,6 +201,6 @@ class TestComparisonOps:
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
         fx_model = convert(self.less_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.equal(result, torch.lt(x, y))

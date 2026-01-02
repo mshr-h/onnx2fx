@@ -42,48 +42,48 @@ class TestActivationOps:
     def test_relu(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.relu_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.relu(x))
 
     def test_sigmoid(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.sigmoid_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.sigmoid(x))
 
     def test_tanh(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.tanh_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.tanh(x))
 
     def test_softmax(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.softmax_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.softmax(x, dim=-1))
 
     def test_leaky_relu(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.leaky_relu_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.nn.functional.leaky_relu(x, 0.1))
 
     def test_elu(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.elu_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.nn.functional.elu(x, 1.0))
 
     def test_softplus(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.softplus_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, torch.nn.functional.softplus(x))

@@ -42,7 +42,7 @@ class TestTensorOps:
     def test_transpose(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.transpose_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, x.T)
 
@@ -50,28 +50,28 @@ class TestTensorOps:
         x = torch.randn(2, 4)
         y = torch.randn(3, 4)
         fx_model = convert(self.concat_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, y)
         assert torch.allclose(result, torch.cat([x, y], dim=0))
 
     def test_flatten(self):
         x = torch.randn(2, 3, 4)
         fx_model = convert(self.flatten_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert result.shape == (2, 12)
 
     def test_squeeze(self):
         x = torch.randn(2, 1, 4)
         fx_model = convert(self.squeeze_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert result.shape == (2, 4)
 
     def test_unsqueeze(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.unsqueeze_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert result.shape == (1, 2, 4)
 
@@ -88,7 +88,7 @@ class TestCastOps:
         x = torch.tensor([1.5, 2.7, 3.2], dtype=torch.float32)
         target = torch.tensor([0, 1, 2], dtype=torch.int64)
         fx_model = convert(self.cast_like_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, target)
         assert result.dtype == torch.int64
         assert torch.equal(result, torch.tensor([1, 2, 3], dtype=torch.int64))
@@ -102,7 +102,7 @@ class TestCastOps:
         x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
         target = torch.tensor([0.0], dtype=torch.float64)
         fx_model = convert(cast_like_float.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x, target)
         assert result.dtype == torch.float64
         torch.testing.assert_close(result, x.to(torch.float64))
@@ -130,27 +130,27 @@ class TestReductionOps:
     def test_reduce_sum(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.reduce_sum_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, x.sum())
 
     def test_reduce_mean(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.reduce_mean_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, x.mean())
 
     def test_reduce_max(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.reduce_max_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, x.max())
 
     def test_reduce_min(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.reduce_min_script.to_model_proto())
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
         assert torch.allclose(result, x.min())

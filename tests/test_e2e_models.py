@@ -52,7 +52,7 @@ def compare_outputs(
     
     # Run FX module
     fx_module.eval()
-    with torch.no_grad():
+    with torch.inference_mode():
         fx_output = fx_module(test_input)
     
     # Compare
@@ -99,7 +99,7 @@ class TestSimpleCNN:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -134,7 +134,7 @@ class TestSimpleCNN:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -171,7 +171,7 @@ class TestMLP:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -204,7 +204,7 @@ class TestMLP:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -235,7 +235,7 @@ class TestTransformerComponents:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -266,7 +266,7 @@ class TestTransformerComponents:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -296,7 +296,7 @@ class TestNormalizationLayers:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -322,7 +322,7 @@ class TestNormalizationLayers:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -348,7 +348,7 @@ class TestNormalizationLayers:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -378,7 +378,7 @@ class TestPoolingLayers:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -404,7 +404,7 @@ class TestPoolingLayers:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -430,7 +430,7 @@ class TestPoolingLayers:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -470,7 +470,7 @@ class TestActivations:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -523,7 +523,7 @@ class TestComplexModels:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         
@@ -568,7 +568,7 @@ class TestComplexModels:
         
         test_input = torch.randn(*input_shape)
         
-        with torch.no_grad():
+        with torch.inference_mode():
             expected = model(test_input)
             result = fx_module(test_input)
         

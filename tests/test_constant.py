@@ -29,7 +29,7 @@ class TestConstantOp:
         # Eager mode evaluation
         eager_output = self.constant_add_script(example_input.numpy())
 
-        with torch.no_grad():
+        with torch.inference_mode():
             fx_output = fx_model(example_input)
 
         assert torch.allclose(

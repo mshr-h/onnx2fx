@@ -43,7 +43,7 @@ class TestInitializer:
 
         # Test that the model works correctly
         x = torch.randn(2, 4)
-        with torch.no_grad():
+        with torch.inference_mode():
             result = fx_model(x)
 
         expected = torch.matmul(x, torch.from_numpy(weight_data))
