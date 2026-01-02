@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for neural network layer operators."""
 
+import pytest
 import torch
+import torch.nn.functional as F
 import onnx
 from onnxscript import FLOAT, script
-from onnxscript import opset22 as op
+from onnxscript import opset23 as op
 
-from onnx2fx.converter import convert
+from onnx2fx import convert
+from conftest import OPSET_MODULES
 
 
 class TestMatMulOps:
@@ -22,7 +25,7 @@ class TestMatMulOps:
         fx_model = convert(self.matmul_script.to_model_proto())
         with torch.inference_mode():
             result = fx_model(x, y)
-        assert torch.allclose(result, torch.matmul(x, y))
+        torch.testing.assert_close(result, torch.matmul(x, y))
 
     def test_matmul_batched(self):
         x = torch.randn(2, 3, 4)
@@ -30,7 +33,7 @@ class TestMatMulOps:
         fx_model = convert(self.matmul_script.to_model_proto())
         with torch.inference_mode():
             result = fx_model(x, y)
-        assert torch.allclose(result, torch.matmul(x, y))
+        torch.testing.assert_close(result, torch.matmul(x, y))
 
 
 class TestGemmOp:
@@ -62,7 +65,7 @@ class TestGemmOp:
             result = fx_model(A, B, C)
 
         expected = torch.matmul(A, B) + C
-        assert torch.allclose(result, expected, atol=1e-5)
+        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
 
 
 class TestConvOps:
@@ -101,7 +104,7 @@ class TestConvOps:
             result = fx_model(x, w)
 
         expected = torch.nn.functional.conv2d(x, w, padding=1)
-        assert torch.allclose(result, expected, atol=1e-5)
+        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
 
     def test_conv2d_with_bias(self):
         """Test Conv2D with bias."""
@@ -140,7 +143,7 @@ class TestConvOps:
             result = fx_model(x, w, b)
 
         expected = torch.nn.functional.conv2d(x, w, bias=b)
-        assert torch.allclose(result, expected, atol=1e-5)
+        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
 
 
 class TestPoolingOps:
@@ -170,7 +173,7 @@ class TestPoolingOps:
             result = fx_model(x)
 
         expected = torch.nn.functional.max_pool2d(x, kernel_size=2, stride=2)
-        assert torch.allclose(result, expected)
+        torch.testing.assert_close(result, expected)
 
     def test_average_pool2d(self):
         """Test AveragePool2D."""
@@ -196,7 +199,7 @@ class TestPoolingOps:
             result = fx_model(x)
 
         expected = torch.nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
-        assert torch.allclose(result, expected)
+        torch.testing.assert_close(result, expected)
 
     def test_global_average_pool(self):
         """Test GlobalAveragePool."""
@@ -220,7 +223,7 @@ class TestPoolingOps:
             result = fx_model(x)
 
         expected = x.mean(dim=(2, 3), keepdim=True)
-        assert torch.allclose(result, expected)
+        torch.testing.assert_close(result, expected)
 
 
 class TestNormalizationOps:
@@ -274,7 +277,7 @@ class TestNormalizationOps:
             result = fx_model(x, scale, bias, mean, var)
 
         expected = torch.nn.functional.batch_norm(x, mean, var, scale, bias, eps=1e-5)
-        assert torch.allclose(result, expected, atol=1e-5)
+        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
 
     def test_layer_norm(self):
         """Test LayerNormalization."""
@@ -310,7 +313,7 @@ class TestNormalizationOps:
             result = fx_model(x, scale, bias)
 
         expected = torch.nn.functional.layer_norm(x, [4], scale, bias, eps=1e-5)
-        assert torch.allclose(result, expected, atol=1e-5)
+        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
 
 
 class TestDropout:
@@ -336,4 +339,92 @@ class TestDropout:
             result = fx_model(x)
 
         # In inference mode, dropout should be identity
-        assert torch.allclose(result, x)
+        torch.testing.assert_close(result, x)
+
+
+class TestNNOpsMultiOpset:
+    """Test neural network operators across multiple opset versions."""
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_matmul_all_opsets(self, opset):
+        """MatMul should work identically across all opsets."""
+
+        @script(default_opset=opset)
+        def matmul_script(x: FLOAT, y: FLOAT) -> FLOAT:
+            return opset.MatMul(x, y)
+
+        model = matmul_script.to_model_proto()
+        fx_model = convert(model)
+        x = torch.randn(2, 3)
+        y = torch.randn(3, 4)
+        result = fx_model(x, y)
+        expected = torch.matmul(x, y)
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_matmul_batched_all_opsets(self, opset):
+        """Batched MatMul should work identically across all opsets."""
+
+        @script(default_opset=opset)
+        def matmul_script(x: FLOAT, y: FLOAT) -> FLOAT:
+            return opset.MatMul(x, y)
+
+        model = matmul_script.to_model_proto()
+        fx_model = convert(model)
+        x = torch.randn(2, 3, 4)
+        y = torch.randn(2, 4, 5)
+        result = fx_model(x, y)
+        expected = torch.matmul(x, y)
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_batch_normalization_all_opsets(self, opset):
+        """BatchNormalization should work across all opsets."""
+        # Use onnx.helper for BatchNorm since it has complex inputs
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [2, 3, 4, 4]
+        )
+        scale_info = onnx.helper.make_tensor_value_info(
+            "scale", onnx.TensorProto.FLOAT, [3]
+        )
+        bias_info = onnx.helper.make_tensor_value_info(
+            "bias", onnx.TensorProto.FLOAT, [3]
+        )
+        mean_info = onnx.helper.make_tensor_value_info(
+            "mean", onnx.TensorProto.FLOAT, [3]
+        )
+        var_info = onnx.helper.make_tensor_value_info(
+            "var", onnx.TensorProto.FLOAT, [3]
+        )
+        y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
+
+        bn_node = onnx.helper.make_node(
+            "BatchNormalization",
+            ["X", "scale", "bias", "mean", "var"],
+            ["Y"],
+            epsilon=1e-5,
+        )
+
+        graph = onnx.helper.make_graph(
+            [bn_node],
+            "test",
+            [x_info, scale_info, bias_info, mean_info, var_info],
+            [y_info],
+        )
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", opset.version)]
+        )
+
+        fx_model = convert(model)
+
+        x = torch.randn(2, 3, 4, 4)
+        scale = torch.ones(3)
+        bias = torch.zeros(3)
+        mean = torch.zeros(3)
+        var = torch.ones(3)
+
+        with torch.inference_mode():
+            result = fx_model(x, scale, bias, mean, var)
+
+        expected = F.batch_norm(x, mean, var, scale, bias, training=False, eps=1e-5)
+        torch.testing.assert_close(result, expected, atol=1e-5, rtol=1e-5)

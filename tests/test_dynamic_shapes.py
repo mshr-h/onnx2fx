@@ -2,7 +2,7 @@
 """Tests for dynamic shape support."""
 
 import io
-import unittest
+
 
 import torch
 import torch.nn as nn
@@ -34,7 +34,7 @@ def export_to_onnx_dynamic(
     return onnx.load(buffer)
 
 
-class TestDynamicBatchSize(unittest.TestCase):
+class TestDynamicBatchSize:
     """Test models with dynamic batch size."""
 
     def test_simple_linear_dynamic_batch(self):
@@ -106,7 +106,7 @@ class TestDynamicBatchSize(unittest.TestCase):
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
 
 
-class TestDynamicSequenceLength(unittest.TestCase):
+class TestDynamicSequenceLength:
     """Test models with dynamic sequence length."""
 
     def test_rnn_dynamic_sequence(self):
@@ -183,7 +183,7 @@ class TestDynamicSequenceLength(unittest.TestCase):
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-4)
 
 
-class TestDynamicImageSize(unittest.TestCase):
+class TestDynamicImageSize:
     """Test models with dynamic image size."""
 
     def test_fully_conv_dynamic_size(self):
@@ -226,7 +226,7 @@ class TestDynamicImageSize(unittest.TestCase):
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
 
 
-class TestDynamicReshape(unittest.TestCase):
+class TestDynamicReshape:
     """Test reshape operations with dynamic dimensions."""
 
     def test_flatten_dynamic_batch(self):
@@ -294,7 +294,7 @@ class TestDynamicReshape(unittest.TestCase):
             torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-6)
 
 
-class TestDynamicCat(unittest.TestCase):
+class TestDynamicCat:
     """Test concatenation with dynamic shapes."""
 
     def test_cat_dynamic_batch(self):
@@ -330,7 +330,7 @@ class TestDynamicCat(unittest.TestCase):
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
 
 
-class TestDynamicReduce(unittest.TestCase):
+class TestDynamicReduce:
     """Test reduction operations with dynamic shapes."""
 
     def test_mean_dynamic_batch(self):
@@ -388,7 +388,7 @@ class TestDynamicReduce(unittest.TestCase):
             torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
 
 
-class TestDynamicBroadcast(unittest.TestCase):
+class TestDynamicBroadcast:
     """Test broadcast operations with dynamic shapes."""
 
     def test_add_broadcast_dynamic(self):
@@ -426,7 +426,7 @@ class TestDynamicBroadcast(unittest.TestCase):
                 torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-6)
 
 
-class TestDynamicSlice(unittest.TestCase):
+class TestDynamicSlice:
     """Test slice operations with dynamic shapes."""
 
     def test_slice_dynamic_dim(self):
@@ -460,7 +460,7 @@ class TestDynamicSlice(unittest.TestCase):
             torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-6)
 
 
-class TestComplexDynamicModels(unittest.TestCase):
+class TestComplexDynamicModels:
     """Test complex models with multiple dynamic dimensions."""
 
     def test_transformer_block_dynamic(self):
@@ -552,7 +552,3 @@ class TestComplexDynamicModels(unittest.TestCase):
                     expected = model(test_input)
                     result = fx_module(test_input)
                 torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
-
-
-if __name__ == "__main__":
-    unittest.main()

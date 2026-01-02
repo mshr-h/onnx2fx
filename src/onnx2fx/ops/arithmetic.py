@@ -273,12 +273,30 @@ def where(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 # =============================================================================
 
 
-@register("Clip")
-def clip(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Clip tensor values to a range."""
+@register("Clip", since_version=1)
+def clip_v1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Clip tensor values to a range for opset 1-10.
+
+    In opset < 11, min and max are required attributes.
+    """
     x = builder.get_value(node.input[0])
 
-    # min and max can be inputs (opset 11+) or attributes (opset < 11)
+    min_val = get_attribute(node, "min", float("-inf"))
+    max_val = get_attribute(node, "max", float("inf"))
+
+    return builder.call_function(
+        torch.clamp, args=(x,), kwargs={"min": min_val, "max": max_val}
+    )
+
+
+@register("Clip", since_version=11)
+def clip_v11(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Clip tensor values to a range for opset 11+.
+
+    In opset 11+, min and max are optional inputs.
+    """
+    x = builder.get_value(node.input[0])
+
     min_val = None
     max_val = None
 
@@ -286,16 +304,6 @@ def clip(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         min_val = builder.get_value(node.input[1])
     if len(node.input) > 2 and node.input[2]:
         max_val = builder.get_value(node.input[2])
-
-    # Fallback to attributes for older opsets
-    if min_val is None:
-        min_attr = get_attribute(node, "min")
-        if min_attr is not None:
-            min_val = min_attr
-    if max_val is None:
-        max_attr = get_attribute(node, "max")
-        if max_attr is not None:
-            max_val = max_attr
 
     return builder.call_function(
         torch.clamp, args=(x,), kwargs={"min": min_val, "max": max_val}

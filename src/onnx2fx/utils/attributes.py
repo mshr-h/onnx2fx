@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """Utilities for parsing ONNX node attributes."""
 
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import onnx
+
+if TYPE_CHECKING:
+    import torch
 
 
 def get_attribute(

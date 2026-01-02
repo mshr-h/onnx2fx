@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
+"""Tests for ONNX initializer support."""
 
+import pytest
 import torch
 import onnx
+from onnx import helper, TensorProto
 
-from onnx2fx.converter import convert
+from onnx2fx import convert
+from conftest import OPSET_MODULES
 
 
 class TestInitializer:
@@ -47,4 +51,42 @@ class TestInitializer:
             result = fx_model(x)
 
         expected = torch.matmul(x, torch.from_numpy(weight_data))
-        assert torch.allclose(result, expected, atol=1e-5)
+        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
+
+
+class TestInitializerMultiOpset:
+    """Test initializer handling across multiple opset versions."""
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_initializer_matmul_all_opsets(self, opset):
+        """Initializer with MatMul should work across all opsets."""
+        weight_data = torch.randn(4, 4).numpy()
+        weight_init = onnx.numpy_helper.from_array(weight_data, name="weight")
+
+        input_tensor = helper.make_tensor_value_info("input", TensorProto.FLOAT, [2, 4])
+        output_tensor = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [2, 4]
+        )
+
+        matmul_node = helper.make_node("MatMul", ["input", "weight"], ["output"])
+
+        graph = helper.make_graph(
+            [matmul_node],
+            "test",
+            [input_tensor],
+            [output_tensor],
+            [weight_init],
+        )
+
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_model = convert(model)
+
+        x = torch.randn(2, 4)
+        with torch.inference_mode():
+            result = fx_model(x)
+
+        expected = torch.matmul(x, torch.from_numpy(weight_data))
+        torch.testing.assert_close(result, expected, atol=1e-5, rtol=1e-5)

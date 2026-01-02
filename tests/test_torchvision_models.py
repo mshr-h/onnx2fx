@@ -5,8 +5,6 @@ These tests export torchvision models to ONNX, convert to FX,
 and compare outputs with the original PyTorch model.
 """
 
-import unittest
-
 import torch
 import torch.nn as nn
 import onnx
@@ -28,7 +26,7 @@ def get_device():
 
 
 def export_to_onnx(
-    model: nn.Module, input_shape: tuple, opset_version: int = 24
+    model: nn.Module, input_shape: tuple, opset_version: int = 23
 ) -> onnx.ModelProto:
     """Export a PyTorch model to ONNX format."""
     model.eval()
@@ -58,7 +56,7 @@ def validate_model_output(model, input_shape=(1, 3, 224, 224), rtol=1e-3, atol=1
     torch.testing.assert_close(result, expected, rtol=rtol, atol=atol)
 
 
-@unittest.skipUnless(HAS_TORCHVISION, "torchvision not available")
+@pytest.mark.skipif(not HAS_TORCHVISION, reason="torchvision not available")
 @pytest.mark.parametrize(
     "model_fn,weights",
     [
@@ -95,38 +93,6 @@ def test_torchvision_classifications(model_fn, weights):
     validate_model_output(model_fn(weights=weights).eval())
 
 
-@pytest.mark.parametrize(
-    "model",
-    [
-        models.resnet18(weights=None),
-        models.mobilenet_v2(weights=None),
-    ],
-)
-@pytest.mark.parametrize("batch_size", [1, 2, 4])
-@unittest.skipUnless(HAS_TORCHVISION, "torchvision not available")
-def test_dynamic_batch(model, batch_size):
-    model.eval()
-
-    # Export with dynamic batch using legacy exporter to avoid version conversion issues
-    dummy_input = (torch.randn(1, 3, 224, 224),)
-    onnx_model = torch.onnx.export(
-        model,
-        dummy_input,
-        input_names=["input"],
-        output_names=["output"],
-        dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
-        dynamo=False,
-    ).model_proto  # ty:ignore[possibly-missing-attribute]
-
-    fx_module = convert(onnx_model)
-
-    test_input = torch.randn(batch_size, 3, 224, 224)
-    with torch.inference_mode():
-        expected = model(test_input)
-        result = fx_module(test_input)
-    torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
-
-
 class SegmentationWrapper(torch.nn.Module):
     def __init__(self, model: nn.Module):
         super().__init__()
@@ -154,7 +120,7 @@ class DetectionBackboneWrapper(torch.nn.Module):
         return features
 
 
-@unittest.skipUnless(HAS_TORCHVISION, "torchvision not available")
+@pytest.mark.skipif(not HAS_TORCHVISION, reason="torchvision not available")
 @pytest.mark.parametrize(
     "model_fn",
     [
@@ -167,7 +133,7 @@ def test_torchvision_segmentations(model_fn):
     validate_model_output(wrapped_model)
 
 
-@unittest.skipUnless(HAS_TORCHVISION, "torchvision not available")
+@pytest.mark.skipif(not HAS_TORCHVISION, reason="torchvision not available")
 @pytest.mark.parametrize(
     "model_fn,input_shape",
     [
@@ -179,7 +145,3 @@ def test_torchvision_segmentations(model_fn):
 def test_torchvision_detection_backbones(model_fn, input_shape):
     wrapped_model = DetectionBackboneWrapper(model_fn(weights=None).eval())
     validate_model_output(wrapped_model, input_shape=input_shape)
-
-
-if __name__ == "__main__":
-    unittest.main()

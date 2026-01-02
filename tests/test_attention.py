@@ -1,14 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for attention and transformer related operators."""
 
-import numpy as np
-import onnx
 import onnxscript
 import pytest
 import torch
-from onnxscript import opset22 as op
+from onnx import TensorProto, helper
+from onnxscript import opset13, opset14, opset15
+from onnxscript import opset16, opset17, opset18, opset19, opset20
+from onnxscript import opset21, opset22, opset23
+from onnxscript import opset23 as op
 
 from onnx2fx import convert
+from conftest import OPSET_MODULES
 
 
 class TestLogSoftmaxOp:
@@ -46,56 +49,6 @@ class TestHardmaxOp:
         expected = torch.tensor([[0.0, 0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 0.0, 0.0]])
 
         result = fx_module(x)
-        torch.testing.assert_close(result, expected)
-
-
-class TestQuantizationOps:
-    """Test quantization operators."""
-
-    def test_quantize_linear(self):
-        @onnxscript.script()
-        def quantize_model(
-            x: onnxscript.FLOAT[3, 4],
-            scale: onnxscript.FLOAT[1],
-            zero_point: onnxscript.UINT8[1],
-        ) -> onnxscript.UINT8[3, 4]:
-            return op.QuantizeLinear(x, scale, zero_point)
-
-        model = quantize_model.to_model_proto()
-        fx_module = convert(model)
-
-        x = torch.tensor(
-            [[0.0, 1.0, 2.0, 3.0], [4.0, 5.0, 6.0, 7.0], [8.0, 9.0, 10.0, 11.0]]
-        )
-        scale = torch.tensor([0.1])
-        zero_point = torch.tensor([128], dtype=torch.uint8)
-
-        result = fx_module(x, scale, zero_point)
-        assert result.dtype == torch.uint8
-        assert result.shape == (3, 4)
-
-    def test_dequantize_linear(self):
-        @onnxscript.script()
-        def dequantize_model(
-            x: onnxscript.UINT8[3, 4],
-            scale: onnxscript.FLOAT[1],
-            zero_point: onnxscript.UINT8[1],
-        ) -> onnxscript.FLOAT[3, 4]:
-            return op.DequantizeLinear(x, scale, zero_point)
-
-        model = dequantize_model.to_model_proto()
-        fx_module = convert(model)
-
-        x = torch.tensor(
-            [[128, 138, 148, 158], [168, 178, 188, 198], [208, 218, 228, 238]],
-            dtype=torch.uint8,
-        )
-        scale = torch.tensor([0.1])
-        zero_point = torch.tensor([128], dtype=torch.uint8)
-
-        result = fx_module(x, scale, zero_point)
-        expected = (x.float() - zero_point.float()) * scale
-
         torch.testing.assert_close(result, expected)
 
 
@@ -315,7 +268,6 @@ class TestAttentionOp:
 
     def test_attention_basic(self):
         """Test basic attention without mask."""
-        import math
         from onnx import TensorProto, helper
 
         batch_size = 2
@@ -371,7 +323,6 @@ class TestAttentionOp:
 
     def test_attention_without_bias(self):
         """Test attention without bias."""
-        import math
         from onnx import TensorProto, helper
 
         batch_size = 2
@@ -421,7 +372,6 @@ class TestAttentionOp:
 
     def test_attention_unidirectional(self):
         """Test causal (unidirectional) attention."""
-        import math
         from onnx import TensorProto, helper
 
         batch_size = 1
@@ -693,3 +643,92 @@ class TestGroupQueryAttention:
 
         # Check output shape
         assert result.shape == (batch_size, seq_len, hidden_size)
+
+
+class TestAttentionOpsMultiOpset:
+    """Test attention-related operators across multiple opset versions."""
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_hardmax_all_opsets(self, opset):
+        """Hardmax should work across all opsets (11+)."""
+        x_info = helper.make_tensor_value_info("X", TensorProto.FLOAT, [2, 5])
+        y_info = helper.make_tensor_value_info("Y", TensorProto.FLOAT, [2, 5])
+
+        hardmax_node = helper.make_node("Hardmax", ["X"], ["Y"], axis=-1)
+
+        graph = helper.make_graph([hardmax_node], "test", [x_info], [y_info])
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_module = convert(model)
+
+        x = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0], [5.0, 4.0, 3.0, 2.0, 1.0]])
+        expected = torch.tensor([[0.0, 0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 0.0, 0.0]])
+
+        result = fx_module(x)
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize(
+        "opset",
+        [
+            opset13,
+            opset14,
+            opset15,
+            opset16,
+            opset17,
+            opset18,
+            opset19,
+            opset20,
+            opset21,
+            opset22,
+            opset23,
+        ],
+        ids=lambda x: f"opset{x.version}",
+    )
+    def test_log_softmax_all_opsets(self, opset):
+        """LogSoftmax should work across opsets 13+ (axis semantics changed)."""
+        x_info = helper.make_tensor_value_info("X", TensorProto.FLOAT, [2, 3, 4])
+        y_info = helper.make_tensor_value_info("Y", TensorProto.FLOAT, [2, 3, 4])
+
+        node = helper.make_node("LogSoftmax", ["X"], ["Y"], axis=-1)
+
+        graph = helper.make_graph([node], "test", [x_info], [y_info])
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_module = convert(model)
+
+        x = torch.randn(2, 3, 4)
+        expected = torch.nn.functional.log_softmax(x, dim=-1)
+
+        result = fx_module(x)
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_gather_nd_all_opsets(self, opset):
+        """GatherND should work across all opsets (11+)."""
+        data_info = helper.make_tensor_value_info("data", TensorProto.FLOAT, [2, 2])
+        indices_info = helper.make_tensor_value_info(
+            "indices", TensorProto.INT64, [2, 2]
+        )
+        output_info = helper.make_tensor_value_info("output", TensorProto.FLOAT, None)
+
+        gather_node = helper.make_node("GatherND", ["data", "indices"], ["output"])
+
+        graph = helper.make_graph(
+            [gather_node], "test", [data_info, indices_info], [output_info]
+        )
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_module = convert(model)
+
+        data = torch.tensor([[0.0, 1.0], [2.0, 3.0]])
+        indices = torch.tensor([[0, 0], [1, 1]], dtype=torch.int64)
+
+        result = fx_module(data, indices)
+        expected = torch.tensor([0.0, 3.0])
+        torch.testing.assert_close(result, expected)

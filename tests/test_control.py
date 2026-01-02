@@ -1,15 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for control flow and multi-output operators."""
 
-import numpy as np
-import onnx
 import onnxscript
 import pytest
 import torch
 from onnx import TensorProto, helper
-from onnxscript import opset21 as op
+from onnxscript import opset23 as op
 
 from onnx2fx import convert
+from conftest import OPSET_MODULES
 
 
 class TestCompressOp:
@@ -324,7 +323,7 @@ class TestOptionalOps:
         x = torch.randn(2, 3)
         result = fx_module(x)
 
-        assert result.item() == True
+        assert result.item()
 
 
 class TestMultiOutputOps:
@@ -392,3 +391,96 @@ class TestMultiOutputOps:
         expected_values, expected_indices = torch.topk(x, 2, dim=-1)
         torch.testing.assert_close(values, expected_values)
         torch.testing.assert_close(indices, expected_indices)
+
+
+class TestControlOpsMultiOpset:
+    """Test control flow operators across multiple opset versions."""
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_compress_all_opsets(self, opset):
+        """Compress should work across all opsets (9+)."""
+        data_input = helper.make_tensor_value_info("data", TensorProto.FLOAT, [3, 4])
+        cond_input = helper.make_tensor_value_info("condition", TensorProto.BOOL, [3])
+        output = helper.make_tensor_value_info("output", TensorProto.FLOAT, None)
+
+        compress_node = helper.make_node(
+            "Compress",
+            ["data", "condition"],
+            ["output"],
+            axis=0,
+        )
+
+        graph = helper.make_graph(
+            [compress_node], "test", [data_input, cond_input], [output]
+        )
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_module = convert(model)
+
+        data = torch.tensor(
+            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]
+        )
+        condition = torch.tensor([True, False, True])
+
+        result = fx_module(data, condition)
+        expected = torch.tensor([[1.0, 2.0, 3.0, 4.0], [9.0, 10.0, 11.0, 12.0]])
+
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_constant_of_shape_all_opsets(self, opset):
+        """ConstantOfShape should work across all opsets (9+)."""
+        shape_input = helper.make_tensor_value_info("shape", TensorProto.INT64, [2])
+        output = helper.make_tensor_value_info("output", TensorProto.FLOAT, None)
+
+        value_tensor = helper.make_tensor("value", TensorProto.FLOAT, [1], [3.14])
+        node = helper.make_node(
+            "ConstantOfShape",
+            ["shape"],
+            ["output"],
+            value=value_tensor,
+        )
+
+        graph = helper.make_graph([node], "test", [shape_input], [output])
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_module = convert(model)
+
+        shape = torch.tensor([2, 3], dtype=torch.int64)
+        result = fx_module(shape)
+        expected = torch.full((2, 3), 3.14)
+
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_bitshift_left_all_opsets(self, opset):
+        """BitShift LEFT should work across all opsets (11+)."""
+        x_input = helper.make_tensor_value_info("x", TensorProto.INT32, [3])
+        y_input = helper.make_tensor_value_info("y", TensorProto.INT32, [3])
+        output = helper.make_tensor_value_info("output", TensorProto.INT32, [3])
+
+        shift_node = helper.make_node(
+            "BitShift",
+            ["x", "y"],
+            ["output"],
+            direction="LEFT",
+        )
+
+        graph = helper.make_graph([shift_node], "test", [x_input, y_input], [output])
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_module = convert(model)
+
+        x = torch.tensor([1, 2, 4], dtype=torch.int32)
+        y = torch.tensor([1, 2, 3], dtype=torch.int32)
+
+        result = fx_module(x, y)
+        expected = x << y
+
+        torch.testing.assert_close(result, expected)

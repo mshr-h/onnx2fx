@@ -5,8 +5,6 @@ This test downloads the LFM2-350M-ENJP-MT-ONNX model from HuggingFace
 and verifies that onnx2fx can convert and run it correctly.
 """
 
-import unittest
-
 import numpy as np
 import onnx
 import onnxruntime as ort
@@ -138,7 +136,7 @@ def create_lfm2_inputs(batch_size: int = 1, seq_len: int = 5, past_seq_len: int 
     return np_inputs, torch_inputs
 
 
-@unittest.skipUnless(HAS_HF_HUB, "huggingface_hub not available")
+@pytest.mark.skipif(not HAS_HF_HUB, reason="huggingface_hub not available")
 class TestLFM2Model:
     """Test LFM2-350M-ENJP-MT ONNX model conversion."""
 
@@ -188,7 +186,3 @@ class TestLFM2Model:
             atol=0.1,
             err_msg="Logits mismatch between FX and ONNX Runtime",
         )
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "-m", "slow"])

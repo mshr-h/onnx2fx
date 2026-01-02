@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for custom operator support."""
 
-import unittest
-
-import numpy as np
-import onnx
 from onnx import helper, TensorProto
 import torch
 
@@ -53,7 +49,7 @@ def make_simple_onnx_model(
     return model
 
 
-class TestCustomOpRegistration(unittest.TestCase):
+class TestCustomOpRegistration:
     """Test custom operator registration."""
 
     def test_register_custom_op_decorator(self):
@@ -65,7 +61,7 @@ class TestCustomOpRegistration(unittest.TestCase):
             return builder.call_function(torch.relu, args=(x,))
 
         try:
-            self.assertTrue(is_supported("TestCustomRelu"))
+            assert is_supported("TestCustomRelu")
 
             # Create and convert model
             model = make_simple_onnx_model("TestCustomRelu")
@@ -89,7 +85,7 @@ class TestCustomOpRegistration(unittest.TestCase):
         register_custom_op("TestCustomSigmoid", custom_sigmoid)
 
         try:
-            self.assertTrue(is_supported("TestCustomSigmoid"))
+            assert is_supported("TestCustomSigmoid")
 
             model = make_simple_onnx_model("TestCustomSigmoid")
             fx_module = convert(model)
@@ -111,8 +107,8 @@ class TestCustomOpRegistration(unittest.TestCase):
             return builder.call_function(torch.add, args=(x, bias))
 
         try:
-            self.assertTrue(is_supported("BiasAdd", domain="com.test"))
-            self.assertFalse(is_supported("BiasAdd"))  # Not in default domain
+            assert is_supported("BiasAdd", domain="com.test")
+            assert not is_supported("BiasAdd")  # Not in default domain
 
             model = make_simple_onnx_model(
                 "BiasAdd",
@@ -138,17 +134,17 @@ class TestCustomOpRegistration(unittest.TestCase):
             x = builder.get_value(node.input[0])
             return builder.call_function(torch.neg, args=(x,))
 
-        self.assertTrue(is_supported("TestTempOp"))
-        self.assertTrue(unregister_op("TestTempOp"))
-        self.assertFalse(is_supported("TestTempOp"))
+        assert is_supported("TestTempOp")
+        assert unregister_op("TestTempOp")
+        assert not is_supported("TestTempOp")
 
         # Unregistering non-existent op returns False
-        self.assertFalse(unregister_op("NonExistentOp"))
+        assert not unregister_op("NonExistentOp")
 
     def test_override_builtin_op(self):
         """Test overriding a built-in operator."""
         original_ops = get_supported_ops()
-        self.assertIn("Relu", original_ops)
+        assert "Relu" in original_ops
 
         # Override Relu with a custom implementation
         @register_custom_op("Relu")
@@ -171,7 +167,6 @@ class TestCustomOpRegistration(unittest.TestCase):
             torch.testing.assert_close(result, expected)
         finally:
             # Restore original Relu (re-import ops to reset)
-            from onnx2fx.ops import activation
 
             # Force re-registration by calling the decorator again
             from onnx2fx.op_registry import register
@@ -182,7 +177,7 @@ class TestCustomOpRegistration(unittest.TestCase):
                 return builder.call_function(torch.relu, args=(x,))
 
 
-class TestMultiInputCustomOp(unittest.TestCase):
+class TestMultiInputCustomOp:
     """Test custom operators with multiple inputs."""
 
     def test_custom_binary_op(self):
@@ -254,39 +249,39 @@ class TestMultiInputCustomOp(unittest.TestCase):
             unregister_op("ScaleOp")
 
 
-class TestRegistryQueries(unittest.TestCase):
+class TestRegistryQueries:
     """Test registry query functions."""
 
     def test_get_supported_ops(self):
         """Test getting list of supported ops."""
         ops = get_supported_ops()
-        self.assertIsInstance(ops, list)
-        self.assertIn("Add", ops)
-        self.assertIn("Relu", ops)
-        self.assertIn("Conv", ops)
+        assert isinstance(ops, list)
+        assert "Add" in ops
+        assert "Relu" in ops
+        assert "Conv" in ops
 
     def test_get_all_supported_ops(self):
         """Test getting all ops across domains."""
         all_ops = get_all_supported_ops()
-        self.assertIsInstance(all_ops, dict)
-        self.assertIn("", all_ops)  # Default domain
-        self.assertIn("Add", all_ops[""])
+        assert isinstance(all_ops, dict)
+        assert "" in all_ops  # Default domain
+        assert "Add" in all_ops[""]
 
     def test_get_registered_domains(self):
         """Test getting registered domains."""
         domains = get_registered_domains()
-        self.assertIsInstance(domains, list)
-        self.assertIn("", domains)  # Default domain always exists
+        assert isinstance(domains, list)
+        assert "" in domains  # Default domain always exists
 
     def test_is_supported(self):
         """Test checking if op is supported."""
-        self.assertTrue(is_supported("Add"))
-        self.assertTrue(is_supported("Relu"))
-        self.assertFalse(is_supported("NonExistentOp"))
-        self.assertFalse(is_supported("Add", domain="non.existent.domain"))
+        assert is_supported("Add")
+        assert is_supported("Relu")
+        assert not is_supported("NonExistentOp")
+        assert not is_supported("Add", domain="non.existent.domain")
 
 
-class TestMicrosoftDomainOps(unittest.TestCase):
+class TestMicrosoftDomainOps:
     """Test Microsoft ONNX Runtime custom ops."""
 
     def test_bias_gelu(self):
@@ -378,7 +373,7 @@ class TestMicrosoftDomainOps(unittest.TestCase):
             unregister_op("FusedMatMul", domain="com.microsoft")
 
 
-class TestCustomOpIntegration(unittest.TestCase):
+class TestCustomOpIntegration:
     """Integration tests for custom ops in complex models."""
 
     def test_custom_op_in_sequence(self):
@@ -413,7 +408,3 @@ class TestCustomOpIntegration(unittest.TestCase):
             torch.testing.assert_close(result, expected)
         finally:
             unregister_op("DoubleScale")
-
-
-if __name__ == "__main__":
-    unittest.main()

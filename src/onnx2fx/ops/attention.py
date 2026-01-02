@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Attention and Transformer related operators."""
 
-import math
 from typing import TYPE_CHECKING
 
 import onnx
@@ -188,7 +187,7 @@ def qlinear_conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
     auto_pad = get_attribute(node, "auto_pad", "NOTSET")
     dilations = get_attribute(node, "dilations", [1, 1])
     group = get_attribute(node, "group", 1)
-    kernel_shape = get_attribute(node, "kernel_shape")
+    _kernel_shape = get_attribute(node, "kernel_shape")
     pads = get_attribute(node, "pads", [0, 0, 0, 0])
     strides = get_attribute(node, "strides", [1, 1])
 
@@ -460,7 +459,7 @@ def conv_integer(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
     w_zero_point = builder.get_value(node.input[3]) if len(node.input) > 3 else None
 
     # Get convolution attributes
-    auto_pad = get_attribute(node, "auto_pad", "NOTSET")
+    _auto_pad = get_attribute(node, "auto_pad", "NOTSET")
     dilations = get_attribute(node, "dilations", [1, 1])
     group = get_attribute(node, "group", 1)
     pads = get_attribute(node, "pads", [0, 0, 0, 0])
@@ -774,7 +773,7 @@ def scatter_nd(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     indices = builder.get_value(node.input[1])
     updates = builder.get_value(node.input[2])
 
-    reduction = get_attribute(node, "reduction", "none")
+    _reduction = get_attribute(node, "reduction", "none")
 
     def _scatter_nd(
         d: torch.Tensor, idx: torch.Tensor, upd: torch.Tensor

@@ -3,12 +3,10 @@
 
 import io
 import tempfile
-from pathlib import Path
 
 import numpy as np
 import onnx
 import onnxruntime as ort
-import pytest
 import torch
 import torch.nn as nn
 
@@ -16,7 +14,7 @@ from onnx2fx import convert
 
 
 def export_to_onnx(
-    model: nn.Module, input_shape: tuple, opset_version: int = 21
+    model: nn.Module, input_shape: tuple, opset_version: int = 23
 ) -> onnx.ModelProto:
     """Export a PyTorch model to ONNX format."""
     model.eval()

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tensor manipulation operators."""
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 import onnx
 import torch
@@ -132,16 +132,39 @@ def transpose(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(torch.permute, args=(x, perm))
 
 
-@register("Squeeze")
-def squeeze(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Remove dimensions of size 1."""
+@register("Squeeze", since_version=1)
+def squeeze_v1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Remove dimensions of size 1 for opset 1-12.
+
+    In opset < 13, axes is an attribute.
+    """
     x = builder.get_value(node.input[0])
 
-    # axes can be input (opset 13+) or attribute
+    axes = get_attribute(node, "axes")
+    if axes is not None:
+        # Squeeze specific dimensions
+        result = x
+        # Sort in reverse to maintain correct indices after each squeeze
+        for axis in sorted(axes, reverse=True):
+            result = builder.call_function(
+                torch.squeeze, args=(result,), kwargs={"dim": axis}
+            )
+        return result
+    return builder.call_function(torch.squeeze, args=(x,))
+
+
+@register("Squeeze", since_version=13)
+def squeeze_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Remove dimensions of size 1 for opset 13+.
+
+    In opset 13+, axes is an optional input (not attribute).
+    """
+    x = builder.get_value(node.input[0])
+
+    # axes is an optional input in opset 13+
     if len(node.input) > 1 and node.input[1]:
         axes = builder.get_value(node.input[1])
 
-        # If axes is a tensor node, use dynamic squeeze
         def _squeeze_dynamic(t, axes):
             if isinstance(axes, torch.Tensor):
                 axes = axes.tolist()
@@ -157,45 +180,21 @@ def squeeze(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
         return builder.call_function(_squeeze_dynamic, args=(x, axes))
 
-    axes = get_attribute(node, "axes")
-    if axes is not None:
-        # Squeeze specific dimensions
-        result = x
-        # Sort in reverse to maintain correct indices after each squeeze
-        for axis in sorted(axes, reverse=True):
-            result = builder.call_function(
-                torch.squeeze, args=(result,), kwargs={"dim": axis}
-            )
-        return result
+    # No axes input - squeeze all dimensions of size 1
     return builder.call_function(torch.squeeze, args=(x,))
 
 
-@register("Unsqueeze")
-def unsqueeze(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Insert dimensions of size 1."""
+@register("Unsqueeze", since_version=1)
+def unsqueeze_v1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Insert dimensions of size 1 for opset 1-12.
+
+    In opset < 13, axes is a required attribute.
+    """
     x = builder.get_value(node.input[0])
-
-    # axes is input (opset 13+) or attribute
-    if len(node.input) > 1 and node.input[1]:
-        axes = builder.get_value(node.input[1])
-
-        # If axes is a tensor node, use dynamic unsqueeze
-        def _unsqueeze_dynamic(t, axes):
-            if isinstance(axes, torch.Tensor):
-                axes = axes.tolist()
-            if isinstance(axes, int):
-                return torch.unsqueeze(t, axes)
-            # Handle multiple axes - unsqueeze in sorted order
-            result = t
-            for axis in sorted(axes):
-                result = torch.unsqueeze(result, int(axis))
-            return result
-
-        return builder.call_function(_unsqueeze_dynamic, args=(x, axes))
 
     axes = get_attribute(node, "axes")
     if axes is None:
-        raise ValueError("Unsqueeze requires axes")
+        raise ValueError("Unsqueeze requires axes attribute in opset < 13")
 
     # Handle single axis
     if isinstance(axes, int):
@@ -206,6 +205,33 @@ def unsqueeze(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     for axis in sorted(axes):
         result = builder.call_function(torch.unsqueeze, args=(result, axis))
     return result
+
+
+@register("Unsqueeze", since_version=13)
+def unsqueeze_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Insert dimensions of size 1 for opset 13+.
+
+    In opset 13+, axes is a required input (not attribute).
+    """
+    x = builder.get_value(node.input[0])
+
+    if len(node.input) < 2 or not node.input[1]:
+        raise ValueError("Unsqueeze requires axes input in opset 13+")
+
+    axes = builder.get_value(node.input[1])
+
+    def _unsqueeze_dynamic(t, axes):
+        if isinstance(axes, torch.Tensor):
+            axes = axes.tolist()
+        if isinstance(axes, int):
+            return torch.unsqueeze(t, axes)
+        # Handle multiple axes - unsqueeze in sorted order
+        result = t
+        for axis in sorted(axes):
+            result = torch.unsqueeze(result, int(axis))
+        return result
+
+    return builder.call_function(_unsqueeze_dynamic, args=(x, axes))
 
 
 @register("Flatten")
@@ -243,36 +269,58 @@ def concat(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(torch.cat, args=(inputs,), kwargs={"dim": axis})
 
 
-@register("Split")
-def split(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Split tensor into chunks."""
+@register("Split", since_version=1)
+def split_v1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Split tensor into chunks for opset 1-12.
+
+    In opset < 13, split sizes is an optional attribute.
+    """
     x = builder.get_value(node.input[0])
     axis = get_attribute(node, "axis", 0)
-    num_outputs = get_attribute(node, "num_outputs")
 
-    # split sizes can be input (opset 13+) or attribute
+    split_attr = get_attribute(node, "split")
+    if split_attr is not None:
+        result = builder.call_function(torch.split, args=(x, list(split_attr), axis))
+    else:
+        # Default: split into equal parts based on number of outputs
+        result = builder.call_function(torch.chunk, args=(x, len(node.output), axis))
+
+    # Handle multiple outputs
+    for i, output_name in enumerate(node.output):
+        if output_name:
+            idx_node = builder.call_function(lambda t, idx: t[idx], args=(result, i))
+            builder.env[output_name] = idx_node
+
+    return result
+
+
+@register("Split", since_version=13)
+def split_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Split tensor into chunks for opset 13+.
+
+    In opset 13+, split sizes is an optional input.
+    In opset 18+, num_outputs attribute was added.
+    """
+    x = builder.get_value(node.input[0])
+    axis = get_attribute(node, "axis", 0)
+    num_outputs = get_attribute(node, "num_outputs")  # Added in opset 18
+
+    # split sizes is an optional input in opset 13+
     if len(node.input) > 1 and node.input[1]:
         split_sizes = builder.get_value(node.input[1])
 
         def _split_with_sizes(t, sizes, dim):
-            # Convert tensor to list of ints if needed
             if hasattr(sizes, "tolist"):
                 sizes = sizes.tolist()
             return torch.split(t, sizes, dim)
 
         result = builder.call_function(_split_with_sizes, args=(x, split_sizes, axis))
     elif num_outputs is not None:
-        # Split into equal parts
+        # Split into equal parts using num_outputs (opset 18+)
         result = builder.call_function(torch.chunk, args=(x, num_outputs, axis))
     else:
-        split_attr = get_attribute(node, "split")
-        if split_attr is not None:
-            result = builder.call_function(torch.split, args=(x, split_attr, axis))
-        else:
-            # Default: split into single-element chunks
-            result = builder.call_function(
-                torch.chunk, args=(x, len(node.output), axis)
-            )
+        # Default: split into equal parts based on number of outputs
+        result = builder.call_function(torch.chunk, args=(x, len(node.output), axis))
 
     # Handle multiple outputs
     for i, output_name in enumerate(node.output):
@@ -475,7 +523,6 @@ def pad(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     # PyTorch: [xn_begin, xn_end, ..., x1_begin, x1_end]
     def _convert_pads(x, pads, mode, constant_value):
         import torch
-        import torch.nn.functional as F
 
         if isinstance(pads, torch.Tensor):
             pads = pads.tolist()

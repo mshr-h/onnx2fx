@@ -1,17 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for quantization operators."""
 
-import unittest
-
 import numpy as np
-import onnx
+import pytest
 from onnx import helper, TensorProto, numpy_helper
 import torch
+from onnxscript import opset13, opset14, opset15, opset16, opset17
+from onnxscript import opset18, opset19, opset20, opset21, opset22, opset23
 
 from onnx2fx import convert
+from conftest import OPSET_MODULES
 
 
-class TestQuantizeLinear(unittest.TestCase):
+class TestQuantizeLinear:
     """Test QuantizeLinear operator."""
 
     def test_quantize_with_zero_point(self):
@@ -69,7 +70,7 @@ class TestQuantizeLinear(unittest.TestCase):
         torch.testing.assert_close(result, expected)
 
 
-class TestDequantizeLinear(unittest.TestCase):
+class TestDequantizeLinear:
     """Test DequantizeLinear operator."""
 
     def test_dequantize_with_zero_point(self):
@@ -124,7 +125,7 @@ class TestDequantizeLinear(unittest.TestCase):
         torch.testing.assert_close(result, expected)
 
 
-class TestDynamicQuantizeLinear(unittest.TestCase):
+class TestDynamicQuantizeLinear:
     """Test DynamicQuantizeLinear operator."""
 
     def test_dynamic_quantize(self):
@@ -151,12 +152,12 @@ class TestDynamicQuantizeLinear(unittest.TestCase):
         result = fx_module(test_input)
 
         # Result is a tuple (y, scale, zero_point)
-        self.assertEqual(len(result), 3)
-        self.assertEqual(result[0].dtype, torch.uint8)
-        self.assertEqual(result[0].shape, (2, 3))
+        assert len(result) == 3
+        assert result[0].dtype == torch.uint8
+        assert result[0].shape == (2, 3)
 
 
-class TestQLinearMatMul(unittest.TestCase):
+class TestQLinearMatMul:
     """Test QLinearMatMul operator."""
 
     def test_qlinear_matmul(self):
@@ -189,11 +190,11 @@ class TestQLinearMatMul(unittest.TestCase):
         b_input = torch.randint(0, 256, (3, 4), dtype=torch.uint8)
         result = fx_module(a_input, b_input)
 
-        self.assertEqual(result.dtype, torch.uint8)
-        self.assertEqual(result.shape, (2, 4))
+        assert result.dtype == torch.uint8
+        assert result.shape == (2, 4)
 
 
-class TestQLinearConv(unittest.TestCase):
+class TestQLinearConv:
     """Test QLinearConv operator."""
 
     def test_qlinear_conv2d(self):
@@ -228,11 +229,11 @@ class TestQLinearConv(unittest.TestCase):
         w_input = torch.randint(0, 256, (16, 3, 3, 3), dtype=torch.uint8)
         result = fx_module(x_input, w_input)
 
-        self.assertEqual(result.dtype, torch.uint8)
-        self.assertEqual(result.shape, (1, 16, 6, 6))
+        assert result.dtype == torch.uint8
+        assert result.shape == (1, 16, 6, 6)
 
 
-class TestQLinearActivations(unittest.TestCase):
+class TestQLinearActivations:
     """Test quantized activation operators."""
 
     def test_qlinear_sigmoid(self):
@@ -261,8 +262,8 @@ class TestQLinearActivations(unittest.TestCase):
         x_input = torch.randint(0, 256, (2, 3), dtype=torch.uint8)
         result = fx_module(x_input)
 
-        self.assertEqual(result.dtype, torch.uint8)
-        self.assertEqual(result.shape, (2, 3))
+        assert result.dtype == torch.uint8
+        assert result.shape == (2, 3)
 
     def test_qlinear_leaky_relu(self):
         """Test quantized leaky relu."""
@@ -291,11 +292,11 @@ class TestQLinearActivations(unittest.TestCase):
         x_input = torch.randint(0, 256, (2, 3), dtype=torch.uint8)
         result = fx_module(x_input)
 
-        self.assertEqual(result.dtype, torch.uint8)
-        self.assertEqual(result.shape, (2, 3))
+        assert result.dtype == torch.uint8
+        assert result.shape == (2, 3)
 
 
-class TestQLinearGlobalAveragePool(unittest.TestCase):
+class TestQLinearGlobalAveragePool:
     """Test QLinearGlobalAveragePool operator."""
 
     def test_qlinear_global_avg_pool(self):
@@ -324,11 +325,11 @@ class TestQLinearGlobalAveragePool(unittest.TestCase):
         x_input = torch.randint(0, 256, (1, 64, 7, 7), dtype=torch.uint8)
         result = fx_module(x_input)
 
-        self.assertEqual(result.dtype, torch.uint8)
-        self.assertEqual(result.shape, (1, 64, 1, 1))
+        assert result.dtype == torch.uint8
+        assert result.shape == (1, 64, 1, 1)
 
 
-class TestMatMulInteger(unittest.TestCase):
+class TestMatMulInteger:
     """Test MatMulInteger operator."""
 
     def test_matmul_integer(self):
@@ -362,7 +363,7 @@ class TestMatMulInteger(unittest.TestCase):
         torch.testing.assert_close(result, expected)
 
 
-class TestConvInteger(unittest.TestCase):
+class TestConvInteger:
     """Test ConvInteger operator."""
 
     def test_conv_integer(self):
@@ -391,11 +392,11 @@ class TestConvInteger(unittest.TestCase):
         w_input = torch.randint(0, 256, (16, 3, 3, 3), dtype=torch.uint8)
         result = fx_module(x_input, w_input)
 
-        self.assertEqual(result.dtype, torch.int32)
-        self.assertEqual(result.shape, (1, 16, 6, 6))
+        assert result.dtype == torch.int32
+        assert result.shape == (1, 16, 6, 6)
 
 
-class TestQuantizedPipeline(unittest.TestCase):
+class TestQuantizedPipeline:
     """Test quantized model pipelines."""
 
     def test_quantize_dequantize_roundtrip(self):
@@ -503,5 +504,76 @@ class TestQuantizedPipeline(unittest.TestCase):
         torch.testing.assert_close(result, expected, rtol=0.2, atol=0.5)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestQuantizationMultiOpset:
+    """Test quantization operators across multiple opset versions."""
+
+    @pytest.mark.parametrize(
+        "opset",
+        [
+            opset13,
+            opset14,
+            opset15,
+            opset16,
+            opset17,
+            opset18,
+            opset19,
+            opset20,
+            opset21,
+            opset22,
+            opset23,
+        ],
+        ids=lambda x: f"opset{x.version}",
+    )
+    def test_quantize_linear_all_opsets(self, opset):
+        """QuantizeLinear should work across opsets (13+, with int output)."""
+        x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [2, 3])
+        y = helper.make_tensor_value_info("y", TensorProto.INT8, [2, 3])
+
+        scale = numpy_helper.from_array(np.array(0.1, dtype=np.float32), "scale")
+
+        node = helper.make_node(
+            "QuantizeLinear",
+            inputs=["x", "scale"],
+            outputs=["y"],
+        )
+
+        graph = helper.make_graph([node], "test", [x], [y], [scale])
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_module = convert(model)
+
+        test_input = torch.randn(2, 3)
+        result = fx_module(test_input)
+
+        # Manual calculation (int8)
+        expected = torch.clamp(torch.round(test_input / 0.1), -128, 127).to(torch.int8)
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_dequantize_linear_all_opsets(self, opset):
+        """DequantizeLinear should work across all opsets (10+)."""
+        x = helper.make_tensor_value_info("x", TensorProto.INT8, [2, 3])
+        y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [2, 3])
+
+        scale = numpy_helper.from_array(np.array(0.1, dtype=np.float32), "scale")
+
+        node = helper.make_node(
+            "DequantizeLinear",
+            inputs=["x", "scale"],
+            outputs=["y"],
+        )
+
+        graph = helper.make_graph([node], "test", [x], [y], [scale])
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_module = convert(model)
+
+        test_input = torch.randint(-128, 127, (2, 3), dtype=torch.int8)
+        result = fx_module(test_input)
+
+        expected = test_input.float() * 0.1
+        torch.testing.assert_close(result, expected)

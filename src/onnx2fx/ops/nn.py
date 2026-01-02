@@ -443,7 +443,7 @@ def batch_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.
     var = builder.get_value(node.input[4])
 
     epsilon = get_attribute(node, "epsilon", 1e-5)
-    momentum = get_attribute(node, "momentum", 0.9)
+    _momentum = get_attribute(node, "momentum", 0.9)
     training_mode = get_attribute(node, "training_mode", 0)
 
     def _batch_norm(x, scale, bias, mean, var, epsilon, training_mode):

@@ -67,11 +67,11 @@ def range_(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     def _range(start, limit, delta):
         # Extract scalar values
-        s = start.item() if isinstance(start, torch.Tensor) else start
-        l = limit.item() if isinstance(limit, torch.Tensor) else limit
-        d = delta.item() if isinstance(delta, torch.Tensor) else delta
+        st = start.item() if isinstance(start, torch.Tensor) else start
+        lim = limit.item() if isinstance(limit, torch.Tensor) else limit
+        dlt = delta.item() if isinstance(delta, torch.Tensor) else delta
         dtype = start.dtype if isinstance(start, torch.Tensor) else torch.float32
-        return torch.arange(s, l, d, dtype=dtype)
+        return torch.arange(st, lim, dlt, dtype=dtype)
 
     return builder.call_function(_range, args=(start, limit, delta))
 

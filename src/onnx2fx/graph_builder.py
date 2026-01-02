@@ -5,7 +5,7 @@ import torch
 import onnx
 from onnx import numpy_helper
 
-from .op_registry import OP_REGISTRY, get_handler
+from .op_registry import get_handler
 from .utils.dtype import DTYPE_MAP
 
 # Import ops module to register all operators
@@ -25,6 +25,48 @@ class GraphBuilder:
         self.input_names: List[str] = []
         self.env: Dict[str, torch.fx.Node] = {}
         self._constants: Dict[str, torch.Tensor] = {}
+        self._opset_versions: Dict[str, int] = self._extract_opset_versions()
+
+    def _extract_opset_versions(self) -> Dict[str, int]:
+        """Extract opset versions for all domains from the model.
+
+        Returns
+        -------
+        Dict[str, int]
+            Dictionary mapping domain names to their opset versions.
+            Empty string "" represents the default ONNX domain.
+        """
+        versions: Dict[str, int] = {}
+        for opset in self.model.opset_import:
+            domain = opset.domain if opset.domain else ""
+            versions[domain] = opset.version
+        return versions
+
+    @property
+    def opset_version(self) -> int:
+        """Get the opset version for the default ONNX domain.
+
+        Returns
+        -------
+        int
+            The opset version number. Defaults to 1 if not specified.
+        """
+        return self._opset_versions.get("", 1)
+
+    def get_opset_version(self, domain: str = "") -> int:
+        """Get the opset version for a specific domain.
+
+        Parameters
+        ----------
+        domain : str, optional
+            The ONNX domain. Default is "" (standard ONNX domain).
+
+        Returns
+        -------
+        int
+            The opset version number. Defaults to 1 if not specified.
+        """
+        return self._opset_versions.get(domain, 1)
 
     def build(self) -> torch.fx.GraphModule:
         self._load_initializers()
@@ -163,9 +205,10 @@ class GraphBuilder:
 
     def _convert_nodes(self) -> None:
         for node in self.model.graph.node:
-            # Get handler with domain support
+            # Get handler with domain and opset version support
             domain = node.domain if node.domain else ""
-            handler = get_handler(node.op_type, domain)
+            opset = self.get_opset_version(domain)
+            handler = get_handler(node.op_type, domain, opset)
             if handler is None:
                 domain_str = f" (domain: {domain})" if domain else ""
                 raise NotImplementedError(

@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for tensor manipulation operators."""
 
+import pytest
 import torch
 import onnx
 from onnxscript import FLOAT, INT64, script
-from onnxscript import opset22 as op
+from onnxscript import opset23 as op
 
-from onnx2fx.converter import convert
+from onnx2fx import convert
+from conftest import OPSET_MODULES
 
 
 class TestTensorOps:
@@ -44,7 +46,7 @@ class TestTensorOps:
         fx_model = convert(self.transpose_script.to_model_proto())
         with torch.inference_mode():
             result = fx_model(x)
-        assert torch.allclose(result, x.T)
+        torch.testing.assert_close(result, x.T)
 
     def test_concat(self):
         x = torch.randn(2, 4)
@@ -52,7 +54,7 @@ class TestTensorOps:
         fx_model = convert(self.concat_script.to_model_proto())
         with torch.inference_mode():
             result = fx_model(x, y)
-        assert torch.allclose(result, torch.cat([x, y], dim=0))
+        torch.testing.assert_close(result, torch.cat([x, y], dim=0))
 
     def test_flatten(self):
         x = torch.randn(2, 3, 4)
@@ -133,25 +135,170 @@ class TestReductionOps:
         fx_model = convert(self.reduce_sum_script.to_model_proto())
         with torch.inference_mode():
             result = fx_model(x)
-        assert torch.allclose(result, x.sum())
+        torch.testing.assert_close(result, x.sum())
 
     def test_reduce_mean(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.reduce_mean_script.to_model_proto())
         with torch.inference_mode():
             result = fx_model(x)
-        assert torch.allclose(result, x.mean())
+        torch.testing.assert_close(result, x.mean())
 
     def test_reduce_max(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.reduce_max_script.to_model_proto())
         with torch.inference_mode():
             result = fx_model(x)
-        assert torch.allclose(result, x.max())
+        torch.testing.assert_close(result, x.max())
 
     def test_reduce_min(self):
         x = torch.randn(2, 4)
         fx_model = convert(self.reduce_min_script.to_model_proto())
         with torch.inference_mode():
             result = fx_model(x)
-        assert torch.allclose(result, x.min())
+        torch.testing.assert_close(result, x.min())
+
+
+class TestTensorOpsMultiOpset:
+    """Test tensor manipulation operators across multiple opset versions."""
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_transpose_all_opsets(self, opset):
+        """Transpose should work identically across all opsets."""
+
+        @script(default_opset=opset)
+        def transpose_script(x: FLOAT) -> FLOAT:
+            return opset.Transpose(x, perm=[1, 0])
+
+        model = transpose_script.to_model_proto()
+        fx_model = convert(model)
+        x = torch.randn(2, 4)
+        result = fx_model(x)
+        expected = x.T
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_concat_all_opsets(self, opset):
+        """Concat should work identically across all opsets."""
+
+        @script(default_opset=opset)
+        def concat_script(x: FLOAT, y: FLOAT) -> FLOAT:
+            return opset.Concat(x, y, axis=0)
+
+        model = concat_script.to_model_proto()
+        fx_model = convert(model)
+        x = torch.randn(2, 4)
+        y = torch.randn(3, 4)
+        result = fx_model(x, y)
+        expected = torch.cat([x, y], dim=0)
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_flatten_all_opsets(self, opset):
+        """Flatten should work identically across all opsets."""
+
+        @script(default_opset=opset)
+        def flatten_script(x: FLOAT) -> FLOAT:
+            return opset.Flatten(x, axis=1)
+
+        model = flatten_script.to_model_proto()
+        fx_model = convert(model)
+        x = torch.randn(2, 3, 4)
+        result = fx_model(x)
+        assert result.shape == (2, 12)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_reshape_all_opsets(self, opset):
+        """Reshape should work identically across all opsets."""
+
+        @script(default_opset=opset)
+        def reshape_script(x: FLOAT, shape: INT64) -> FLOAT:
+            return opset.Reshape(x, shape)
+
+        model = reshape_script.to_model_proto()
+        fx_model = convert(model)
+        x = torch.randn(2, 3, 4)
+        shape = torch.tensor([2, 12], dtype=torch.int64)
+        result = fx_model(x, shape)
+        assert result.shape == (2, 12)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_expand_all_opsets(self, opset):
+        """Expand should work identically across all opsets."""
+
+        @script(default_opset=opset)
+        def expand_script(x: FLOAT, shape: INT64) -> FLOAT:
+            return opset.Expand(x, shape)
+
+        model = expand_script.to_model_proto()
+        fx_model = convert(model)
+        x = torch.randn(1, 4)
+        shape = torch.tensor([3, 4], dtype=torch.int64)
+        result = fx_model(x, shape)
+        assert result.shape == (3, 4)
+        expected = x.expand(3, 4)
+        torch.testing.assert_close(result, expected)
+
+
+class TestReductionOpsMultiOpset:
+    """Test reduction operators across multiple opset versions."""
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_reduce_sum_all_opsets(self, opset):
+        """ReduceSum should work across all opsets."""
+
+        @script(default_opset=opset)
+        def reduce_sum_script(x: FLOAT) -> FLOAT:
+            return opset.ReduceSum(x, keepdims=0)
+
+        model = reduce_sum_script.to_model_proto()
+        fx_model = convert(model)
+        x = torch.randn(2, 4)
+        result = fx_model(x)
+        expected = x.sum()
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_reduce_mean_all_opsets(self, opset):
+        """ReduceMean should work across all opsets."""
+
+        @script(default_opset=opset)
+        def reduce_mean_script(x: FLOAT) -> FLOAT:
+            return opset.ReduceMean(x, keepdims=0)
+
+        model = reduce_mean_script.to_model_proto()
+        fx_model = convert(model)
+        x = torch.randn(2, 4)
+        result = fx_model(x)
+        expected = x.mean()
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_reduce_max_all_opsets(self, opset):
+        """ReduceMax should work across all opsets."""
+
+        @script(default_opset=opset)
+        def reduce_max_script(x: FLOAT) -> FLOAT:
+            return opset.ReduceMax(x, keepdims=0)
+
+        model = reduce_max_script.to_model_proto()
+        fx_model = convert(model)
+        x = torch.randn(2, 4)
+        result = fx_model(x)
+        expected = x.max()
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_reduce_min_all_opsets(self, opset):
+        """ReduceMin should work across all opsets."""
+
+        @script(default_opset=opset)
+        def reduce_min_script(x: FLOAT) -> FLOAT:
+            return opset.ReduceMin(x, keepdims=0)
+
+        model = reduce_min_script.to_model_proto()
+        fx_model = convert(model)
+        x = torch.randn(2, 4)
+        result = fx_model(x)
+        expected = x.min()
+        torch.testing.assert_close(result, expected)
