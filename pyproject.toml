@@ -21,6 +21,7 @@ build-backend = "uv_build"
 dev = [
     "huggingface-hub>=0.33.3",
     "onnxruntime>=1.23.2",
+    "pre-commit>=4.5.1",
     "ruff>=0.14.4",
     "torchvision>=0.24.0",
     "pytest>=9.0.2",

@@ -129,6 +129,14 @@ fx_module(torch.randn(8, 100, 64))  # batch=8, seq=100
 uv run pytest -v
 ```
 
+## Development
+
+Install pre-commit hooks to automatically format code with ruff on commit:
+
+```bash
+uv run pre-commit install
+```
+
 ## Architecture
 
 ```
