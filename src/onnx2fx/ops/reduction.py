@@ -252,7 +252,9 @@ def argmax(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             return t.size(axis) - 1 - idx
         return torch.argmax(t, dim=axis, keepdim=keepdims)
 
-    return builder.call_function(_argmax, args=(x, axis, bool(keepdims), bool(select_last_index)))
+    return builder.call_function(
+        _argmax, args=(x, axis, bool(keepdims), bool(select_last_index))
+    )
 
 
 @register("ArgMin")
@@ -270,4 +272,6 @@ def argmin(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             return t.size(axis) - 1 - idx
         return torch.argmin(t, dim=axis, keepdim=keepdims)
 
-    return builder.call_function(_argmin, args=(x, axis, bool(keepdims), bool(select_last_index)))
+    return builder.call_function(
+        _argmin, args=(x, axis, bool(keepdims), bool(select_last_index))
+    )

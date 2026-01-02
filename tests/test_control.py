@@ -36,7 +36,9 @@ class TestCompressOp:
 
         fx_module = convert(model)
 
-        data = torch.tensor([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]])
+        data = torch.tensor(
+            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]
+        )
         condition = torch.tensor([True, False, True])
 
         result = fx_module(data, condition)
@@ -330,6 +332,7 @@ class TestMultiOutputOps:
 
     def test_split_multi_output(self):
         """Test Split operator with multiple outputs."""
+
         @onnxscript.script()
         def split_model(x: onnxscript.FLOAT[6, 4]) -> tuple:
             a, b, c = op.Split(x, num_outputs=3, axis=0)
@@ -357,7 +360,9 @@ class TestMultiOutputOps:
         x_input = helper.make_tensor_value_info("x", TensorProto.FLOAT, [3, 4])
         k_input = helper.make_tensor_value_info("k", TensorProto.INT64, [1])
         values_output = helper.make_tensor_value_info("values", TensorProto.FLOAT, None)
-        indices_output = helper.make_tensor_value_info("indices", TensorProto.INT64, None)
+        indices_output = helper.make_tensor_value_info(
+            "indices", TensorProto.INT64, None
+        )
 
         topk_node = helper.make_node(
             "TopK",
@@ -368,13 +373,18 @@ class TestMultiOutputOps:
         )
 
         graph = helper.make_graph(
-            [topk_node], "topk_test", [x_input, k_input], [values_output, indices_output]
+            [topk_node],
+            "topk_test",
+            [x_input, k_input],
+            [values_output, indices_output],
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
         fx_module = convert(model)
 
-        x = torch.tensor([[1.0, 4.0, 2.0, 3.0], [5.0, 2.0, 8.0, 1.0], [3.0, 6.0, 4.0, 7.0]])
+        x = torch.tensor(
+            [[1.0, 4.0, 2.0, 3.0], [5.0, 2.0, 8.0, 1.0], [3.0, 6.0, 4.0, 7.0]]
+        )
         k = torch.tensor([2], dtype=torch.int64)
 
         values, indices = fx_module(x, k)

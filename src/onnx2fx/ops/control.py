@@ -88,7 +88,9 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     # Get body input/output names
     body_inputs = [inp.name for inp in body.input]  # [i, cond, v_prev...]
-    body_outputs = [out.name for out in body.output]  # [cond_out, v_next..., scan_out...]
+    body_outputs = [
+        out.name for out in body.output
+    ]  # [cond_out, v_next..., scan_out...]
 
     # Get max_trip_count from initializers
     max_iters = 100  # default safety limit
@@ -160,6 +162,7 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             return inputs[0] / inputs[1]
         elif op_type == "Cast":
             from ..utils.dtype import onnx_dtype_to_torch
+
             to_dtype = attrs.get("to")
             torch_dtype = onnx_dtype_to_torch(to_dtype)
             return inputs[0].to(torch_dtype) if inputs[0] is not None else None
@@ -194,10 +197,16 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             data, indices = inputs[0], inputs[1]
             if isinstance(data, list):
                 # Sequence gather
-                idx = int(indices.item()) if isinstance(indices, torch.Tensor) else int(indices)
+                idx = (
+                    int(indices.item())
+                    if isinstance(indices, torch.Tensor)
+                    else int(indices)
+                )
                 return data[idx]
             if indices.ndim == 0:
-                return torch.index_select(data, axis, indices.unsqueeze(0)).squeeze(axis)
+                return torch.index_select(data, axis, indices.unsqueeze(0)).squeeze(
+                    axis
+                )
             return torch.index_select(data, axis, indices.flatten())
         elif op_type == "ConstantOfShape":
             shape = inputs[0]
@@ -247,10 +256,22 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             return torch.tensor(inputs[0].numel(), dtype=torch.int64)
         elif op_type == "Slice":
             data = inputs[0]
-            starts = inputs[1].tolist() if isinstance(inputs[1], torch.Tensor) else inputs[1]
-            ends = inputs[2].tolist() if isinstance(inputs[2], torch.Tensor) else inputs[2]
-            axes = inputs[3].tolist() if len(inputs) > 3 and inputs[3] is not None else list(range(len(starts)))
-            steps = inputs[4].tolist() if len(inputs) > 4 and inputs[4] is not None else [1] * len(starts)
+            starts = (
+                inputs[1].tolist() if isinstance(inputs[1], torch.Tensor) else inputs[1]
+            )
+            ends = (
+                inputs[2].tolist() if isinstance(inputs[2], torch.Tensor) else inputs[2]
+            )
+            axes = (
+                inputs[3].tolist()
+                if len(inputs) > 3 and inputs[3] is not None
+                else list(range(len(starts)))
+            )
+            steps = (
+                inputs[4].tolist()
+                if len(inputs) > 4 and inputs[4] is not None
+                else [1] * len(starts)
+            )
             slices = [slice(None)] * data.ndim
             for ax, start, end, step in zip(axes, starts, ends, steps):
                 slices[ax] = slice(start, end, step)
@@ -267,14 +288,22 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             tensor_to_insert = inputs[1]
             if len(inputs) > 2 and inputs[2] is not None:
                 # Insert at specific position
-                pos = int(inputs[2].item()) if isinstance(inputs[2], torch.Tensor) else int(inputs[2])
+                pos = (
+                    int(inputs[2].item())
+                    if isinstance(inputs[2], torch.Tensor)
+                    else int(inputs[2])
+                )
                 seq.insert(pos, tensor_to_insert)
             else:
                 seq.append(tensor_to_insert)
             return seq
         elif op_type == "SequenceAt":
             seq = inputs[0]
-            idx = int(inputs[1].item()) if isinstance(inputs[1], torch.Tensor) else int(inputs[1])
+            idx = (
+                int(inputs[1].item())
+                if isinstance(inputs[1], torch.Tensor)
+                else int(inputs[1])
+            )
             return seq[idx]
         elif op_type == "SequenceLength":
             return torch.tensor(len(inputs[0]), dtype=torch.int64)
@@ -312,7 +341,9 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
                     else:
                         for k, out_name in enumerate(bn.output):
                             if out_name:
-                                branch_env[out_name] = br[k] if isinstance(br, (tuple, list)) else br
+                                branch_env[out_name] = (
+                                    br[k] if isinstance(br, (tuple, list)) else br
+                                )
                 # Return outputs
                 outputs = [branch_env.get(out.name) for out in branch.output]
                 return outputs[0] if len(outputs) == 1 else tuple(outputs)
@@ -389,7 +420,9 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
                     val = torch.stack(val, dim=0)
                 else:
                     val = torch.tensor([])
-            output_name = f"loop_output_{node.name}_{j}".replace("/", "_").replace(".", "_")
+            output_name = f"loop_output_{node.name}_{j}".replace("/", "_").replace(
+                ".", "_"
+            )
             builder._constants[output_name] = val
             fx_node = builder.graph.get_attr(output_name)
             fx_node.meta["onnx_op_type"] = "Loop"
@@ -399,7 +432,9 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     for j, acc in enumerate(scan_accumulators):
         if acc:
             stacked = torch.stack(acc, dim=0)
-            output_name = f"loop_scan_{node.name}_{j}".replace("/", "_").replace(".", "_")
+            output_name = f"loop_scan_{node.name}_{j}".replace("/", "_").replace(
+                ".", "_"
+            )
             builder._constants[output_name] = stacked
             fx_node = builder.graph.get_attr(output_name)
             fx_node.meta["onnx_op_type"] = "Loop"
@@ -420,7 +455,9 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     # Get body input/output names
     body_inputs = [inp.name for inp in body.input]  # [i, cond, v_prev...]
-    body_outputs = [out.name for out in body.output]  # [cond_out, v_next..., scan_out...]
+    body_outputs = [
+        out.name for out in body.output
+    ]  # [cond_out, v_next..., scan_out...]
 
     # Number of loop-carried values (excluding i and cond)
     num_loop_vars = len(initial_values)
@@ -431,7 +468,10 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     max_iters = None
     if max_trip_count_node is not None:
         # Check if it's a constant in the graph
-        if hasattr(max_trip_count_node, 'target') and max_trip_count_node.op == 'get_attr':
+        if (
+            hasattr(max_trip_count_node, "target")
+            and max_trip_count_node.op == "get_attr"
+        ):
             const_name = max_trip_count_node.target
             if const_name in builder._constants:
                 max_iters = int(builder._constants[const_name].item())
@@ -486,6 +526,7 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             return inputs[0] / inputs[1]
         elif op_type == "Cast":
             from ..utils.dtype import onnx_dtype_to_torch
+
             to_dtype = attrs.get("to")
             torch_dtype = onnx_dtype_to_torch(to_dtype)
             return inputs[0].to(torch_dtype) if inputs[0] is not None else None
@@ -519,7 +560,9 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             axis = attrs.get("axis", 0)
             data, indices = inputs[0], inputs[1]
             if indices.ndim == 0:
-                return torch.index_select(data, axis, indices.unsqueeze(0)).squeeze(axis)
+                return torch.index_select(data, axis, indices.unsqueeze(0)).squeeze(
+                    axis
+                )
             return torch.index_select(data, axis, indices.flatten())
         elif op_type == "ConstantOfShape":
             shape = inputs[0]
@@ -569,10 +612,22 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             return torch.tensor(inputs[0].numel(), dtype=torch.int64)
         elif op_type == "Slice":
             data = inputs[0]
-            starts = inputs[1].tolist() if isinstance(inputs[1], torch.Tensor) else inputs[1]
-            ends = inputs[2].tolist() if isinstance(inputs[2], torch.Tensor) else inputs[2]
-            axes = inputs[3].tolist() if len(inputs) > 3 and inputs[3] is not None else list(range(len(starts)))
-            steps = inputs[4].tolist() if len(inputs) > 4 and inputs[4] is not None else [1] * len(starts)
+            starts = (
+                inputs[1].tolist() if isinstance(inputs[1], torch.Tensor) else inputs[1]
+            )
+            ends = (
+                inputs[2].tolist() if isinstance(inputs[2], torch.Tensor) else inputs[2]
+            )
+            axes = (
+                inputs[3].tolist()
+                if len(inputs) > 3 and inputs[3] is not None
+                else list(range(len(starts)))
+            )
+            steps = (
+                inputs[4].tolist()
+                if len(inputs) > 4 and inputs[4] is not None
+                else [1] * len(starts)
+            )
             slices = [slice(None)] * data.ndim
             for ax, start, end, step in zip(axes, starts, ends, steps):
                 slices[ax] = slice(start, end, step)
@@ -585,7 +640,11 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             return seq
         elif op_type == "SequenceAt":
             seq = inputs[0]
-            idx = int(inputs[1].item()) if isinstance(inputs[1], torch.Tensor) else int(inputs[1])
+            idx = (
+                int(inputs[1].item())
+                if isinstance(inputs[1], torch.Tensor)
+                else int(inputs[1])
+            )
             return seq[idx]
         elif op_type == "SequenceLength":
             return torch.tensor(len(inputs[0]), dtype=torch.int64)
@@ -604,12 +663,12 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     # This works because Loop in ONNX models typically uses constant iteration counts
     cond = True
     loop_vars = []
-    
+
     # Get initial values as tensors
     for v in initial_values:
         if v is None:
             loop_vars.append(None)
-        elif hasattr(v, 'target') and v.op == 'get_attr':
+        elif hasattr(v, "target") and v.op == "get_attr":
             # It's a constant reference
             const_name = v.target
             if const_name in builder._constants:
@@ -660,7 +719,11 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
                 else:
                     for k, out_name in enumerate(n.output):
                         if out_name:
-                            env[out_name] = result[k] if isinstance(result, (tuple, list)) else result
+                            env[out_name] = (
+                                result[k]
+                                if isinstance(result, (tuple, list))
+                                else result
+                            )
             except Exception as e:
                 # If execution fails, break out of loop
                 break
@@ -767,7 +830,9 @@ def optional_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 
 @register("OptionalHasElement")
-def optional_has_element(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+def optional_has_element(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
     """Check if optional has a value."""
     opt = builder.get_value(node.input[0])
 
@@ -778,7 +843,9 @@ def optional_has_element(builder: "GraphBuilder", node: onnx.NodeProto) -> torch
 
 
 @register("OptionalGetElement")
-def optional_get_element(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+def optional_get_element(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
     """Get the value from an optional."""
     opt = builder.get_value(node.input[0])
 

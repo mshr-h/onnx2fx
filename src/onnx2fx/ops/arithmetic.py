@@ -297,4 +297,6 @@ def clip(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         if max_attr is not None:
             max_val = max_attr
 
-    return builder.call_function(torch.clamp, args=(x,), kwargs={"min": min_val, "max": max_val})
+    return builder.call_function(
+        torch.clamp, args=(x,), kwargs={"min": min_val, "max": max_val}
+    )

@@ -154,6 +154,7 @@ class TestCustomOpRegistration(unittest.TestCase):
         @register_custom_op("Relu")
         def custom_relu(builder, node):
             x = builder.get_value(node.input[0])
+
             # Custom: apply relu then scale by 2
             def scaled_relu(t):
                 return torch.relu(t) * 2
@@ -171,6 +172,7 @@ class TestCustomOpRegistration(unittest.TestCase):
         finally:
             # Restore original Relu (re-import ops to reset)
             from onnx2fx.ops import activation
+
             # Force re-registration by calling the decorator again
             from onnx2fx.op_registry import register
 
@@ -225,7 +227,9 @@ class TestMultiInputCustomOp(unittest.TestCase):
 
         try:
             # Create model with attribute
-            inputs = [helper.make_tensor_value_info("input_0", TensorProto.FLOAT, [2, 3])]
+            inputs = [
+                helper.make_tensor_value_info("input_0", TensorProto.FLOAT, [2, 3])
+            ]
             output = helper.make_tensor_value_info("output", TensorProto.FLOAT, [2, 3])
 
             node = helper.make_node(
@@ -236,7 +240,9 @@ class TestMultiInputCustomOp(unittest.TestCase):
             )
 
             graph = helper.make_graph([node], "test_graph", inputs, [output])
-            model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
+            model = helper.make_model(
+                graph, opset_imports=[helper.make_opsetid("", 17)]
+            )
 
             fx_module = convert(model)
 
@@ -356,7 +362,9 @@ class TestMicrosoftDomainOps(unittest.TestCase):
             )
 
             graph = helper.make_graph([node], "test_graph", inputs, [output])
-            model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
+            model = helper.make_model(
+                graph, opset_imports=[helper.make_opsetid("", 17)]
+            )
             model.opset_import.append(helper.make_opsetid("com.microsoft", 1))
 
             fx_module = convert(model)
@@ -393,7 +401,9 @@ class TestCustomOpIntegration(unittest.TestCase):
             ]
 
             graph = helper.make_graph(nodes, "test_graph", inputs, [output])
-            model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
+            model = helper.make_model(
+                graph, opset_imports=[helper.make_opsetid("", 17)]
+            )
 
             fx_module = convert(model)
 

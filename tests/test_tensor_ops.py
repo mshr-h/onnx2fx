@@ -27,16 +27,16 @@ class TestTensorOps:
     @script()
     def squeeze_script(x: FLOAT) -> FLOAT:
         # Create constant for axes
-        axes = op.Constant(value=onnx.numpy_helper.from_array(
-            torch.tensor([1]).numpy(), name="axes"
-        ))
+        axes = op.Constant(
+            value=onnx.numpy_helper.from_array(torch.tensor([1]).numpy(), name="axes")
+        )
         return op.Squeeze(x, axes)
 
     @script()
     def unsqueeze_script(x: FLOAT) -> FLOAT:
-        axes = op.Constant(value=onnx.numpy_helper.from_array(
-            torch.tensor([0]).numpy(), name="axes"
-        ))
+        axes = op.Constant(
+            value=onnx.numpy_helper.from_array(torch.tensor([0]).numpy(), name="axes")
+        )
         return op.Unsqueeze(x, axes)
 
     def test_transpose(self):
@@ -95,6 +95,7 @@ class TestCastOps:
 
     def test_cast_like_float_to_float(self):
         """Test CastLike between float types."""
+
         @script()
         def cast_like_float(x: FLOAT, target: FLOAT) -> FLOAT:
             return op.CastLike(x, target)

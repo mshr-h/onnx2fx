@@ -72,7 +72,9 @@ def _get_conv_params(node: onnx.NodeProto) -> dict:
     }
 
 
-def _convert_pads(pads: Optional[List[int]], auto_pad: str, kernel_shape: List[int]) -> Tuple:
+def _convert_pads(
+    pads: Optional[List[int]], auto_pad: str, kernel_shape: List[int]
+) -> Tuple:
     """Convert ONNX padding format to PyTorch format."""
     if auto_pad == "SAME_UPPER" or auto_pad == "SAME_LOWER":
         # PyTorch doesn't support SAME padding directly, need to compute
@@ -135,7 +137,13 @@ def conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             output_shape = [(s + st - 1) // st for s, st in zip(input_shape, strides)]
             pad_total = [
                 max(0, (o - 1) * st + (k - 1) * d + 1 - i)
-                for i, o, k, st, d in zip(input_shape, output_shape, kernel_shape or weight.shape[2:], strides, dilations)
+                for i, o, k, st, d in zip(
+                    input_shape,
+                    output_shape,
+                    kernel_shape or weight.shape[2:],
+                    strides,
+                    dilations,
+                )
             ]
             if auto_pad == "SAME_UPPER":
                 pad_list = []
@@ -152,19 +160,41 @@ def conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         dilations_tuple = tuple(dilations) if len(dilations) > 1 else dilations[0]
 
         if ndim == 1:
-            return F.conv1d(x, weight, bias, stride=strides_tuple, padding=padding,
-                           dilation=dilations_tuple, groups=group)
+            return F.conv1d(
+                x,
+                weight,
+                bias,
+                stride=strides_tuple,
+                padding=padding,
+                dilation=dilations_tuple,
+                groups=group,
+            )
         elif ndim == 2:
-            return F.conv2d(x, weight, bias, stride=strides_tuple, padding=padding,
-                           dilation=dilations_tuple, groups=group)
+            return F.conv2d(
+                x,
+                weight,
+                bias,
+                stride=strides_tuple,
+                padding=padding,
+                dilation=dilations_tuple,
+                groups=group,
+            )
         elif ndim == 3:
-            return F.conv3d(x, weight, bias, stride=strides_tuple, padding=padding,
-                           dilation=dilations_tuple, groups=group)
+            return F.conv3d(
+                x,
+                weight,
+                bias,
+                stride=strides_tuple,
+                padding=padding,
+                dilation=dilations_tuple,
+                groups=group,
+            )
         else:
             raise NotImplementedError(f"Conv{ndim}D not supported")
 
     return builder.call_function(
-        _conv, args=(x, weight, bias, strides, dilations, group, pads, auto_pad, kernel_shape)
+        _conv,
+        args=(x, weight, bias, strides, dilations, group, pads, auto_pad, kernel_shape),
     )
 
 
@@ -183,7 +213,9 @@ def conv_transpose(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
     pads = get_attribute(node, "pads")
     output_padding = get_attribute(node, "output_padding") or [0]
 
-    def _conv_transpose(x, weight, bias, strides, dilations, group, pads, output_padding):
+    def _conv_transpose(
+        x, weight, bias, strides, dilations, group, pads, output_padding
+    ):
         ndim = len(weight.shape) - 2
 
         padding = 0
@@ -193,22 +225,49 @@ def conv_transpose(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
 
         strides_tuple = tuple(strides) if len(strides) > 1 else strides[0]
         dilations_tuple = tuple(dilations) if len(dilations) > 1 else dilations[0]
-        output_padding_tuple = tuple(output_padding) if len(output_padding) > 1 else output_padding[0]
+        output_padding_tuple = (
+            tuple(output_padding) if len(output_padding) > 1 else output_padding[0]
+        )
 
         if ndim == 1:
-            return F.conv_transpose1d(x, weight, bias, stride=strides_tuple, padding=padding,
-                                      output_padding=output_padding_tuple, groups=group, dilation=dilations_tuple)
+            return F.conv_transpose1d(
+                x,
+                weight,
+                bias,
+                stride=strides_tuple,
+                padding=padding,
+                output_padding=output_padding_tuple,
+                groups=group,
+                dilation=dilations_tuple,
+            )
         elif ndim == 2:
-            return F.conv_transpose2d(x, weight, bias, stride=strides_tuple, padding=padding,
-                                      output_padding=output_padding_tuple, groups=group, dilation=dilations_tuple)
+            return F.conv_transpose2d(
+                x,
+                weight,
+                bias,
+                stride=strides_tuple,
+                padding=padding,
+                output_padding=output_padding_tuple,
+                groups=group,
+                dilation=dilations_tuple,
+            )
         elif ndim == 3:
-            return F.conv_transpose3d(x, weight, bias, stride=strides_tuple, padding=padding,
-                                      output_padding=output_padding_tuple, groups=group, dilation=dilations_tuple)
+            return F.conv_transpose3d(
+                x,
+                weight,
+                bias,
+                stride=strides_tuple,
+                padding=padding,
+                output_padding=output_padding_tuple,
+                groups=group,
+                dilation=dilations_tuple,
+            )
         else:
             raise NotImplementedError(f"ConvTranspose{ndim}D not supported")
 
     return builder.call_function(
-        _conv_transpose, args=(x, weight, bias, strides, dilations, group, pads, output_padding)
+        _conv_transpose,
+        args=(x, weight, bias, strides, dilations, group, pads, output_padding),
     )
 
 
@@ -242,7 +301,7 @@ def max_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
                 pad_list = []
                 for i in range(n - 1, -1, -1):
                     pad_list.extend([pads[i], pads[i + n]])
-                x = F.pad(x, pad_list, value=float('-inf'))
+                x = F.pad(x, pad_list, value=float("-inf"))
                 padding = 0
 
         kernel = tuple(kernel_shape)
@@ -250,14 +309,32 @@ def max_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         dilation = tuple(dilations)
 
         if ndim == 1:
-            return F.max_pool1d(x, kernel[0], stride=stride[0], padding=padding,
-                               dilation=dilation[0], ceil_mode=bool(ceil_mode))
+            return F.max_pool1d(
+                x,
+                kernel[0],
+                stride=stride[0],
+                padding=padding,
+                dilation=dilation[0],
+                ceil_mode=bool(ceil_mode),
+            )
         elif ndim == 2:
-            return F.max_pool2d(x, kernel, stride=stride, padding=padding,
-                               dilation=dilation, ceil_mode=bool(ceil_mode))
+            return F.max_pool2d(
+                x,
+                kernel,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+                ceil_mode=bool(ceil_mode),
+            )
         elif ndim == 3:
-            return F.max_pool3d(x, kernel, stride=stride, padding=padding,
-                               dilation=dilation, ceil_mode=bool(ceil_mode))
+            return F.max_pool3d(
+                x,
+                kernel,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+                ceil_mode=bool(ceil_mode),
+            )
         else:
             raise NotImplementedError(f"MaxPool{ndim}D not supported")
 
@@ -289,14 +366,32 @@ def average_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
         stride = tuple(strides)
 
         if ndim == 1:
-            return F.avg_pool1d(x, kernel[0], stride=stride[0], padding=padding,
-                               ceil_mode=bool(ceil_mode), count_include_pad=bool(count_include_pad))
+            return F.avg_pool1d(
+                x,
+                kernel[0],
+                stride=stride[0],
+                padding=padding,
+                ceil_mode=bool(ceil_mode),
+                count_include_pad=bool(count_include_pad),
+            )
         elif ndim == 2:
-            return F.avg_pool2d(x, kernel, stride=stride, padding=padding,
-                               ceil_mode=bool(ceil_mode), count_include_pad=bool(count_include_pad))
+            return F.avg_pool2d(
+                x,
+                kernel,
+                stride=stride,
+                padding=padding,
+                ceil_mode=bool(ceil_mode),
+                count_include_pad=bool(count_include_pad),
+            )
         elif ndim == 3:
-            return F.avg_pool3d(x, kernel, stride=stride, padding=padding,
-                               ceil_mode=bool(ceil_mode), count_include_pad=bool(count_include_pad))
+            return F.avg_pool3d(
+                x,
+                kernel,
+                stride=stride,
+                padding=padding,
+                ceil_mode=bool(ceil_mode),
+                count_include_pad=bool(count_include_pad),
+            )
         else:
             raise NotImplementedError(f"AveragePool{ndim}D not supported")
 
@@ -353,8 +448,13 @@ def batch_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.
 
     def _batch_norm(x, scale, bias, mean, var, epsilon, training_mode):
         return F.batch_norm(
-            x, mean, var, weight=scale, bias=bias,
-            training=bool(training_mode), eps=epsilon
+            x,
+            mean,
+            var,
+            weight=scale,
+            bias=bias,
+            training=bool(training_mode),
+            eps=epsilon,
         )
 
     return builder.call_function(
@@ -386,7 +486,9 @@ def layer_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.
 
 
 @register("InstanceNormalization")
-def instance_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+def instance_normalization(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
     """Instance normalization."""
     x = builder.get_value(node.input[0])
     scale = builder.get_value(node.input[1])
@@ -413,7 +515,9 @@ def group_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.
     def _group_norm(x, scale, bias, num_groups, epsilon):
         return F.group_norm(x, num_groups, weight=scale, bias=bias, eps=epsilon)
 
-    return builder.call_function(_group_norm, args=(x, scale, bias, num_groups, epsilon))
+    return builder.call_function(
+        _group_norm, args=(x, scale, bias, num_groups, epsilon)
+    )
 
 
 @register("LRN")
@@ -427,7 +531,9 @@ def lrn(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     size = get_attribute(node, "size")
 
     return builder.call_function(
-        F.local_response_norm, args=(x, size), kwargs={"alpha": alpha, "beta": beta, "k": bias}
+        F.local_response_norm,
+        args=(x, size),
+        kwargs={"alpha": alpha, "beta": beta, "k": bias},
     )
 
 

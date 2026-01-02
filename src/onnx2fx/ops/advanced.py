@@ -48,7 +48,9 @@ def matmul_integer(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
             b_adj = b_adj - b_zp.to(torch.int32)
         return torch.matmul(a_adj, b_adj)
 
-    return builder.call_function(_matmul_integer, args=(a, b, a_zero_point, b_zero_point))
+    return builder.call_function(
+        _matmul_integer, args=(a, b, a_zero_point, b_zero_point)
+    )
 
 
 # =============================================================================
@@ -161,9 +163,16 @@ def unique(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     def _unique(x, axis, sorted_):
         if axis is not None:
-            return torch.unique(x, sorted=bool(sorted_), return_inverse=True,
-                               return_counts=True, dim=axis)
-        return torch.unique(x, sorted=bool(sorted_), return_inverse=True, return_counts=True)
+            return torch.unique(
+                x,
+                sorted=bool(sorted_),
+                return_inverse=True,
+                return_counts=True,
+                dim=axis,
+            )
+        return torch.unique(
+            x, sorted=bool(sorted_), return_inverse=True, return_counts=True
+        )
 
     return builder.call_function(_unique, args=(x, axis, sorted_))
 
@@ -176,7 +185,7 @@ def nms(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     max_output = None
     iou_threshold = 0.0
-    score_threshold = float('-inf')
+    score_threshold = float("-inf")
 
     if len(node.input) > 2 and node.input[2]:
         max_output = builder.get_value(node.input[2])
@@ -187,15 +196,29 @@ def nms(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     center_point_box = get_attribute(node, "center_point_box", 0)
 
-    def _nms(boxes, scores, max_output, iou_threshold, score_threshold, center_point_box):
+    def _nms(
+        boxes, scores, max_output, iou_threshold, score_threshold, center_point_box
+    ):
         from torchvision.ops import nms as tv_nms
 
         batch_size = boxes.shape[0]
         num_classes = scores.shape[1]
 
-        iou_th = iou_threshold.item() if isinstance(iou_threshold, torch.Tensor) else iou_threshold
-        score_th = score_threshold.item() if isinstance(score_threshold, torch.Tensor) else score_threshold
-        max_out = max_output.item() if isinstance(max_output, torch.Tensor) and max_output is not None else max_output
+        iou_th = (
+            iou_threshold.item()
+            if isinstance(iou_threshold, torch.Tensor)
+            else iou_threshold
+        )
+        score_th = (
+            score_threshold.item()
+            if isinstance(score_threshold, torch.Tensor)
+            else score_threshold
+        )
+        max_out = (
+            max_output.item()
+            if isinstance(max_output, torch.Tensor) and max_output is not None
+            else max_output
+        )
 
         results = []
         for batch_idx in range(batch_size):
@@ -203,10 +226,15 @@ def nms(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
             # Convert center format to corner format if needed
             if center_point_box:
-                cx, cy, w, h = batch_boxes[:, 0], batch_boxes[:, 1], batch_boxes[:, 2], batch_boxes[:, 3]
-                batch_boxes = torch.stack([
-                    cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
-                ], dim=1)
+                cx, cy, w, h = (
+                    batch_boxes[:, 0],
+                    batch_boxes[:, 1],
+                    batch_boxes[:, 2],
+                    batch_boxes[:, 3],
+                )
+                batch_boxes = torch.stack(
+                    [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], dim=1
+                )
 
             for class_idx in range(num_classes):
                 class_scores = scores[batch_idx, class_idx]  # [num_boxes]
@@ -223,7 +251,7 @@ def nms(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
                 keep = tv_nms(filtered_boxes, filtered_scores, iou_th)
 
                 if max_out is not None:
-                    keep = keep[:int(max_out)]
+                    keep = keep[: int(max_out)]
 
                 # Get original indices
                 original_indices = torch.where(mask)[0][keep]
@@ -236,7 +264,15 @@ def nms(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         return torch.tensor(results, dtype=torch.int64)
 
     return builder.call_function(
-        _nms, args=(boxes, scores, max_output, iou_threshold, score_threshold, center_point_box)
+        _nms,
+        args=(
+            boxes,
+            scores,
+            max_output,
+            iou_threshold,
+            score_threshold,
+            center_point_box,
+        ),
     )
 
 
@@ -446,7 +482,9 @@ def cumsum(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             pad_shape = list(x.shape)
             pad_shape[int(ax)] = 1
             zero_pad = torch.zeros(pad_shape, dtype=x.dtype, device=x.device)
-            result = torch.cat([zero_pad, result.narrow(int(ax), 0, x.shape[int(ax)] - 1)], dim=int(ax))
+            result = torch.cat(
+                [zero_pad, result.narrow(int(ax), 0, x.shape[int(ax)] - 1)], dim=int(ax)
+            )
 
         if reverse:
             result = torch.flip(result, [int(ax)])
@@ -468,7 +506,9 @@ def reverse_sequence(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.
     def _reverse_sequence(x, sequence_lens, batch_axis, time_axis):
         result = x.clone()
         for i, seq_len in enumerate(sequence_lens):
-            seq_len_val = seq_len.item() if isinstance(seq_len, torch.Tensor) else seq_len
+            seq_len_val = (
+                seq_len.item() if isinstance(seq_len, torch.Tensor) else seq_len
+            )
             # Create indices for this batch
             idx = [slice(None)] * x.dim()
             idx[batch_axis] = i
@@ -481,7 +521,9 @@ def reverse_sequence(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.
 
         return result
 
-    return builder.call_function(_reverse_sequence, args=(x, sequence_lens, batch_axis, time_axis))
+    return builder.call_function(
+        _reverse_sequence, args=(x, sequence_lens, batch_axis, time_axis)
+    )
 
 
 # =============================================================================
@@ -562,14 +604,14 @@ def depth_to_space(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
         b, c, h, w = x.shape
         if mode == "DCR":
             # Depth-Column-Row
-            x = x.reshape(b, blocksize, blocksize, c // (blocksize ** 2), h, w)
+            x = x.reshape(b, blocksize, blocksize, c // (blocksize**2), h, w)
             x = x.permute(0, 3, 4, 1, 5, 2)
-            x = x.reshape(b, c // (blocksize ** 2), h * blocksize, w * blocksize)
+            x = x.reshape(b, c // (blocksize**2), h * blocksize, w * blocksize)
         else:
             # CRD mode
-            x = x.reshape(b, c // (blocksize ** 2), blocksize, blocksize, h, w)
+            x = x.reshape(b, c // (blocksize**2), blocksize, blocksize, h, w)
             x = x.permute(0, 1, 4, 2, 5, 3)
-            x = x.reshape(b, c // (blocksize ** 2), h * blocksize, w * blocksize)
+            x = x.reshape(b, c // (blocksize**2), h * blocksize, w * blocksize)
         return x
 
     return builder.call_function(_depth_to_space, args=(x, blocksize, mode))

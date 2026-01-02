@@ -34,9 +34,9 @@ class TestInitializer:
             [weight_init],
         )
 
-        model = onnx.helper.make_model(graph, opset_imports=[
-            onnx.helper.make_opsetid("", 15)
-        ])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         # Convert model with initializer
         fx_model = convert(model)

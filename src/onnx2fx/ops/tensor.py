@@ -140,6 +140,7 @@ def squeeze(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     # axes can be input (opset 13+) or attribute
     if len(node.input) > 1 and node.input[1]:
         axes = builder.get_value(node.input[1])
+
         # If axes is a tensor node, use dynamic squeeze
         def _squeeze_dynamic(t, axes):
             if isinstance(axes, torch.Tensor):
@@ -162,7 +163,9 @@ def squeeze(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         result = x
         # Sort in reverse to maintain correct indices after each squeeze
         for axis in sorted(axes, reverse=True):
-            result = builder.call_function(torch.squeeze, args=(result,), kwargs={"dim": axis})
+            result = builder.call_function(
+                torch.squeeze, args=(result,), kwargs={"dim": axis}
+            )
         return result
     return builder.call_function(torch.squeeze, args=(x,))
 
@@ -175,6 +178,7 @@ def unsqueeze(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     # axes is input (opset 13+) or attribute
     if len(node.input) > 1 and node.input[1]:
         axes = builder.get_value(node.input[1])
+
         # If axes is a tensor node, use dynamic unsqueeze
         def _unsqueeze_dynamic(t, axes):
             if isinstance(axes, torch.Tensor):
@@ -266,7 +270,9 @@ def split(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             result = builder.call_function(torch.split, args=(x, split_attr, axis))
         else:
             # Default: split into single-element chunks
-            result = builder.call_function(torch.chunk, args=(x, len(node.output), axis))
+            result = builder.call_function(
+                torch.chunk, args=(x, len(node.output), axis)
+            )
 
     # Handle multiple outputs
     for i, output_name in enumerate(node.output):
@@ -421,7 +427,7 @@ def gather_nd(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             idx_shape = indices.shape
             indices_flat = indices.reshape(-1, idx_shape[-1])
             result = torch.stack([data[tuple(idx)] for idx in indices_flat])
-            return result.reshape(idx_shape[:-1] + data.shape[indices.shape[-1]:])
+            return result.reshape(idx_shape[:-1] + data.shape[indices.shape[-1] :])
         else:
             raise NotImplementedError("batch_dims > 0 not yet supported for GatherND")
 
@@ -459,7 +465,7 @@ def pad(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     x = builder.get_value(node.input[0])
     pads = builder.get_value(node.input[1])
     mode = get_attribute(node, "mode", "constant")
-    
+
     constant_value = 0.0
     if len(node.input) > 2 and node.input[2]:
         constant_value = builder.get_value(node.input[2])
@@ -473,7 +479,7 @@ def pad(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
         if isinstance(pads, torch.Tensor):
             pads = pads.tolist()
-        
+
         n = len(pads) // 2
         # Reverse and interleave
         torch_pads = []
@@ -515,7 +521,9 @@ def shape(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 def size(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Get total number of elements."""
     x = builder.get_value(node.input[0])
-    return builder.call_function(lambda t: torch.tensor(t.numel(), dtype=torch.int64), args=(x,))
+    return builder.call_function(
+        lambda t: torch.tensor(t.numel(), dtype=torch.int64), args=(x,)
+    )
 
 
 @register("ConstantOfShape")
@@ -525,7 +533,9 @@ def constant_of_shape(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
     value = get_attribute(node, "value")
 
     if value is not None:
-        fill_value = value.item() if hasattr(value, "item") else float(value.flatten()[0])
+        fill_value = (
+            value.item() if hasattr(value, "item") else float(value.flatten()[0])
+        )
         dtype = value.dtype
     else:
         fill_value = 0.0

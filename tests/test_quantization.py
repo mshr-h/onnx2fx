@@ -20,7 +20,9 @@ class TestQuantizeLinear(unittest.TestCase):
         y = helper.make_tensor_value_info("y", TensorProto.UINT8, [2, 3])
 
         scale = numpy_helper.from_array(np.array(0.1, dtype=np.float32), "scale")
-        zero_point = numpy_helper.from_array(np.array(128, dtype=np.uint8), "zero_point")
+        zero_point = numpy_helper.from_array(
+            np.array(128, dtype=np.uint8), "zero_point"
+        )
 
         node = helper.make_node(
             "QuantizeLinear",
@@ -37,7 +39,9 @@ class TestQuantizeLinear(unittest.TestCase):
         result = fx_module(test_input)
 
         # Manual calculation
-        expected = torch.clamp(torch.round(test_input / 0.1) + 128, 0, 255).to(torch.uint8)
+        expected = torch.clamp(torch.round(test_input / 0.1) + 128, 0, 255).to(
+            torch.uint8
+        )
         torch.testing.assert_close(result, expected)
 
     def test_quantize_without_zero_point(self):
@@ -74,7 +78,9 @@ class TestDequantizeLinear(unittest.TestCase):
         y = helper.make_tensor_value_info("y", TensorProto.FLOAT, [2, 3])
 
         scale = numpy_helper.from_array(np.array(0.1, dtype=np.float32), "scale")
-        zero_point = numpy_helper.from_array(np.array(128, dtype=np.uint8), "zero_point")
+        zero_point = numpy_helper.from_array(
+            np.array(128, dtype=np.uint8), "zero_point"
+        )
 
         node = helper.make_node(
             "DequantizeLinear",
@@ -126,7 +132,9 @@ class TestDynamicQuantizeLinear(unittest.TestCase):
         x = helper.make_tensor_value_info("x", TensorProto.FLOAT, [2, 3])
         y = helper.make_tensor_value_info("y", TensorProto.UINT8, [2, 3])
         y_scale = helper.make_tensor_value_info("y_scale", TensorProto.FLOAT, [])
-        y_zero_point = helper.make_tensor_value_info("y_zero_point", TensorProto.UINT8, [])
+        y_zero_point = helper.make_tensor_value_info(
+            "y_zero_point", TensorProto.UINT8, []
+        )
 
         node = helper.make_node(
             "DynamicQuantizeLinear",
@@ -171,8 +179,7 @@ class TestQLinearMatMul(unittest.TestCase):
         )
 
         graph = helper.make_graph(
-            [node], "test", [a, b], [y],
-            [a_scale, a_zp, b_scale, b_zp, y_scale, y_zp]
+            [node], "test", [a, b], [y], [a_scale, a_zp, b_scale, b_zp, y_scale, y_zp]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
@@ -211,8 +218,7 @@ class TestQLinearConv(unittest.TestCase):
         )
 
         graph = helper.make_graph(
-            [node], "test", [x, w], [y],
-            [x_scale, x_zp, w_scale, w_zp, y_scale, y_zp]
+            [node], "test", [x, w], [y], [x_scale, x_zp, w_scale, w_zp, y_scale, y_zp]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
@@ -246,8 +252,7 @@ class TestQLinearActivations(unittest.TestCase):
         )
 
         graph = helper.make_graph(
-            [node], "test", [x], [y],
-            [x_scale, x_zp, y_scale, y_zp]
+            [node], "test", [x], [y], [x_scale, x_zp, y_scale, y_zp]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
@@ -277,8 +282,7 @@ class TestQLinearActivations(unittest.TestCase):
         )
 
         graph = helper.make_graph(
-            [node], "test", [x], [y],
-            [x_scale, x_zp, y_scale, y_zp]
+            [node], "test", [x], [y], [x_scale, x_zp, y_scale, y_zp]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
@@ -311,8 +315,7 @@ class TestQLinearGlobalAveragePool(unittest.TestCase):
         )
 
         graph = helper.make_graph(
-            [node], "test", [x], [y],
-            [x_scale, x_zp, y_scale, y_zp]
+            [node], "test", [x], [y], [x_scale, x_zp, y_scale, y_zp]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
@@ -343,10 +346,7 @@ class TestMatMulInteger(unittest.TestCase):
             outputs=["y"],
         )
 
-        graph = helper.make_graph(
-            [node], "test", [a, b], [y],
-            [a_zp, b_zp]
-        )
+        graph = helper.make_graph([node], "test", [a, b], [y], [a_zp, b_zp])
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
         fx_module = convert(model)
@@ -382,10 +382,7 @@ class TestConvInteger(unittest.TestCase):
             pads=[0, 0, 0, 0],
         )
 
-        graph = helper.make_graph(
-            [node], "test", [x, w], [y],
-            [x_zp, w_zp]
-        )
+        graph = helper.make_graph([node], "test", [x, w], [y], [x_zp, w_zp])
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
         fx_module = convert(model)
@@ -408,7 +405,9 @@ class TestQuantizedPipeline(unittest.TestCase):
 
         # Use scale that covers the typical input range [-1, 1]
         scale = numpy_helper.from_array(np.array(0.01, dtype=np.float32), "scale")
-        zero_point = numpy_helper.from_array(np.array(128, dtype=np.uint8), "zero_point")
+        zero_point = numpy_helper.from_array(
+            np.array(128, dtype=np.uint8), "zero_point"
+        )
 
         quant_node = helper.make_node(
             "QuantizeLinear",
@@ -422,8 +421,7 @@ class TestQuantizedPipeline(unittest.TestCase):
         )
 
         graph = helper.make_graph(
-            [quant_node, dequant_node], "test", [x], [y],
-            [scale, zero_point]
+            [quant_node, dequant_node], "test", [x], [y], [scale, zero_point]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
@@ -466,7 +464,16 @@ class TestQuantizedPipeline(unittest.TestCase):
         # QLinearMatMul
         qmm = helper.make_node(
             "QLinearMatMul",
-            inputs=["a_q", "a_scale", "a_zp", "b_q", "b_scale", "b_zp", "y_scale", "y_zp"],
+            inputs=[
+                "a_q",
+                "a_scale",
+                "a_zp",
+                "b_q",
+                "b_scale",
+                "b_zp",
+                "y_scale",
+                "y_zp",
+            ],
             outputs=["y_q"],
         )
         # Dequantize output
@@ -477,8 +484,11 @@ class TestQuantizedPipeline(unittest.TestCase):
         )
 
         graph = helper.make_graph(
-            [quant_a, quant_b, qmm, dequant], "test", [a, b], [y],
-            [a_scale, a_zp, b_scale, b_zp, y_scale, y_zp]
+            [quant_a, quant_b, qmm, dequant],
+            "test",
+            [a, b],
+            [y],
+            [a_scale, a_zp, b_scale, b_zp, y_scale, y_zp],
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 

@@ -224,4 +224,3 @@ def get_registered_domains() -> list:
         List of domain names.
     """
     return list(_DOMAIN_REGISTRY.keys())
-

@@ -16,7 +16,9 @@ class TestLogSoftmaxOp:
 
     def test_log_softmax(self):
         @onnxscript.script()
-        def log_softmax_model(x: onnxscript.FLOAT[2, 3, 4]) -> onnxscript.FLOAT[2, 3, 4]:
+        def log_softmax_model(
+            x: onnxscript.FLOAT[2, 3, 4],
+        ) -> onnxscript.FLOAT[2, 3, 4]:
             return op.LogSoftmax(x, axis=-1)
 
         model = log_softmax_model.to_model_proto()
@@ -62,7 +64,9 @@ class TestQuantizationOps:
         model = quantize_model.to_model_proto()
         fx_module = convert(model)
 
-        x = torch.tensor([[0.0, 1.0, 2.0, 3.0], [4.0, 5.0, 6.0, 7.0], [8.0, 9.0, 10.0, 11.0]])
+        x = torch.tensor(
+            [[0.0, 1.0, 2.0, 3.0], [4.0, 5.0, 6.0, 7.0], [8.0, 9.0, 10.0, 11.0]]
+        )
         scale = torch.tensor([0.1])
         zero_point = torch.tensor([128], dtype=torch.uint8)
 
@@ -83,7 +87,8 @@ class TestQuantizationOps:
         fx_module = convert(model)
 
         x = torch.tensor(
-            [[128, 138, 148, 158], [168, 178, 188, 198], [208, 218, 228, 238]], dtype=torch.uint8
+            [[128, 138, 148, 158], [168, 178, 188, 198], [208, 218, 228, 238]],
+            dtype=torch.uint8,
         )
         scale = torch.tensor([0.1])
         zero_point = torch.tensor([128], dtype=torch.uint8)
@@ -107,10 +112,16 @@ class TestSequenceOps:
         pos_input = helper.make_tensor_value_info("pos", TensorProto.INT64, [])
         output = helper.make_tensor_value_info("output", TensorProto.FLOAT, [2, 3])
 
-        seq_node = helper.make_node("SequenceConstruct", ["a", "b"], ["seq"], name="seq_construct")
-        at_node = helper.make_node("SequenceAt", ["seq", "pos"], ["output"], name="seq_at")
+        seq_node = helper.make_node(
+            "SequenceConstruct", ["a", "b"], ["seq"], name="seq_construct"
+        )
+        at_node = helper.make_node(
+            "SequenceAt", ["seq", "pos"], ["output"], name="seq_at"
+        )
 
-        graph = helper.make_graph([seq_node, at_node], "seq_test", [a_input, b_input, pos_input], [output])
+        graph = helper.make_graph(
+            [seq_node, at_node], "seq_test", [a_input, b_input, pos_input], [output]
+        )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
         fx_module = convert(model)
@@ -130,10 +141,16 @@ class TestSequenceOps:
         c_input = helper.make_tensor_value_info("c", TensorProto.FLOAT, [2, 3])
         output = helper.make_tensor_value_info("length", TensorProto.INT64, [])
 
-        seq_node = helper.make_node("SequenceConstruct", ["a", "b", "c"], ["seq"], name="seq_construct")
-        len_node = helper.make_node("SequenceLength", ["seq"], ["length"], name="seq_len")
+        seq_node = helper.make_node(
+            "SequenceConstruct", ["a", "b", "c"], ["seq"], name="seq_construct"
+        )
+        len_node = helper.make_node(
+            "SequenceLength", ["seq"], ["length"], name="seq_len"
+        )
 
-        graph = helper.make_graph([seq_node, len_node], "seq_len_test", [a_input, b_input, c_input], [output])
+        graph = helper.make_graph(
+            [seq_node, len_node], "seq_len_test", [a_input, b_input, c_input], [output]
+        )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
         fx_module = convert(model)
@@ -156,12 +173,16 @@ class TestConcatFromSequence:
         b_input = helper.make_tensor_value_info("b", TensorProto.FLOAT, [2, 3])
         output = helper.make_tensor_value_info("output", TensorProto.FLOAT, [4, 3])
 
-        seq_node = helper.make_node("SequenceConstruct", ["a", "b"], ["seq"], name="seq_construct")
+        seq_node = helper.make_node(
+            "SequenceConstruct", ["a", "b"], ["seq"], name="seq_construct"
+        )
         concat_node = helper.make_node(
             "ConcatFromSequence", ["seq"], ["output"], name="concat", axis=0
         )
 
-        graph = helper.make_graph([seq_node, concat_node], "concat_seq_test", [a_input, b_input], [output])
+        graph = helper.make_graph(
+            [seq_node, concat_node], "concat_seq_test", [a_input, b_input], [output]
+        )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
         fx_module = convert(model)
@@ -180,12 +201,16 @@ class TestConcatFromSequence:
         b_input = helper.make_tensor_value_info("b", TensorProto.FLOAT, [2, 3])
         output = helper.make_tensor_value_info("output", TensorProto.FLOAT, [2, 2, 3])
 
-        seq_node = helper.make_node("SequenceConstruct", ["a", "b"], ["seq"], name="seq_construct")
+        seq_node = helper.make_node(
+            "SequenceConstruct", ["a", "b"], ["seq"], name="seq_construct"
+        )
         concat_node = helper.make_node(
             "ConcatFromSequence", ["seq"], ["output"], name="concat", axis=0, new_axis=1
         )
 
-        graph = helper.make_graph([seq_node, concat_node], "stack_seq_test", [a_input, b_input], [output])
+        graph = helper.make_graph(
+            [seq_node, concat_node], "stack_seq_test", [a_input, b_input], [output]
+        )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
         fx_module = convert(model)
@@ -226,7 +251,9 @@ class TestLossOps:
     def test_softmax_cross_entropy_loss(self):
         from onnx import TensorProto, helper
 
-        scores_input = helper.make_tensor_value_info("scores", TensorProto.FLOAT, [3, 5])
+        scores_input = helper.make_tensor_value_info(
+            "scores", TensorProto.FLOAT, [3, 5]
+        )
         labels_input = helper.make_tensor_value_info("labels", TensorProto.INT64, [3])
         output = helper.make_tensor_value_info("loss", TensorProto.FLOAT, [])
 
@@ -238,7 +265,9 @@ class TestLossOps:
             reduction="mean",
         )
 
-        graph = helper.make_graph([loss_node], "loss_test", [scores_input, labels_input], [output])
+        graph = helper.make_graph(
+            [loss_node], "loss_test", [scores_input, labels_input], [output]
+        )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
         fx_module = convert(model)
@@ -265,7 +294,9 @@ class TestLossOps:
             reduction="mean",
         )
 
-        graph = helper.make_graph([loss_node], "nll_test", [input_info, target_info], [output])
+        graph = helper.make_graph(
+            [loss_node], "nll_test", [input_info, target_info], [output]
+        )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
         fx_module = convert(model)
@@ -434,7 +465,9 @@ class TestAttentionOp:
         # Compute expected using scaled_dot_product_attention with is_causal=True
         qkv = torch.matmul(input_tensor, weight)
         q, k, v = qkv.chunk(3, dim=-1)
-        expected = torch.nn.functional.scaled_dot_product_attention(q, k, v, is_causal=True)
+        expected = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, is_causal=True
+        )
 
         torch.testing.assert_close(result, expected)
 
@@ -647,7 +680,7 @@ class TestGroupQueryAttention:
             opset_imports=[
                 helper.make_opsetid("", 21),
                 helper.make_opsetid("com.microsoft", 1),
-            ]
+            ],
         )
 
         fx_module = convert(model)

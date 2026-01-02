@@ -130,7 +130,16 @@ def qlinear_matmul(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
 
     return builder.call_function(
         _qlinear_matmul,
-        args=(a, a_scale, a_zero_point, b, b_scale, b_zero_point, y_scale, y_zero_point),
+        args=(
+            a,
+            a_scale,
+            a_zero_point,
+            b,
+            b_scale,
+            b_zero_point,
+            y_scale,
+            y_zero_point,
+        ),
     )
 
 
@@ -214,7 +223,13 @@ def qlinear_conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
 
         # Perform convolution
         result = torch.nn.functional.conv2d(
-            x_dq, w_dq, bias=bias, stride=stride, padding=padding, dilation=dilation, groups=groups
+            x_dq,
+            w_dq,
+            bias=bias,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
         )
 
         # Quantize output
@@ -225,9 +240,19 @@ def qlinear_conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
     return builder.call_function(
         _qlinear_conv,
         args=(
-            x, x_scale, x_zero_point, w, w_scale, w_zero_point,
-            y_scale, y_zero_point, bias,
-            tuple(strides), padding, tuple(dilations), group
+            x,
+            x_scale,
+            x_zero_point,
+            w,
+            w_scale,
+            w_zero_point,
+            y_scale,
+            y_zero_point,
+            bias,
+            tuple(strides),
+            padding,
+            tuple(dilations),
+            group,
         ),
     )
 
@@ -269,7 +294,16 @@ def qlinear_add(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     return builder.call_function(
         _qlinear_add,
-        args=(a, a_scale, a_zero_point, b, b_scale, b_zero_point, c_scale, c_zero_point),
+        args=(
+            a,
+            a_scale,
+            a_zero_point,
+            b,
+            b_scale,
+            b_zero_point,
+            c_scale,
+            c_zero_point,
+        ),
     )
 
 
@@ -307,7 +341,16 @@ def qlinear_mul(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     return builder.call_function(
         _qlinear_mul,
-        args=(a, a_scale, a_zero_point, b, b_scale, b_zero_point, c_scale, c_zero_point),
+        args=(
+            a,
+            a_scale,
+            a_zero_point,
+            b,
+            b_scale,
+            b_zero_point,
+            c_scale,
+            c_zero_point,
+        ),
     )
 
 
@@ -376,7 +419,9 @@ def qlinear_leaky_relu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.f
 
 
 @register("QLinearGlobalAveragePool")
-def qlinear_global_avg_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+def qlinear_global_avg_pool(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
     """Quantized Global Average Pooling."""
     x = builder.get_value(node.input[0])
     x_scale = builder.get_value(node.input[1])
@@ -446,14 +491,27 @@ def conv_integer(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
 
         # Perform convolution in float (PyTorch doesn't support int conv)
         result = torch.nn.functional.conv2d(
-            x_int.float(), w_int.float(),
-            stride=stride, padding=padding, dilation=dilation, groups=groups
+            x_int.float(),
+            w_int.float(),
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
         )
         return result.int()
 
     return builder.call_function(
         _conv_integer,
-        args=(x, w, x_zero_point, w_zero_point, tuple(strides), padding, tuple(dilations), group),
+        args=(
+            x,
+            w,
+            x_zero_point,
+            w_zero_point,
+            tuple(strides),
+            padding,
+            tuple(dilations),
+            group,
+        ),
     )
 
 
@@ -498,7 +556,9 @@ def softmax_cross_entropy_loss(
     scores = builder.get_value(node.input[0])
     labels = builder.get_value(node.input[1])
     weights = (
-        builder.get_value(node.input[2]) if len(node.input) > 2 and node.input[2] else None
+        builder.get_value(node.input[2])
+        if len(node.input) > 2 and node.input[2]
+        else None
     )
 
     ignore_index = get_attribute(node, "ignore_index", -100)
@@ -521,7 +581,9 @@ def negative_log_likelihood_loss(
     input_node = builder.get_value(node.input[0])
     target = builder.get_value(node.input[1])
     weight = (
-        builder.get_value(node.input[2]) if len(node.input) > 2 and node.input[2] else None
+        builder.get_value(node.input[2])
+        if len(node.input) > 2 and node.input[2]
+        else None
     )
 
     ignore_index = get_attribute(node, "ignore_index", -100)
@@ -622,7 +684,9 @@ def sequence_erase(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
 
 
 @register("ConcatFromSequence")
-def concat_from_sequence(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+def concat_from_sequence(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
     """Concatenate tensors from sequence."""
     seq = builder.get_value(node.input[0])
 
@@ -690,7 +754,9 @@ def gather_nd(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
         # Flatten for iteration
         flat_idx = idx.reshape(-1, last_dim)
-        flat_result = result.reshape(-1, *data_shape) if data_shape else result.reshape(-1)
+        flat_result = (
+            result.reshape(-1, *data_shape) if data_shape else result.reshape(-1)
+        )
 
         for i in range(flat_idx.shape[0]):
             data_idx = tuple(flat_idx[i].tolist())
@@ -744,8 +810,16 @@ def skip_layer_normalization(
     x = builder.get_value(node.input[0])
     skip = builder.get_value(node.input[1])
     gamma = builder.get_value(node.input[2])
-    beta = builder.get_value(node.input[3]) if len(node.input) > 3 and node.input[3] else None
-    bias = builder.get_value(node.input[4]) if len(node.input) > 4 and node.input[4] else None
+    beta = (
+        builder.get_value(node.input[3])
+        if len(node.input) > 3 and node.input[3]
+        else None
+    )
+    bias = (
+        builder.get_value(node.input[4])
+        if len(node.input) > 4 and node.input[4]
+        else None
+    )
 
     epsilon = get_attribute(node, "epsilon", 1e-5)
 
@@ -760,7 +834,9 @@ def skip_layer_normalization(
         hidden = inp + sk
         if bi is not None:
             hidden = hidden + bi
-        return torch.nn.functional.layer_norm(hidden, hidden.shape[-1:], weight=g, bias=b, eps=eps)
+        return torch.nn.functional.layer_norm(
+            hidden, hidden.shape[-1:], weight=g, bias=b, eps=eps
+        )
 
     return builder.call_function(
         _skip_layer_norm, args=(x, skip, gamma, beta, bias, epsilon)
@@ -894,8 +970,16 @@ def attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     # Fused SDPA pattern (Microsoft domain style)
     input_node = builder.get_value(node.input[0])
     weight = builder.get_value(node.input[1])
-    bias = builder.get_value(node.input[2]) if len(node.input) > 2 and node.input[2] else None
-    mask_index = builder.get_value(node.input[3]) if len(node.input) > 3 and node.input[3] else None
+    bias = (
+        builder.get_value(node.input[2])
+        if len(node.input) > 2 and node.input[2]
+        else None
+    )
+    mask_index = (
+        builder.get_value(node.input[3])
+        if len(node.input) > 3 and node.input[3]
+        else None
+    )
 
     num_heads = get_attribute(node, "num_heads", 1)
     unidirectional = get_attribute(node, "unidirectional", 0)
@@ -1046,47 +1130,25 @@ def group_query_attention(
         - present_key: [batch, num_kv_heads, total_seq_len, head_size]
         - present_value: [batch, num_kv_heads, total_seq_len, head_size]
     """
+    # Get required inputs
     query = builder.get_value(node.input[0])
     key = builder.get_value(node.input[1])
     value = builder.get_value(node.input[2])
 
-    # Optional past key-value cache
-    past_key = (
-        builder.get_value(node.input[3])
-        if len(node.input) > 3 and node.input[3]
-        else None
-    )
-    past_value = (
-        builder.get_value(node.input[4])
-        if len(node.input) > 4 and node.input[4]
-        else None
-    )
+    def get_optional_input(idx: int) -> torch.fx.Node | None:
+        return (
+            builder.get_value(node.input[idx])
+            if len(node.input) > idx and node.input[idx]
+            else None
+        )
 
-    # seqlens_k (optional) - cumulative sequence lengths for packed batches
-    seqlens_k = (
-        builder.get_value(node.input[5])
-        if len(node.input) > 5 and node.input[5]
-        else None
-    )
-
-    # total_sequence_length (optional)
-    total_seq_len = (
-        builder.get_value(node.input[6])
-        if len(node.input) > 6 and node.input[6]
-        else None
-    )
-
-    # cos/sin cache for rotary embeddings
-    cos_cache = (
-        builder.get_value(node.input[7])
-        if len(node.input) > 7 and node.input[7]
-        else None
-    )
-    sin_cache = (
-        builder.get_value(node.input[8])
-        if len(node.input) > 8 and node.input[8]
-        else None
-    )
+    # Get optional inputs
+    past_key = get_optional_input(3)
+    past_value = get_optional_input(4)
+    seqlens_k = get_optional_input(5)
+    total_seq_len = get_optional_input(6)
+    cos_cache = get_optional_input(7)
+    sin_cache = get_optional_input(8)
 
     # Get attributes
     num_heads = get_attribute(node, "num_heads", 1)
@@ -1130,7 +1192,9 @@ def group_query_attention(
         # Apply rotary position embeddings if enabled
         if do_rotary and cos_cache is not None and sin_cache is not None:
             # Get the position indices
-            positions = torch.arange(past_seq_len, past_seq_len + seq_len, device=q.device)
+            positions = torch.arange(
+                past_seq_len, past_seq_len + seq_len, device=q.device
+            )
 
             # Get cos/sin values for current positions
             cos = cos_cache[positions]  # [seq_len, rotary_dim]
@@ -1156,14 +1220,14 @@ def group_query_attention(
                 cos_half = cos[..., ::2]
                 sin_half = sin[..., ::2]
 
-                q_rot_new = torch.stack([
-                    q1 * cos_half - q2 * sin_half,
-                    q1 * sin_half + q2 * cos_half
-                ], dim=-1).flatten(-2)
-                k_rot_new = torch.stack([
-                    k1 * cos_half - k2 * sin_half,
-                    k1 * sin_half + k2 * cos_half
-                ], dim=-1).flatten(-2)
+                q_rot_new = torch.stack(
+                    [q1 * cos_half - q2 * sin_half, q1 * sin_half + q2 * cos_half],
+                    dim=-1,
+                ).flatten(-2)
+                k_rot_new = torch.stack(
+                    [k1 * cos_half - k2 * sin_half, k1 * sin_half + k2 * cos_half],
+                    dim=-1,
+                ).flatten(-2)
 
                 q = torch.cat([q_rot_new, q_pass], dim=-1)
                 k = torch.cat([k_rot_new, k_pass], dim=-1)
@@ -1173,7 +1237,7 @@ def group_query_attention(
                 # q/k first rotary_dim*2 elements are rotated:
                 # q1 = q[..., :rotary_dim], q2 = q[..., rotary_dim:rotary_dim*2]
                 # result = (q1*cos - q2*sin, q1*sin + q2*cos)
-                
+
                 rotary_full = rotary_dim * 2  # total dims that get rotated
                 q_rot = q[..., :rotary_full]
                 q_pass = q[..., rotary_full:]
@@ -1185,14 +1249,12 @@ def group_query_attention(
                 k1, k2 = k_rot[..., :rotary_dim], k_rot[..., rotary_dim:rotary_full]
 
                 # cos/sin are already in the right shape [1, 1, seq_len, rotary_dim]
-                q_rot_new = torch.cat([
-                    q1 * cos - q2 * sin,
-                    q1 * sin + q2 * cos
-                ], dim=-1)
-                k_rot_new = torch.cat([
-                    k1 * cos - k2 * sin,
-                    k1 * sin + k2 * cos
-                ], dim=-1)
+                q_rot_new = torch.cat(
+                    [q1 * cos - q2 * sin, q1 * sin + q2 * cos], dim=-1
+                )
+                k_rot_new = torch.cat(
+                    [k1 * cos - k2 * sin, k1 * sin + k2 * cos], dim=-1
+                )
 
                 q = torch.cat([q_rot_new, q_pass], dim=-1)
                 k = torch.cat([k_rot_new, k_pass], dim=-1)
@@ -1214,7 +1276,7 @@ def group_query_attention(
 
         # Compute attention scale
         if attn_scale is None:
-            attn_scale = 1.0 / (head_size ** 0.5)
+            attn_scale = 1.0 / (head_size**0.5)
 
         # Use scaled_dot_product_attention
         # For autoregressive with past cache, don't use causal mask for new tokens
@@ -1253,4 +1315,3 @@ def group_query_attention(
 
     # Return tuple output
     return result
-

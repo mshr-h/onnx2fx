@@ -44,12 +44,13 @@ class TestGemmOp:
         y = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, [2, 4])
 
         gemm_node = onnx.helper.make_node(
-            "Gemm", ["A", "B", "C"], ["Y"],
-            alpha=1.0, beta=1.0, transA=0, transB=0
+            "Gemm", ["A", "B", "C"], ["Y"], alpha=1.0, beta=1.0, transA=0, transB=0
         )
 
         graph = onnx.helper.make_graph([gemm_node], "test", [a, b, c], [y])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -69,17 +70,27 @@ class TestConvOps:
 
     def test_conv2d_basic(self):
         """Test basic Conv2D."""
-        x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, 3, 8, 8])
-        w_info = onnx.helper.make_tensor_value_info("W", onnx.TensorProto.FLOAT, [16, 3, 3, 3])
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [1, 3, 8, 8]
+        )
+        w_info = onnx.helper.make_tensor_value_info(
+            "W", onnx.TensorProto.FLOAT, [16, 3, 3, 3]
+        )
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         conv_node = onnx.helper.make_node(
-            "Conv", ["X", "W"], ["Y"],
-            kernel_shape=[3, 3], strides=[1, 1], pads=[1, 1, 1, 1]
+            "Conv",
+            ["X", "W"],
+            ["Y"],
+            kernel_shape=[3, 3],
+            strides=[1, 1],
+            pads=[1, 1, 1, 1],
         )
 
         graph = onnx.helper.make_graph([conv_node], "test", [x_info, w_info], [y_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -94,18 +105,30 @@ class TestConvOps:
 
     def test_conv2d_with_bias(self):
         """Test Conv2D with bias."""
-        x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, 3, 8, 8])
-        w_info = onnx.helper.make_tensor_value_info("W", onnx.TensorProto.FLOAT, [16, 3, 3, 3])
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [1, 3, 8, 8]
+        )
+        w_info = onnx.helper.make_tensor_value_info(
+            "W", onnx.TensorProto.FLOAT, [16, 3, 3, 3]
+        )
         b_info = onnx.helper.make_tensor_value_info("B", onnx.TensorProto.FLOAT, [16])
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         conv_node = onnx.helper.make_node(
-            "Conv", ["X", "W", "B"], ["Y"],
-            kernel_shape=[3, 3], strides=[1, 1], pads=[0, 0, 0, 0]
+            "Conv",
+            ["X", "W", "B"],
+            ["Y"],
+            kernel_shape=[3, 3],
+            strides=[1, 1],
+            pads=[0, 0, 0, 0],
         )
 
-        graph = onnx.helper.make_graph([conv_node], "test", [x_info, w_info, b_info], [y_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        graph = onnx.helper.make_graph(
+            [conv_node], "test", [x_info, w_info, b_info], [y_info]
+        )
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -125,16 +148,19 @@ class TestPoolingOps:
 
     def test_max_pool2d(self):
         """Test MaxPool2D."""
-        x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, 3, 8, 8])
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [1, 3, 8, 8]
+        )
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         pool_node = onnx.helper.make_node(
-            "MaxPool", ["X"], ["Y"],
-            kernel_shape=[2, 2], strides=[2, 2]
+            "MaxPool", ["X"], ["Y"], kernel_shape=[2, 2], strides=[2, 2]
         )
 
         graph = onnx.helper.make_graph([pool_node], "test", [x_info], [y_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -148,16 +174,19 @@ class TestPoolingOps:
 
     def test_average_pool2d(self):
         """Test AveragePool2D."""
-        x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, 3, 8, 8])
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [1, 3, 8, 8]
+        )
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         pool_node = onnx.helper.make_node(
-            "AveragePool", ["X"], ["Y"],
-            kernel_shape=[2, 2], strides=[2, 2]
+            "AveragePool", ["X"], ["Y"], kernel_shape=[2, 2], strides=[2, 2]
         )
 
         graph = onnx.helper.make_graph([pool_node], "test", [x_info], [y_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -171,13 +200,17 @@ class TestPoolingOps:
 
     def test_global_average_pool(self):
         """Test GlobalAveragePool."""
-        x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, 3, 8, 8])
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [1, 3, 8, 8]
+        )
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         pool_node = onnx.helper.make_node("GlobalAveragePool", ["X"], ["Y"])
 
         graph = onnx.helper.make_graph([pool_node], "test", [x_info], [y_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -195,24 +228,39 @@ class TestNormalizationOps:
 
     def test_batch_norm(self):
         """Test BatchNormalization."""
-        x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [2, 3, 4, 4])
-        scale_info = onnx.helper.make_tensor_value_info("scale", onnx.TensorProto.FLOAT, [3])
-        bias_info = onnx.helper.make_tensor_value_info("bias", onnx.TensorProto.FLOAT, [3])
-        mean_info = onnx.helper.make_tensor_value_info("mean", onnx.TensorProto.FLOAT, [3])
-        var_info = onnx.helper.make_tensor_value_info("var", onnx.TensorProto.FLOAT, [3])
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [2, 3, 4, 4]
+        )
+        scale_info = onnx.helper.make_tensor_value_info(
+            "scale", onnx.TensorProto.FLOAT, [3]
+        )
+        bias_info = onnx.helper.make_tensor_value_info(
+            "bias", onnx.TensorProto.FLOAT, [3]
+        )
+        mean_info = onnx.helper.make_tensor_value_info(
+            "mean", onnx.TensorProto.FLOAT, [3]
+        )
+        var_info = onnx.helper.make_tensor_value_info(
+            "var", onnx.TensorProto.FLOAT, [3]
+        )
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         bn_node = onnx.helper.make_node(
             "BatchNormalization",
-            ["X", "scale", "bias", "mean", "var"], ["Y"],
-            epsilon=1e-5
+            ["X", "scale", "bias", "mean", "var"],
+            ["Y"],
+            epsilon=1e-5,
         )
 
         graph = onnx.helper.make_graph(
-            [bn_node], "test",
-            [x_info, scale_info, bias_info, mean_info, var_info], [y_info]
+            [bn_node],
+            "test",
+            [x_info, scale_info, bias_info, mean_info, var_info],
+            [y_info],
         )
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -230,22 +278,27 @@ class TestNormalizationOps:
 
     def test_layer_norm(self):
         """Test LayerNormalization."""
-        x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [2, 3, 4])
-        scale_info = onnx.helper.make_tensor_value_info("scale", onnx.TensorProto.FLOAT, [4])
-        bias_info = onnx.helper.make_tensor_value_info("bias", onnx.TensorProto.FLOAT, [4])
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [2, 3, 4]
+        )
+        scale_info = onnx.helper.make_tensor_value_info(
+            "scale", onnx.TensorProto.FLOAT, [4]
+        )
+        bias_info = onnx.helper.make_tensor_value_info(
+            "bias", onnx.TensorProto.FLOAT, [4]
+        )
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         ln_node = onnx.helper.make_node(
-            "LayerNormalization",
-            ["X", "scale", "bias"], ["Y"],
-            axis=-1, epsilon=1e-5
+            "LayerNormalization", ["X", "scale", "bias"], ["Y"], axis=-1, epsilon=1e-5
         )
 
         graph = onnx.helper.make_graph(
-            [ln_node], "test",
-            [x_info, scale_info, bias_info], [y_info]
+            [ln_node], "test", [x_info, scale_info, bias_info], [y_info]
         )
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 17)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 17)]
+        )
 
         fx_model = convert(model)
 
@@ -271,7 +324,9 @@ class TestDropout:
         dropout_node = onnx.helper.make_node("Dropout", ["X"], ["Y"], ratio=0.5)
 
         graph = onnx.helper.make_graph([dropout_node], "test", [x_info], [y_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 

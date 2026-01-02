@@ -63,36 +63,38 @@ def _parse_attribute_value(attr: onnx.AttributeProto) -> Any:
         The parsed Python value.
     """
     match attr.type:
-      case onnx.AttributeProto.FLOAT:
-        return attr.f
-      case onnx.AttributeProto.INT:
-        return attr.i
-      case onnx.AttributeProto.STRING:
-        return attr.s.decode("utf-8") if isinstance(attr.s, bytes) else attr.s
-      case onnx.AttributeProto.TENSOR:
-        return _parse_tensor(attr.t)
-      case onnx.AttributeProto.GRAPH:
-        return attr.g
-      case onnx.AttributeProto.FLOATS:
-        return list(attr.floats)
-      case onnx.AttributeProto.INTS:
-        return list(attr.ints)
-      case onnx.AttributeProto.STRINGS:
-        return [s.decode("utf-8") if isinstance(s, bytes) else s for s in attr.strings]
-      case onnx.AttributeProto.TENSORS:
-        return [_parse_tensor(t) for t in attr.tensors]
-      case onnx.AttributeProto.GRAPHS:
-        return list(attr.graphs)
-      case onnx.AttributeProto.SPARSE_TENSOR:
-        return attr.sparse_tensor
-      case onnx.AttributeProto.SPARSE_TENSORS:
-        return list(attr.sparse_tensors)
-      case onnx.AttributeProto.TYPE_PROTO:
-        return attr.tp
-      case onnx.AttributeProto.TYPE_PROTOS:
-        return list(attr.type_protos)
-      case _:
-        raise ValueError(f"Unsupported attribute type: {attr.type}")
+        case onnx.AttributeProto.FLOAT:
+            return attr.f
+        case onnx.AttributeProto.INT:
+            return attr.i
+        case onnx.AttributeProto.STRING:
+            return attr.s.decode("utf-8") if isinstance(attr.s, bytes) else attr.s
+        case onnx.AttributeProto.TENSOR:
+            return _parse_tensor(attr.t)
+        case onnx.AttributeProto.GRAPH:
+            return attr.g
+        case onnx.AttributeProto.FLOATS:
+            return list(attr.floats)
+        case onnx.AttributeProto.INTS:
+            return list(attr.ints)
+        case onnx.AttributeProto.STRINGS:
+            return [
+                s.decode("utf-8") if isinstance(s, bytes) else s for s in attr.strings
+            ]
+        case onnx.AttributeProto.TENSORS:
+            return [_parse_tensor(t) for t in attr.tensors]
+        case onnx.AttributeProto.GRAPHS:
+            return list(attr.graphs)
+        case onnx.AttributeProto.SPARSE_TENSOR:
+            return attr.sparse_tensor
+        case onnx.AttributeProto.SPARSE_TENSORS:
+            return list(attr.sparse_tensors)
+        case onnx.AttributeProto.TYPE_PROTO:
+            return attr.tp
+        case onnx.AttributeProto.TYPE_PROTOS:
+            return list(attr.type_protos)
+        case _:
+            raise ValueError(f"Unsupported attribute type: {attr.type}")
 
 
 def _parse_tensor(tensor: onnx.TensorProto) -> "torch.Tensor":

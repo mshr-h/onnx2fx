@@ -152,7 +152,9 @@ class TestDynamicSequenceLength(unittest.TestCase):
         class SimpleAttention(nn.Module):
             def __init__(self, embed_dim, num_heads):
                 super().__init__()
-                self.attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
+                self.attn = nn.MultiheadAttention(
+                    embed_dim, num_heads, batch_first=True
+                )
 
             def forward(self, x):
                 attn_output, _ = self.attn(x, x, x)
@@ -517,7 +519,9 @@ class TestComplexDynamicModels(unittest.TestCase):
                     nn.ReLU(),
                 )
                 self.decoder = nn.Sequential(
-                    nn.ConvTranspose2d(64, 32, 3, stride=2, padding=1, output_padding=1),
+                    nn.ConvTranspose2d(
+                        64, 32, 3, stride=2, padding=1, output_padding=1
+                    ),
                     nn.ReLU(),
                     nn.ConvTranspose2d(32, 3, 3, stride=2, padding=1, output_padding=1),
                 )

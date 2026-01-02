@@ -14,9 +14,9 @@ class TestConstantOp:
     @script()
     def constant_add_script(x: FLOAT) -> FLOAT:
         # Create a constant and add it to input
-        c = op.Constant(value=onnx.numpy_helper.from_array(
-            torch.ones(2, 4).numpy(), name="const"
-        ))
+        c = op.Constant(
+            value=onnx.numpy_helper.from_array(torch.ones(2, 4).numpy(), name="const")
+        )
         return op.Add(x, c)
 
     def test_constant_operation(self):
@@ -32,6 +32,6 @@ class TestConstantOp:
         with torch.inference_mode():
             fx_output = fx_model(example_input)
 
-        assert torch.allclose(
-            torch.from_numpy(eager_output), fx_output, atol=1e-5
-        ), "Constant op outputs do not match!"
+        assert torch.allclose(torch.from_numpy(eager_output), fx_output, atol=1e-5), (
+            "Constant op outputs do not match!"
+        )

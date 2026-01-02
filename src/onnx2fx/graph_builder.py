@@ -58,8 +58,10 @@ class GraphBuilder:
             If the name is not found in the environment.
         """
         if name not in self.env:
-            raise KeyError(f"Value '{name}' not found in environment. "
-                          f"Available: {list(self.env.keys())}")
+            raise KeyError(
+                f"Value '{name}' not found in environment. "
+                f"Available: {list(self.env.keys())}"
+            )
         return self.env[name]
 
     def has_value(self, name: str) -> bool:
@@ -180,7 +182,9 @@ class GraphBuilder:
                     if output_name:  # Skip empty output names
                         # Create a getitem node to extract each output
                         getitem_node = self.graph.call_function(
-                            lambda x, idx=i: x[idx] if isinstance(x, (tuple, list)) else x,
+                            lambda x, idx=i: x[idx]
+                            if isinstance(x, (tuple, list))
+                            else x,
                             args=(fx_node, i),
                         )
                         self.env[output_name] = getitem_node

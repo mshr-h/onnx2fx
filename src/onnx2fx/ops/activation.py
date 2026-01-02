@@ -26,7 +26,9 @@ def leaky_relu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Leaky ReLU activation."""
     x = builder.get_value(node.input[0])
     alpha = get_attribute(node, "alpha", 0.01)
-    return builder.call_function(F.leaky_relu, args=(x,), kwargs={"negative_slope": alpha})
+    return builder.call_function(
+        F.leaky_relu, args=(x,), kwargs={"negative_slope": alpha}
+    )
 
 
 @register("PRelu")

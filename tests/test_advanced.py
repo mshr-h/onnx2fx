@@ -22,8 +22,12 @@ class TestEinsumOps:
             "Einsum", ["X", "Y"], ["Z"], equation="ij,jk->ik"
         )
 
-        graph = onnx.helper.make_graph([einsum_node], "test", [x_info, y_info], [z_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        graph = onnx.helper.make_graph(
+            [einsum_node], "test", [x_info, y_info], [z_info]
+        )
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -38,16 +42,26 @@ class TestEinsumOps:
 
     def test_einsum_batch_matmul(self):
         """Test Einsum for batched matrix multiplication."""
-        x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [2, 3, 4])
-        y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, [2, 4, 5])
-        z_info = onnx.helper.make_tensor_value_info("Z", onnx.TensorProto.FLOAT, [2, 3, 5])
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [2, 3, 4]
+        )
+        y_info = onnx.helper.make_tensor_value_info(
+            "Y", onnx.TensorProto.FLOAT, [2, 4, 5]
+        )
+        z_info = onnx.helper.make_tensor_value_info(
+            "Z", onnx.TensorProto.FLOAT, [2, 3, 5]
+        )
 
         einsum_node = onnx.helper.make_node(
             "Einsum", ["X", "Y"], ["Z"], equation="bij,bjk->bik"
         )
 
-        graph = onnx.helper.make_graph([einsum_node], "test", [x_info, y_info], [z_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        graph = onnx.helper.make_graph(
+            [einsum_node], "test", [x_info, y_info], [z_info]
+        )
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -117,7 +131,7 @@ class TestMathOps:
         assert torch.allclose(result, torch.erf(x))
 
     def test_isnan(self):
-        x = torch.tensor([1.0, float('nan'), 2.0, float('nan')])
+        x = torch.tensor([1.0, float("nan"), 2.0, float("nan")])
         fx_model = convert(self.isnan_script.to_model_proto())
         with torch.inference_mode():
             result = fx_model(x)
@@ -129,9 +143,15 @@ class TestRangeOp:
 
     def test_range_float(self):
         """Test Range with float values."""
-        start_info = onnx.helper.make_tensor_value_info("start", onnx.TensorProto.FLOAT, [])
-        limit_info = onnx.helper.make_tensor_value_info("limit", onnx.TensorProto.FLOAT, [])
-        delta_info = onnx.helper.make_tensor_value_info("delta", onnx.TensorProto.FLOAT, [])
+        start_info = onnx.helper.make_tensor_value_info(
+            "start", onnx.TensorProto.FLOAT, []
+        )
+        limit_info = onnx.helper.make_tensor_value_info(
+            "limit", onnx.TensorProto.FLOAT, []
+        )
+        delta_info = onnx.helper.make_tensor_value_info(
+            "delta", onnx.TensorProto.FLOAT, []
+        )
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         range_node = onnx.helper.make_node("Range", ["start", "limit", "delta"], ["Y"])
@@ -139,7 +159,9 @@ class TestRangeOp:
         graph = onnx.helper.make_graph(
             [range_node], "test", [start_info, limit_info, delta_info], [y_info]
         )
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -160,13 +182,19 @@ class TestCumSumOp:
     def test_cumsum(self):
         """Test cumulative sum."""
         x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [2, 4])
-        axis_info = onnx.helper.make_tensor_value_info("axis", onnx.TensorProto.INT64, [])
+        axis_info = onnx.helper.make_tensor_value_info(
+            "axis", onnx.TensorProto.INT64, []
+        )
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         cumsum_node = onnx.helper.make_node("CumSum", ["X", "axis"], ["Y"])
 
-        graph = onnx.helper.make_graph([cumsum_node], "test", [x_info, axis_info], [y_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        graph = onnx.helper.make_graph(
+            [cumsum_node], "test", [x_info, axis_info], [y_info]
+        )
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -191,7 +219,9 @@ class TestTriluOp:
         trilu_node = onnx.helper.make_node("Trilu", ["X"], ["Y"], upper=1)
 
         graph = onnx.helper.make_graph([trilu_node], "test", [x_info], [y_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -211,7 +241,9 @@ class TestTriluOp:
         trilu_node = onnx.helper.make_node("Trilu", ["X"], ["Y"], upper=0)
 
         graph = onnx.helper.make_graph([trilu_node], "test", [x_info], [y_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -229,9 +261,15 @@ class TestResizeOp:
 
     def test_resize_scales(self):
         """Test Resize with scales."""
-        x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, 1, 2, 2])
-        roi_info = onnx.helper.make_tensor_value_info("roi", onnx.TensorProto.FLOAT, [0])
-        scales_info = onnx.helper.make_tensor_value_info("scales", onnx.TensorProto.FLOAT, [4])
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [1, 1, 2, 2]
+        )
+        roi_info = onnx.helper.make_tensor_value_info(
+            "roi", onnx.TensorProto.FLOAT, [0]
+        )
+        scales_info = onnx.helper.make_tensor_value_info(
+            "scales", onnx.TensorProto.FLOAT, [4]
+        )
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         resize_node = onnx.helper.make_node(
@@ -241,7 +279,9 @@ class TestResizeOp:
         graph = onnx.helper.make_graph(
             [resize_node], "test", [x_info, roi_info, scales_info], [y_info]
         )
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -260,13 +300,17 @@ class TestSpaceDepthOps:
 
     def test_depth_to_space(self):
         """Test DepthToSpace."""
-        x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, 4, 2, 2])
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [1, 4, 2, 2]
+        )
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         node = onnx.helper.make_node("DepthToSpace", ["X"], ["Y"], blocksize=2)
 
         graph = onnx.helper.make_graph([node], "test", [x_info], [y_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
@@ -279,13 +323,17 @@ class TestSpaceDepthOps:
 
     def test_space_to_depth(self):
         """Test SpaceToDepth."""
-        x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [1, 1, 4, 4])
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [1, 1, 4, 4]
+        )
         y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
 
         node = onnx.helper.make_node("SpaceToDepth", ["X"], ["Y"], blocksize=2)
 
         graph = onnx.helper.make_graph([node], "test", [x_info], [y_info])
-        model = onnx.helper.make_model(graph, opset_imports=[onnx.helper.make_opsetid("", 15)])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
+        )
 
         fx_model = convert(model)
 
