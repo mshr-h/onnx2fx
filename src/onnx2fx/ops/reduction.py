@@ -16,21 +16,30 @@ if TYPE_CHECKING:
 def _get_reduction_axes(node: onnx.NodeProto, builder: "GraphBuilder"):
     """Get axes for reduction, handling both attribute and input formats.
 
-    In opset < 18, axes is an attribute.
-    In opset 18+, axes is an optional input.
+    In opset < 13, axes is an attribute.
+    In opset 13+, axes is an optional input.
     """
     # Check opset version for explicit handling
-    if builder.opset_version >= 18:
-        # Opset 18+: axes is an optional input
+    if builder.opset_version >= 13:
+        # Opset 13+: axes is an optional input
         if len(node.input) > 1 and node.input[1]:
-            axes = builder.get_value(node.input[1])
+            axes_name = node.input[1]
+            # Check if axes is an initializer (constant)
+            if axes_name in builder.initializer_map:
+                axes_tensor = builder.initializer_map[axes_name]
+                axes = axes_tensor.tolist()
+                if isinstance(axes, int):
+                    axes = [axes]
+                return axes
+            # Otherwise get the FX node
+            axes = builder.get_value(axes_name)
             if isinstance(axes, torch.Tensor):
                 axes = axes.tolist()
             return axes
         # No axes input means reduce over all dimensions (default behavior)
         return None
     else:
-        # Opset < 18: axes is an attribute
+        # Opset < 13: axes is an attribute
         return get_attribute(node, "axes")
 
 
