@@ -19,6 +19,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "huggingface-hub>=0.33.3",
     "onnxruntime>=1.23.2",
     "ruff>=0.14.4",
     "torchvision>=0.24.0",
@@ -27,3 +28,6 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
