@@ -5,6 +5,7 @@ import torch
 import onnx
 from onnx import numpy_helper
 
+from .exceptions import UnsupportedOpError, ValueNotFoundError
 from .op_registry import get_handler
 from .utils.dtype import DTYPE_MAP
 
@@ -100,10 +101,7 @@ class GraphBuilder:
             If the name is not found in the environment.
         """
         if name not in self.env:
-            raise KeyError(
-                f"Value '{name}' not found in environment. "
-                f"Available: {list(self.env.keys())}"
-            )
+            raise ValueNotFoundError(name, available=list(self.env.keys()))
         return self.env[name]
 
     def has_value(self, name: str) -> bool:
@@ -210,9 +208,8 @@ class GraphBuilder:
             opset = self.get_opset_version(domain)
             handler = get_handler(node.op_type, domain, opset)
             if handler is None:
-                domain_str = f" (domain: {domain})" if domain else ""
-                raise NotImplementedError(
-                    f"Unsupported ONNX op type: {node.op_type}{domain_str}"
+                raise UnsupportedOpError(
+                    node.op_type, domain=domain, opset_version=opset
                 )
             fx_node = handler(self, node)
 
