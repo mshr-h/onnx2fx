@@ -76,6 +76,38 @@ class TestTensorOps:
         assert result.shape == (1, 2, 4)
 
 
+class TestCastOps:
+    """Test cast operators."""
+
+    @script()
+    def cast_like_script(x: FLOAT, target: INT64) -> INT64:
+        return op.CastLike(x, target)
+
+    def test_cast_like(self):
+        """Test CastLike converts to target tensor's dtype."""
+        x = torch.tensor([1.5, 2.7, 3.2], dtype=torch.float32)
+        target = torch.tensor([0, 1, 2], dtype=torch.int64)
+        fx_model = convert(self.cast_like_script.to_model_proto())
+        with torch.no_grad():
+            result = fx_model(x, target)
+        assert result.dtype == torch.int64
+        assert torch.equal(result, torch.tensor([1, 2, 3], dtype=torch.int64))
+
+    def test_cast_like_float_to_float(self):
+        """Test CastLike between float types."""
+        @script()
+        def cast_like_float(x: FLOAT, target: FLOAT) -> FLOAT:
+            return op.CastLike(x, target)
+
+        x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
+        target = torch.tensor([0.0], dtype=torch.float64)
+        fx_model = convert(cast_like_float.to_model_proto())
+        with torch.no_grad():
+            result = fx_model(x, target)
+        assert result.dtype == torch.float64
+        torch.testing.assert_close(result, x.to(torch.float64))
+
+
 class TestReductionOps:
     """Test reduction operators."""
 

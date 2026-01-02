@@ -72,6 +72,18 @@ def cast(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(lambda t, dtype: t.to(dtype), args=(x, torch_dtype))
 
 
+@register("CastLike")
+def cast_like(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Cast tensor to the same data type as the target tensor."""
+    x = builder.get_value(node.input[0])
+    target = builder.get_value(node.input[1])
+
+    def _cast_like(t, target):
+        return t.to(target.dtype)
+
+    return builder.call_function(_cast_like, args=(x, target))
+
+
 # =============================================================================
 # Shape manipulation operators
 # =============================================================================
