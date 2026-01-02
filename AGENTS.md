@@ -49,6 +49,9 @@ Requirements:
 # Run all tests
 pytest
 
+# Run all tests in parallel for faster execution
+pytest -n auto
+
 # Run tests excluding slow tests
 pytest -m "not slow"
 

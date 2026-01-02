@@ -294,6 +294,9 @@ Get list of registered domains.
 # Run all tests
 pytest
 
+# Run all tests in parallel for faster execution
+pytest -n auto
+
 # Run specific test file
 pytest tests/test_activation.py
 

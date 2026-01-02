@@ -50,5 +50,5 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
-      - name: Run tests
-        run: uv run pytest -v
+      - name: Run tests in parallel
+        run: uv run pytest -v -n auto tests

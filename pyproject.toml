@@ -25,6 +25,7 @@ dev = [
     "ruff>=0.14.4",
     "torchvision>=0.24.0",
     "pytest>=9.0.2",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.pytest.ini_options]
