@@ -199,7 +199,13 @@ def expand(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Broadcast tensor to a new shape."""
     x = builder.get_value(node.input[0])
     shape = builder.get_value(node.input[1])
-    return builder.call_function(torch.Tensor.expand, args=(x, shape))
+
+    def _expand(t, shape):
+        if isinstance(shape, torch.Tensor):
+            shape = tuple(shape.tolist())
+        return t.expand(shape)
+
+    return builder.call_function(_expand, args=(x, shape))
 
 
 # =============================================================================
