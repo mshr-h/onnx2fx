@@ -148,7 +148,9 @@ class GraphBuilder:
             if value.name in self.env:
                 continue
 
-            placeholder = self.graph.placeholder(value.name)
+            # Sanitize name for valid Python identifier
+            safe_name = value.name.replace(".", "_").replace("/", "_").replace("-", "_")
+            placeholder = self.graph.placeholder(safe_name)
             info = self.value_info_map.get(value.name)
             placeholder.meta["onnx_shape"] = info[0] if info else None
             placeholder.meta["onnx_dtype"] = info[1] if info else None
