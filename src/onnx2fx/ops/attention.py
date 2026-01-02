@@ -938,3 +938,319 @@ def attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         _attention_sdpa,
         args=(input_node, weight, bias, mask_index, num_heads, unidirectional),
     )
+
+
+# =============================================================================
+# Simplified LayerNormalization variants (ONNX Runtime contrib ops)
+# =============================================================================
+
+
+@register("SimplifiedLayerNormalization")
+@register("SimplifiedLayerNormalization", domain="com.microsoft")
+def simplified_layer_normalization(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
+    """Simplified Layer Normalization (RMSNorm).
+
+    This is LayerNormalization without bias and mean subtraction.
+    Formula: output = x / sqrt(mean(x^2) + epsilon) * scale
+    """
+    x = builder.get_value(node.input[0])
+    scale = builder.get_value(node.input[1])
+
+    axis = get_attribute(node, "axis", -1)
+    epsilon = get_attribute(node, "epsilon", 1e-5)
+
+    def _simplified_layer_norm(x, scale, axis, epsilon):
+        # Simplified LayerNorm (RMSNorm)
+        # output = x * rsqrt(mean(x^2) + epsilon) * scale
+        if axis < 0:
+            axis_pos = x.dim() + axis
+        else:
+            axis_pos = axis
+
+        # Keep dims for broadcasting
+        dims = list(range(axis_pos, x.dim()))
+
+        # Compute RMS: sqrt(mean(x^2))
+        variance = x.pow(2).mean(dim=dims, keepdim=True)
+        x_normalized = x * torch.rsqrt(variance + epsilon)
+
+        return x_normalized * scale
+
+    return builder.call_function(_simplified_layer_norm, args=(x, scale, axis, epsilon))
+
+
+@register("SkipSimplifiedLayerNormalization")
+@register("SkipSimplifiedLayerNormalization", domain="com.microsoft")
+def skip_simplified_layer_normalization(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
+    """Skip connection + Simplified Layer Normalization (RMSNorm)."""
+    x = builder.get_value(node.input[0])
+    skip = builder.get_value(node.input[1])
+    scale = builder.get_value(node.input[2])
+    bias = (
+        builder.get_value(node.input[3])
+        if len(node.input) > 3 and node.input[3]
+        else None
+    )
+
+    epsilon = get_attribute(node, "epsilon", 1e-5)
+
+    def _skip_simplified_layer_norm(x, skip, scale, bias, epsilon):
+        # Add skip connection
+        hidden = x + skip
+        if bias is not None:
+            hidden = hidden + bias
+
+        # Simplified LayerNorm (RMSNorm)
+        variance = hidden.pow(2).mean(dim=-1, keepdim=True)
+        hidden_normalized = hidden * torch.rsqrt(variance + epsilon)
+
+        return hidden_normalized * scale
+
+    return builder.call_function(
+        _skip_simplified_layer_norm, args=(x, skip, scale, bias, epsilon)
+    )
+
+
+@register("GroupQueryAttention")
+@register("GroupQueryAttention", domain="com.microsoft")
+def group_query_attention(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
+    """Group Query Attention (GQA) - used in LLaMA, Mistral, etc.
+
+    Inputs:
+        - query: [batch, seq_len, num_heads * head_size]
+        - key: [batch, kv_seq_len, num_kv_heads * head_size]
+        - value: [batch, kv_seq_len, num_kv_heads * head_size]
+        - past_key (optional): [batch, num_kv_heads, past_seq_len, head_size]
+        - past_value (optional): [batch, num_kv_heads, past_seq_len, head_size]
+        - seqlens_k (optional): cumulative sequence lengths for keys
+        - total_sequence_length (optional): total sequence length
+        - cos_cache (optional): [max_seq_len, head_size / 2] or [max_seq_len, head_size]
+        - sin_cache (optional): [max_seq_len, head_size / 2] or [max_seq_len, head_size]
+
+    Attributes:
+        - num_heads: number of attention heads
+        - kv_num_heads: number of key-value heads (for GQA)
+        - scale: scaling factor (default: 1/sqrt(head_size))
+        - local_window_size: for sliding window attention
+        - do_rotary: whether to apply rotary position embeddings
+        - rotary_interleaved: whether rotary is interleaved (GPT-NeoX style vs LLaMA)
+
+    Outputs:
+        - output: [batch, seq_len, num_heads * head_size]
+        - present_key: [batch, num_kv_heads, total_seq_len, head_size]
+        - present_value: [batch, num_kv_heads, total_seq_len, head_size]
+    """
+    query = builder.get_value(node.input[0])
+    key = builder.get_value(node.input[1])
+    value = builder.get_value(node.input[2])
+
+    # Optional past key-value cache
+    past_key = (
+        builder.get_value(node.input[3])
+        if len(node.input) > 3 and node.input[3]
+        else None
+    )
+    past_value = (
+        builder.get_value(node.input[4])
+        if len(node.input) > 4 and node.input[4]
+        else None
+    )
+
+    # seqlens_k (optional) - cumulative sequence lengths for packed batches
+    seqlens_k = (
+        builder.get_value(node.input[5])
+        if len(node.input) > 5 and node.input[5]
+        else None
+    )
+
+    # total_sequence_length (optional)
+    total_seq_len = (
+        builder.get_value(node.input[6])
+        if len(node.input) > 6 and node.input[6]
+        else None
+    )
+
+    # cos/sin cache for rotary embeddings
+    cos_cache = (
+        builder.get_value(node.input[7])
+        if len(node.input) > 7 and node.input[7]
+        else None
+    )
+    sin_cache = (
+        builder.get_value(node.input[8])
+        if len(node.input) > 8 and node.input[8]
+        else None
+    )
+
+    # Get attributes
+    num_heads = get_attribute(node, "num_heads", 1)
+    kv_num_heads = get_attribute(node, "kv_num_heads", num_heads)
+    scale = get_attribute(node, "scale", None)
+    local_window_size = get_attribute(node, "local_window_size", -1)
+    do_rotary = get_attribute(node, "do_rotary", 0)
+    rotary_interleaved = get_attribute(node, "rotary_interleaved", 0)
+
+    def _group_query_attention(
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        past_k: torch.Tensor | None,
+        past_v: torch.Tensor | None,
+        seqlens_k: torch.Tensor | None,
+        total_seq_len: torch.Tensor | None,
+        cos_cache: torch.Tensor | None,
+        sin_cache: torch.Tensor | None,
+        n_heads: int,
+        n_kv_heads: int,
+        attn_scale: float | None,
+        window_size: int,
+        do_rotary: int,
+        rotary_interleaved: int,
+    ):
+        batch_size, seq_len, _ = q.shape
+        head_size = q.shape[-1] // n_heads
+        kv_head_size = k.shape[-1] // n_kv_heads
+
+        # Reshape Q, K, V to [batch, num_heads, seq_len, head_size]
+        q = q.view(batch_size, seq_len, n_heads, head_size).transpose(1, 2)
+        k = k.view(batch_size, -1, n_kv_heads, kv_head_size).transpose(1, 2)
+        v = v.view(batch_size, -1, n_kv_heads, kv_head_size).transpose(1, 2)
+
+        # Calculate position offset from past cache
+        past_seq_len = 0
+        if past_k is not None and past_k.numel() > 0:
+            past_seq_len = past_k.shape[2]
+
+        # Apply rotary position embeddings if enabled
+        if do_rotary and cos_cache is not None and sin_cache is not None:
+            # Get the position indices
+            positions = torch.arange(past_seq_len, past_seq_len + seq_len, device=q.device)
+
+            # Get cos/sin values for current positions
+            cos = cos_cache[positions]  # [seq_len, rotary_dim]
+            sin = sin_cache[positions]  # [seq_len, rotary_dim]
+
+            # Expand for batch and heads: [1, 1, seq_len, rotary_dim]
+            cos = cos.unsqueeze(0).unsqueeze(0)
+            sin = sin.unsqueeze(0).unsqueeze(0)
+
+            rotary_dim = cos.shape[-1]
+
+            if rotary_interleaved:
+                # GPT-NeoX style: [x0, x1, x2, x3, ...] -> rotate pairs
+                q_rot = q[..., :rotary_dim]
+                q_pass = q[..., rotary_dim:]
+                k_rot = k[..., :rotary_dim]
+                k_pass = k[..., rotary_dim:]
+
+                # Apply rotation
+                q1, q2 = q_rot[..., ::2], q_rot[..., 1::2]
+                k1, k2 = k_rot[..., ::2], k_rot[..., 1::2]
+
+                cos_half = cos[..., ::2]
+                sin_half = sin[..., ::2]
+
+                q_rot_new = torch.stack([
+                    q1 * cos_half - q2 * sin_half,
+                    q1 * sin_half + q2 * cos_half
+                ], dim=-1).flatten(-2)
+                k_rot_new = torch.stack([
+                    k1 * cos_half - k2 * sin_half,
+                    k1 * sin_half + k2 * cos_half
+                ], dim=-1).flatten(-2)
+
+                q = torch.cat([q_rot_new, q_pass], dim=-1)
+                k = torch.cat([k_rot_new, k_pass], dim=-1)
+            else:
+                # LLaMA style: cos/sin are [seq, rotary_dim]
+                # rotary_dim is half the head_size in this format
+                # q/k first rotary_dim*2 elements are rotated:
+                # q1 = q[..., :rotary_dim], q2 = q[..., rotary_dim:rotary_dim*2]
+                # result = (q1*cos - q2*sin, q1*sin + q2*cos)
+                
+                rotary_full = rotary_dim * 2  # total dims that get rotated
+                q_rot = q[..., :rotary_full]
+                q_pass = q[..., rotary_full:]
+                k_rot = k[..., :rotary_full]
+                k_pass = k[..., rotary_full:]
+
+                # Split into first half and second half
+                q1, q2 = q_rot[..., :rotary_dim], q_rot[..., rotary_dim:rotary_full]
+                k1, k2 = k_rot[..., :rotary_dim], k_rot[..., rotary_dim:rotary_full]
+
+                # cos/sin are already in the right shape [1, 1, seq_len, rotary_dim]
+                q_rot_new = torch.cat([
+                    q1 * cos - q2 * sin,
+                    q1 * sin + q2 * cos
+                ], dim=-1)
+                k_rot_new = torch.cat([
+                    k1 * cos - k2 * sin,
+                    k1 * sin + k2 * cos
+                ], dim=-1)
+
+                q = torch.cat([q_rot_new, q_pass], dim=-1)
+                k = torch.cat([k_rot_new, k_pass], dim=-1)
+
+        # Handle past key-value cache
+        if past_k is not None and past_k.numel() > 0:
+            k = torch.cat([past_k, k], dim=2)
+            v = torch.cat([past_v, v], dim=2)
+
+        # Present key-value for caching
+        present_k = k
+        present_v = v
+
+        # Expand K, V for GQA (repeat for each head group)
+        if n_kv_heads < n_heads:
+            n_rep = n_heads // n_kv_heads
+            k = k.repeat_interleave(n_rep, dim=1)
+            v = v.repeat_interleave(n_rep, dim=1)
+
+        # Compute attention scale
+        if attn_scale is None:
+            attn_scale = 1.0 / (head_size ** 0.5)
+
+        # Use scaled_dot_product_attention
+        # For autoregressive with past cache, don't use causal mask for new tokens
+        # since past_k/v already handled the causality
+        is_causal = seq_len > 1 and past_seq_len == 0
+        output = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, scale=attn_scale, is_causal=is_causal
+        )
+
+        # Reshape output: [batch, num_heads, seq_len, head_size] -> [batch, seq_len, hidden]
+        output = output.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
+
+        return output, present_k, present_v
+
+    # Build the call
+    result = builder.call_function(
+        _group_query_attention,
+        args=(
+            query,
+            key,
+            value,
+            past_key,
+            past_value,
+            seqlens_k,
+            total_seq_len,
+            cos_cache,
+            sin_cache,
+            num_heads,
+            kv_num_heads,
+            scale,
+            local_window_size,
+            do_rotary,
+            rotary_interleaved,
+        ),
+    )
+
+    # Return tuple output
+    return result
+

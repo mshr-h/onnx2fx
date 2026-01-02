@@ -499,3 +499,164 @@ class TestSkipLayerNormalization:
 
         torch.testing.assert_close(result, expected)
 
+
+class TestSimplifiedLayerNormalization:
+    """Test SimplifiedLayerNormalization (RMSNorm) operator."""
+
+    def test_simplified_layer_norm(self):
+        """Test SimplifiedLayerNormalization computes RMSNorm correctly."""
+        from onnx import TensorProto, helper
+
+        batch_size, seq_len, hidden_size = 2, 4, 8
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        scale_info = helper.make_tensor_value_info(
+            "scale", TensorProto.FLOAT, [hidden_size]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+
+        node = helper.make_node(
+            "SimplifiedLayerNormalization",
+            ["input", "scale"],
+            ["output"],
+            name="simplified_ln",
+            axis=-1,
+            epsilon=1e-5,
+        )
+
+        graph = helper.make_graph(
+            [node],
+            "simplified_ln_test",
+            [input_info, scale_info],
+            [output_info],
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        x = torch.randn(batch_size, seq_len, hidden_size)
+        scale = torch.randn(hidden_size)
+
+        result = fx_module(x, scale)
+
+        # Manual RMSNorm computation
+        variance = x.pow(2).mean(dim=-1, keepdim=True)
+        x_normalized = x * torch.rsqrt(variance + 1e-5)
+        expected = x_normalized * scale
+
+        torch.testing.assert_close(result, expected)
+
+    def test_simplified_layer_norm_fp16(self):
+        """Test SimplifiedLayerNormalization with FP16."""
+        from onnx import TensorProto, helper
+
+        batch_size, seq_len, hidden_size = 2, 4, 16
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT16, [batch_size, seq_len, hidden_size]
+        )
+        scale_info = helper.make_tensor_value_info(
+            "scale", TensorProto.FLOAT16, [hidden_size]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT16, [batch_size, seq_len, hidden_size]
+        )
+
+        node = helper.make_node(
+            "SimplifiedLayerNormalization",
+            ["input", "scale"],
+            ["output"],
+            name="simplified_ln",
+            axis=-1,
+            epsilon=1e-5,
+        )
+
+        graph = helper.make_graph(
+            [node],
+            "simplified_ln_test",
+            [input_info, scale_info],
+            [output_info],
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        x = torch.randn(batch_size, seq_len, hidden_size, dtype=torch.float16)
+        scale = torch.randn(hidden_size, dtype=torch.float16)
+
+        result = fx_module(x, scale)
+
+        # Manual RMSNorm computation
+        variance = x.pow(2).mean(dim=-1, keepdim=True)
+        x_normalized = x * torch.rsqrt(variance + 1e-5)
+        expected = x_normalized * scale
+
+        torch.testing.assert_close(result, expected, rtol=1e-2, atol=1e-2)
+
+
+class TestGroupQueryAttention:
+    """Test GroupQueryAttention operator (used in LLaMA, Mistral, etc.)."""
+
+    def test_group_query_attention_basic(self):
+        """Test basic GQA without past key-values."""
+        from onnx import TensorProto, helper
+
+        batch_size = 1
+        seq_len = 4
+        num_heads = 4
+        num_kv_heads = 2
+        head_dim = 8
+        hidden_size = num_heads * head_dim
+        kv_hidden_size = num_kv_heads * head_dim
+
+        query_info = helper.make_tensor_value_info(
+            "query", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        key_info = helper.make_tensor_value_info(
+            "key", TensorProto.FLOAT, [batch_size, seq_len, kv_hidden_size]
+        )
+        value_info = helper.make_tensor_value_info(
+            "value", TensorProto.FLOAT, [batch_size, seq_len, kv_hidden_size]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+
+        node = helper.make_node(
+            "GroupQueryAttention",
+            ["query", "key", "value"],
+            ["output", "present_key", "present_value"],
+            name="gqa",
+            num_heads=num_heads,
+            kv_num_heads=num_kv_heads,
+            domain="com.microsoft",
+        )
+
+        graph = helper.make_graph(
+            [node],
+            "gqa_test",
+            [query_info, key_info, value_info],
+            [output_info],
+        )
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ]
+        )
+
+        fx_module = convert(model)
+
+        query = torch.randn(batch_size, seq_len, hidden_size)
+        key = torch.randn(batch_size, seq_len, kv_hidden_size)
+        value = torch.randn(batch_size, seq_len, kv_hidden_size)
+
+        result = fx_module(query, key, value)
+
+        # Check output shape
+        assert result.shape == (batch_size, seq_len, hidden_size)
