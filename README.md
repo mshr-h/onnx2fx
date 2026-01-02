@@ -1,59 +1,102 @@
 # onnx2fx
 
-_onnx2fx_ converts ONNX graphs into `torch.fx.GraphModule` objects, enabling PyTorch-native optimization, analysis, and execution of ONNX models.
+Yet another ONNX to PyTorch FX converter.
+
+> **⚠️ Note:** This project is under active development. The public API may change at any time.
+
+`onnx2fx` converts ONNX models into PyTorch FX `GraphModule`s, enabling seamless integration with PyTorch's ecosystem for optimization, analysis, and deployment.
 
 ## Features
 
-- **140+ ONNX operators** supported across arithmetic, activation, tensor, reduction, neural network, and control flow categories
-- **Dynamic shape support** for batch size, sequence length, and image dimensions
-- **Custom operator registration** for domain-specific ops (e.g., `com.microsoft`)
-- **ONNX metadata preservation** in `node.meta["onnx_*"]` for downstream passes
-- **Initializers as buffers** for proper parameter management
+- **Simple API**: Convert ONNX models with a single function call
+- **Extensive Operator Support**: 150+ ONNX operators including standard and Microsoft domain operators
+- **Custom Operator Registration**: Easily extend support for unsupported or custom ONNX operators
+- **PyTorch FX Output**: Get a `torch.fx.GraphModule` for easy inspection, optimization, and compilation
+- **Dynamic Shape Support**: Handle models with dynamic input dimensions
+- **Quantization Support**: Support for quantized operators (QLinear*, DequantizeLinear, etc.)
+- **Type-annotated**: Full type hints for better IDE support
 
 ## Installation
 
+### Requirements
+
+- Python >= 3.11
+- PyTorch >= 2.9.0
+- ONNX >= 1.19.1
+
+### From Source
+
 ```bash
-git clone https://github.com/mshr-h/onnx2fx
+git clone https://github.com/mshr-h/onnx2fx.git
 cd onnx2fx
-uv pip install -e .              # or: pip install -e .
+pip install .
 ```
 
-Requirements: Python 3.11+, PyTorch 2.9+, ONNX 1.19+, ONNXScript 0.5.6+ (see `pyproject.toml`).
+### Development Installation
+
+```bash
+git clone https://github.com/mshr-h/onnx2fx.git
+cd onnx2fx
+pip install -e ".[dev]"
+```
 
 ## Quick Start
+
+### Basic Conversion
 
 ```python
 import torch
 import onnx
-import onnx2fx
+from onnx2fx import convert
 
-# Load an ONNX model (file path or in-memory ModelProto)
-model_proto = onnx.load("model.onnx")
+# Load from file path
+fx_module = convert("model.onnx")
 
-# Convert to FX
-fx_module = onnx2fx.convert(model_proto)
-fx_module.graph.print_tabular()
+# Or from onnx.ModelProto
+onnx_model = onnx.load("model.onnx")
+fx_module = convert(onnx_model)
 
-# Run inference just like any torch.nn.Module
-x = torch.randn(1, 3, 224, 224)
-with torch.inference_mode():
-    y = fx_module(x)
+# Run inference
+input_tensor = torch.randn(1, 3, 224, 224)
+output = fx_module(input_tensor)
 ```
 
-## Custom Operators
-
-Register custom operator handlers for unsupported or domain-specific operators:
+### Inspecting the Converted Graph
 
 ```python
-from onnx2fx import convert, register_custom_op, unregister_op
+from onnx2fx import convert
+
+fx_module = convert("model.onnx")
+
+# Print the FX graph
+print(fx_module.graph)
+
+# Get the graph code
+print(fx_module.code)
+```
+
+### Registering Custom Operators
+
+For unsupported or custom ONNX operators, you can register your own handlers:
+
+```python
+import torch
+from onnx2fx import convert, register_custom_op
 
 # Using decorator
 @register_custom_op("MyCustomOp")
 def my_custom_op(builder, node):
     x = builder.get_value(node.input[0])
-    return builder.call_function(torch.relu, args=(x,))
+    return builder.call_function(torch.sigmoid, args=(x,))
 
-# For custom domains (e.g., ONNX Runtime extensions)
+# Or register directly
+def my_handler(builder, node):
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.tanh, args=(x,))
+
+register_custom_op("TanhCustom", my_handler)
+
+# For custom domains (e.g., Microsoft operators)
 @register_custom_op("BiasGelu", domain="com.microsoft")
 def bias_gelu(builder, node):
     x = builder.get_value(node.input[0])
@@ -62,103 +105,191 @@ def bias_gelu(builder, node):
         lambda t, b: torch.nn.functional.gelu(t + b),
         args=(x, bias)
     )
+```
 
-# Query supported operators
-from onnx2fx import get_supported_ops, is_supported
-print(get_supported_ops())  # List all supported ops
-print(is_supported("Conv"))  # Check specific op
+### Querying Supported Operators
+
+```python
+from onnx2fx import (
+    get_supported_ops,
+    get_all_supported_ops,
+    get_registered_domains,
+    is_supported,
+)
+
+# Check if an operator is supported
+print(is_supported("Conv"))  # True
+print(is_supported("BiasGelu", domain="com.microsoft"))  # True
+
+# Get all operators for a domain
+standard_ops = get_supported_ops()  # Default ONNX domain
+microsoft_ops = get_supported_ops("com.microsoft")
+
+# Get all operators across all domains
+all_ops = get_all_supported_ops()
+
+# Get registered domains
+domains = get_registered_domains()  # ['', 'com.microsoft']
 ```
 
 ## Supported Operators
 
-<details>
-<summary>Click to expand full operator list (140+ operators)</summary>
+### Standard ONNX Domain
 
-### Arithmetic
-Add, Sub, Mul, Div, Pow, Sqrt, Exp, Log, Abs, Neg, Sign, Floor, Ceil, Round, Mod, Reciprocal, Min, Max, Sum, Mean, MatMul, MatMulInteger, Gemm, Einsum
+#### Activation Functions
+- Relu, LeakyRelu, PRelu, Elu, Selu, Celu
+- Sigmoid, HardSigmoid, Tanh
+- Softmax, LogSoftmax, Hardmax
+- Softplus, Softsign
+- Gelu, Silu, Mish
+- ThresholdedRelu
 
-### Activation
-Relu, LeakyRelu, PRelu, Elu, Selu, Celu, Gelu, Sigmoid, Tanh, Softmax, LogSoftmax, Softplus, Softsign, HardSigmoid, HardSwish, Mish, ThresholdedRelu, Shrink
+#### Arithmetic & Element-wise
+- Add, Sub, Mul, Div, Pow, Mod
+- Neg, Abs, Sign, Ceil, Floor, Round
+- Sqrt, Exp, Log, Reciprocal
+- Min, Max, Mean, Sum
+- Clip, Erf
 
-### Tensor
-Reshape, Transpose, Squeeze, Unsqueeze, Flatten, Concat, Split, Slice, Gather, GatherElements, GatherND, Scatter, ScatterElements, ScatterND, Tile, Expand, Pad, Shape, Size, ConstantOfShape, Identity, Cast, CastLike, Constant, Where, NonZero, Compress, ReverseSequence, Trilu, Unique
+#### Comparison & Logical
+- Equal, Greater, Less, GreaterOrEqual, LessOrEqual
+- And, Or, Not, Xor
+- Where, IsNaN, IsInf
+- BitwiseAnd, BitwiseOr, BitwiseXor, BitwiseNot, BitShift
 
-### Reduction
-ReduceSum, ReduceMean, ReduceMax, ReduceMin, ReduceProd, ReduceL1, ReduceL2, ReduceLogSum, ReduceLogSumExp, ReduceSumSquare, ArgMax, ArgMin
+#### Trigonometric
+- Sin, Cos, Tan
+- Sinh, Cosh, Tanh
+- Asin, Acos, Atan
+- Asinh, Acosh, Atanh
 
-### Neural Network
-Conv, ConvTranspose, MaxPool, AveragePool, GlobalMaxPool, GlobalAveragePool, BatchNormalization, InstanceNormalization, LayerNormalization, GroupNormalization, LRN, Dropout, Upsample, Resize, MaxRoiPool
+#### Reduction
+- ReduceSum, ReduceMean, ReduceMax, ReduceMin, ReduceProd
+- ReduceL1, ReduceL2
+- ReduceLogSum, ReduceLogSumExp, ReduceSumSquare
+- ArgMax, ArgMin
 
-### Advanced
-Sin, Cos, Tan, Asin, Acos, Atan, Sinh, Cosh, Asinh, Acosh, Atanh, Erf, Range, CumSum, TopK, Det, Hardmax, NegativeLogLikelihoodLoss, SoftmaxCrossEntropyLoss
+#### Tensor Manipulation
+- Reshape, Transpose, Squeeze, Unsqueeze
+- Concat, Split, Slice, Gather, GatherElements, GatherND
+- Scatter, ScatterElements, ScatterND
+- Expand, Tile, Flatten
+- Pad, Resize
+- Shape, Size
+- Cast, CastLike, Identity
+- Constant, ConstantOfShape
 
-### Comparison & Logic
-Equal, Less, LessOrEqual, Greater, GreaterOrEqual, Not, And, Or, Xor, IsNaN, IsInf, BitShift
+#### Neural Network Layers
+- Conv, ConvTranspose, ConvInteger
+- MatMul, Gemm, MatMulInteger
+- MaxPool, AveragePool, GlobalMaxPool, GlobalAveragePool
+- BatchNormalization, InstanceNormalization, LayerNormalization, GroupNormalization
+- Dropout, LRN
 
-### Control Flow
-If, Loop, Scan, Optional, OptionalHasElement, OptionalGetElement, SequenceConstruct, SequenceAt, SequenceLength, SequenceEmpty, SequenceInsert, SequenceErase, ConcatFromSequence, SplitToSequence
+#### Quantization
+- QuantizeLinear, DequantizeLinear, DynamicQuantizeLinear
+- QLinearConv, QLinearMatMul, QLinearAdd, QLinearMul
+- QLinearSigmoid, QLinearLeakyRelu, QLinearGlobalAveragePool
 
-### Random
-RandomNormal, RandomNormalLike, RandomUniform, RandomUniformLike, Bernoulli, Multinomial
+#### Control Flow
+- If, Loop, Scan
 
-### Quantization
-QuantizeLinear, DequantizeLinear, QLinearConv, QLinearMatMul
+#### Sequence Operations
+- SequenceConstruct, SequenceAt, SequenceEmpty
+- SequenceInsert, SequenceErase, SequenceLength
+- ConcatFromSequence, SplitToSequence
 
-</details>
+#### Other
+- Einsum, TopK, NonZero, NonMaxSuppression
+- OneHot, Range, EyeLike
+- Unique, Compress, Trilu
+- DepthToSpace, SpaceToDepth
+- ReverseSequence, CumSum
 
-## Dynamic Shapes
+### Microsoft Domain (`com.microsoft`)
 
-Models with dynamic dimensions (batch size, sequence length, image size) are fully supported:
+- Attention, GroupQueryAttention
+- EmbedLayerNormalization
+- SkipLayerNormalization, SkipSimplifiedLayerNormalization
+- SimplifiedLayerNormalization
 
-```python
-# Export PyTorch model with dynamic axes
-torch.onnx.export(
-    model, dummy_input, "model.onnx",
-    dynamic_axes={"input": {0: "batch", 1: "seq_len"}}
-)
+## API Reference
 
-# Convert and run with varying input sizes
-fx_module = onnx2fx.convert(onnx.load("model.onnx"))
-fx_module(torch.randn(1, 10, 64))   # batch=1, seq=10
-fx_module(torch.randn(8, 100, 64))  # batch=8, seq=100
-```
+### `convert(model)`
 
-## Testing
+Converts an ONNX model to a PyTorch FX `GraphModule`.
 
-```bash
-uv run pytest -v
-```
+**Parameters:**
+- `model` (`Union[onnx.ModelProto, str]`): Either an in-memory `onnx.ModelProto` or a file path to an ONNX model.
+
+**Returns:**
+- `torch.fx.GraphModule`: A PyTorch FX Graph module.
+
+### `register_custom_op(op_type, handler=None, domain="")`
+
+Register a custom ONNX operator handler.
+
+**Parameters:**
+- `op_type` (`str`): The ONNX operator type name.
+- `handler` (`OpHandler`, optional): The handler function. If not provided, returns a decorator.
+- `domain` (`str`, optional): The ONNX domain. Default is "" (standard ONNX domain).
+
+### `unregister_op(op_type, domain="")`
+
+Unregister an operator handler.
+
+**Parameters:**
+- `op_type` (`str`): The ONNX operator type name.
+- `domain` (`str`, optional): The ONNX domain.
+
+**Returns:**
+- `bool`: True if the operator was unregistered.
+
+### `is_supported(op_type, domain="")`
+
+Check if an operator is supported.
+
+### `get_supported_ops(domain="")`
+
+Get list of supported ONNX operators for a domain.
+
+### `get_all_supported_ops()`
+
+Get all supported operators across all domains.
+
+### `get_registered_domains()`
+
+Get list of registered domains.
 
 ## Development
 
-Install pre-commit hooks to automatically format code with ruff on commit:
+### Running Tests
 
 ```bash
-uv run pre-commit install
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/test_activation.py
+
+# Skip slow tests
+pytest -m "not slow"
 ```
 
-## Architecture
+### Code Formatting
 
-```
-src/onnx2fx/
-├── __init__.py          # Public API
-├── converter.py         # Main convert() function
-├── graph_builder.py     # FX graph construction
-├── op_registry.py       # Operator registration system
-├── ops/                 # Operator implementations
-│   ├── arithmetic.py
-│   ├── activation.py
-│   ├── tensor.py
-│   ├── reduction.py
-│   ├── nn.py
-│   ├── advanced.py
-│   ├── attention.py
-│   └── control.py
-└── utils/
-    ├── dtype.py         # ONNX-PyTorch dtype mapping
-    └── attributes.py    # ONNX attribute parsing
+```bash
+# Format code with ruff
+ruff format .
+
+# Check linting
+ruff check .
 ```
 
 ## License
 
-Apache-2.0
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+## Author
+
+Masahiro Hiramori (contact@mshr-h.com)
