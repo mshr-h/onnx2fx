@@ -844,11 +844,54 @@ def embed_layer_normalization(
 
 @register("Attention")
 def attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """ONNX Attention operator (com.microsoft domain).
+    """ONNX Attention operator.
 
-    Computes multi-head attention using torch.nn.functional.scaled_dot_product_attention.
-    Inputs: input, weight, bias (optional), mask_index (optional), past (optional)
+    Supports two patterns:
+    1. Decomposed SDPA (ViT, etc.): Inputs are Q, K, V tensors directly
+       - 3 inputs: query, key, value
+       - Attributes: is_causal, softcap, qk_matmul_output_mode
+
+    2. Fused SDPA (com.microsoft domain): Inputs are input, weight, bias
+       - 5+ inputs: input, weight, bias (optional), mask_index (optional), past (optional)
+       - Attributes: num_heads, unidirectional
     """
+    num_inputs = len(node.input)
+
+    # Check if this is Decomposed SDPA pattern (Q, K, V directly)
+    # Heuristic: If we have exactly 3 inputs and is_causal attribute exists
+    is_causal_attr = get_attribute(node, "is_causal", None)
+    softcap = get_attribute(node, "softcap", 0.0)
+
+    if num_inputs == 3 and is_causal_attr is not None:
+        # Decomposed SDPA: Q, K, V are passed directly
+        query = builder.get_value(node.input[0])
+        key = builder.get_value(node.input[1])
+        value = builder.get_value(node.input[2])
+
+        is_causal = is_causal_attr
+
+        def _decomposed_sdpa(
+            q: torch.Tensor,
+            k: torch.Tensor,
+            v: torch.Tensor,
+            is_causal: int,
+            scale: float,
+        ) -> torch.Tensor:
+            # Use scaled_dot_product_attention directly with Q, K, V
+            if is_causal:
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    q, k, v, is_causal=True
+                )
+            else:
+                output = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+            return output
+
+        return builder.call_function(
+            _decomposed_sdpa,
+            args=(query, key, value, is_causal, softcap),
+        )
+
+    # Fused SDPA pattern (Microsoft domain style)
     input_node = builder.get_value(node.input[0])
     weight = builder.get_value(node.input[1])
     bias = builder.get_value(node.input[2]) if len(node.input) > 2 and node.input[2] else None
