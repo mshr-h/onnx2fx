@@ -311,11 +311,25 @@ def _dynamic_slice(x, starts, ends, axes=None, steps=None):
 
 @register("Gather")
 def gather(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Gather elements along an axis."""
+    """Gather elements along an axis.
+
+    ONNX Gather behavior:
+    - If indices is a scalar, the axis dimension is removed from the output
+    - If indices is a 1D tensor, the axis dimension is replaced by the indices dimension
+    """
     x = builder.get_value(node.input[0])
     indices = builder.get_value(node.input[1])
     axis = get_attribute(node, "axis", 0)
-    return builder.call_function(torch.index_select, args=(x, axis, indices))
+
+    def _gather(data, indices, axis):
+        # Handle scalar indices - need to squeeze the dimension after gather
+        if indices.ndim == 0:
+            # Scalar index: select single element along axis, removing that dimension
+            return torch.index_select(data, axis, indices.unsqueeze(0)).squeeze(axis)
+        else:
+            return torch.index_select(data, axis, indices.flatten())
+
+    return builder.call_function(_gather, args=(x, indices, axis))
 
 
 @register("GatherElements")
