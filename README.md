@@ -14,7 +14,6 @@ Yet another ONNX to PyTorch FX converter.
 - **PyTorch FX Output**: Get a `torch.fx.GraphModule` for easy inspection, optimization, and compilation
 - **Dynamic Shape Support**: Handle models with dynamic input dimensions
 - **Quantization Support**: Support for quantized operators (QLinear*, DequantizeLinear, etc.)
-- **Type-annotated**: Full type hints for better IDE support
 
 ## Installation
 
