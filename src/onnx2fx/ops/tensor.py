@@ -91,16 +91,34 @@ def cast_like(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 @register("Reshape")
 def reshape(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Reshape tensor to a new shape."""
+    """Reshape tensor to a new shape.
+
+    ONNX Reshape semantics:
+    - A value of 0 means the dimension is unchanged from the input shape
+    - A value of -1 means the dimension is inferred from the remaining elements
+    """
     x = builder.get_value(node.input[0])
     shape = builder.get_value(node.input[1])
 
-    def _reshape(t, shape):
-        if isinstance(shape, torch.Tensor):
-            shape = tuple(shape.tolist())
-        return torch.reshape(t, shape)
+    # Check allowzero attribute (default is 0, meaning 0 copies from input)
+    allowzero = get_attribute(node, "allowzero", 0)
 
-    return builder.call_function(_reshape, args=(x, shape))
+    def _reshape(t, shape, allowzero):
+        if isinstance(shape, torch.Tensor):
+            shape = shape.tolist()
+        else:
+            shape = list(shape)
+
+        # ONNX: if allowzero=0, a value of 0 in shape means copy from input
+        if not allowzero:
+            for i, dim in enumerate(shape):
+                if dim == 0:
+                    if i < t.dim():
+                        shape[i] = t.shape[i]
+
+        return torch.reshape(t, tuple(shape))
+
+    return builder.call_function(_reshape, args=(x, shape, allowzero))
 
 
 @register("Transpose")
@@ -231,7 +249,14 @@ def split(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     # split sizes can be input (opset 13+) or attribute
     if len(node.input) > 1 and node.input[1]:
         split_sizes = builder.get_value(node.input[1])
-        result = builder.call_function(torch.split, args=(x, split_sizes, axis))
+
+        def _split_with_sizes(t, sizes, dim):
+            # Convert tensor to list of ints if needed
+            if hasattr(sizes, "tolist"):
+                sizes = sizes.tolist()
+            return torch.split(t, sizes, dim)
+
+        result = builder.call_function(_split_with_sizes, args=(x, split_sizes, axis))
     elif num_outputs is not None:
         # Split into equal parts
         result = builder.call_function(torch.chunk, args=(x, num_outputs, axis))
@@ -320,20 +345,54 @@ def gather(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Gather elements along an axis.
 
     ONNX Gather behavior:
+    - output shape = data.shape[:axis] + indices.shape + data.shape[axis+1:]
     - If indices is a scalar, the axis dimension is removed from the output
-    - If indices is a 1D tensor, the axis dimension is replaced by the indices dimension
+    - If indices is a multi-dimensional tensor, indices.shape replaces the axis dimension
     """
     x = builder.get_value(node.input[0])
     indices = builder.get_value(node.input[1])
     axis = get_attribute(node, "axis", 0)
 
     def _gather(data, indices, axis):
+        indices = indices.long()
+
+        if axis < 0:
+            axis = data.dim() + axis
+
         # Handle scalar indices - need to squeeze the dimension after gather
         if indices.ndim == 0:
             # Scalar index: select single element along axis, removing that dimension
             return torch.index_select(data, axis, indices.unsqueeze(0)).squeeze(axis)
-        else:
-            return torch.index_select(data, axis, indices.flatten())
+
+        # For multi-dimensional indices, we need proper ONNX Gather semantics
+        # Move the gather axis to position 0
+        if axis != 0:
+            data = data.movedim(axis, 0)
+
+        # Flatten indices for indexing
+        indices_flat = indices.flatten()
+        gathered = data[indices_flat]  # [num_indices, ...]
+
+        # Reshape to restore indices dimensions
+        new_shape = list(indices.shape) + list(data.shape[1:])
+        gathered = gathered.view(new_shape)
+
+        # Move the original leading dimensions back
+        if axis != 0:
+            # Permute dimensions to restore original order
+            # Current: [idx..., prefix..., suffix...]
+            # Target:  [prefix..., idx..., suffix...]
+            num_idx_dims = indices.ndim
+            num_prefix_dims = axis
+
+            perm = (
+                list(range(num_idx_dims, num_idx_dims + num_prefix_dims))
+                + list(range(num_idx_dims))
+                + list(range(num_idx_dims + num_prefix_dims, gathered.ndim))
+            )
+            gathered = gathered.permute(perm)
+
+        return gathered
 
     return builder.call_function(_gather, args=(x, indices, axis))
 
