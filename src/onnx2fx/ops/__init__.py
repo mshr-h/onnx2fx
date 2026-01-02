@@ -2,22 +2,28 @@
 """ONNX operator implementations."""
 
 # Import all operator modules to register handlers
-from . import arithmetic
 from . import activation
-from . import tensor
-from . import reduction
-from . import nn
 from . import advanced
+from . import arithmetic
 from . import attention
 from . import control
+from . import loss
+from . import nn
+from . import quantization
+from . import reduction
+from . import sequence
+from . import tensor
 
 __all__ = [
-    "arithmetic",
     "activation",
-    "tensor",
-    "reduction",
-    "nn",
     "advanced",
+    "arithmetic",
     "attention",
     "control",
+    "loss",
+    "nn",
+    "quantization",
+    "reduction",
+    "sequence",
+    "tensor",
 ]
