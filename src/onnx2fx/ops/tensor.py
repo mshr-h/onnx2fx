@@ -244,14 +244,22 @@ def flatten(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 @register("Expand")
 def expand(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Broadcast tensor to a new shape."""
+    """Broadcast tensor to a new shape.
+
+    ONNX Expand uses bidirectional broadcasting, which means:
+    - If target dim is 1, keep the original dimension
+    - The output shape is max(input_dim, target_dim) for each dimension
+    """
     x = builder.get_value(node.input[0])
     shape = builder.get_value(node.input[1])
 
     def _expand(t, shape):
         if isinstance(shape, torch.Tensor):
-            shape = tuple(shape.tolist())
-        return t.expand(shape)
+            shape = tuple(int(s) for s in shape.tolist())
+        # Use broadcast_shapes to compute the actual broadcast shape
+        # This handles cases where target_dim=1 should preserve input_dim
+        broadcast_shape = torch.broadcast_shapes(t.shape, shape)
+        return t.expand(broadcast_shape)
 
     return builder.call_function(_expand, args=(x, shape))
 

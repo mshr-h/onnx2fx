@@ -15,8 +15,14 @@ from . import ops  # noqa: F401
 
 class GraphBuilder:
     def __init__(self, model: onnx.ModelProto):
+        # Try shape inference but preserve original model if it fails
+        # (shape_inference may drop graph contents for large models with external data)
         try:
-            model = onnx.shape_inference.infer_shapes(model)
+            inferred_model = onnx.shape_inference.infer_shapes(model)
+            # Check if shape inference preserved the model structure
+            if len(inferred_model.graph.node) > 0:
+                model = inferred_model
+            # If nodes were lost, keep original model
         except Exception:
             pass
         self.model: onnx.ModelProto = model

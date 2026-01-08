@@ -17,11 +17,17 @@ def _get_reduction_axes(node: onnx.NodeProto, builder: "GraphBuilder"):
     """Get axes for reduction, handling both attribute and input formats.
 
     In opset < 13, axes is an attribute.
-    In opset 13+, axes is an optional input.
+    In opset 13-17, axes can be an attribute or an optional input.
+    In opset 18+, axes is an optional input only.
     """
-    # Check opset version for explicit handling
+    # First, always check if axes is provided as an attribute
+    # This works for opset < 18 where axes can be an attribute
+    axes_attr = get_attribute(node, "axes")
+    if axes_attr is not None:
+        return axes_attr
+
+    # If no attribute, check if axes is an input (opset 13+)
     if builder.opset_version >= 13:
-        # Opset 13+: axes is an optional input
         if len(node.input) > 1 and node.input[1]:
             axes_name = node.input[1]
             # Check if axes is an initializer (constant)
@@ -36,11 +42,9 @@ def _get_reduction_axes(node: onnx.NodeProto, builder: "GraphBuilder"):
             if isinstance(axes, torch.Tensor):
                 axes = axes.tolist()
             return axes
-        # No axes input means reduce over all dimensions (default behavior)
-        return None
-    else:
-        # Opset < 13: axes is an attribute
-        return get_attribute(node, "axes")
+
+    # No axes specified means reduce over all dimensions
+    return None
 
 
 @register("ReduceSum")
