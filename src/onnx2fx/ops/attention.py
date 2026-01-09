@@ -14,60 +14,6 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
-# Softmax variants
-# =============================================================================
-
-
-@register("Hardmax")
-def hardmax(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Hardmax - one-hot encoding of argmax."""
-    x = builder.get_value(node.input[0])
-    axis = get_attribute(node, "axis", -1)
-
-    def _hardmax(t: torch.Tensor, ax: int) -> torch.Tensor:
-        return torch.nn.functional.one_hot(
-            torch.argmax(t, dim=ax), num_classes=t.shape[ax]
-        ).to(t.dtype)
-
-    return builder.call_function(_hardmax, args=(x, axis))
-
-
-# =============================================================================
-# Scatter ND operators
-# =============================================================================
-
-
-@register("ScatterND")
-def scatter_nd(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Scatter updates into data at indices."""
-    data = builder.get_value(node.input[0])
-    indices = builder.get_value(node.input[1])
-    updates = builder.get_value(node.input[2])
-
-    _reduction = get_attribute(node, "reduction", "none")
-
-    def _scatter_nd(
-        d: torch.Tensor, idx: torch.Tensor, upd: torch.Tensor
-    ) -> torch.Tensor:
-        output = d.clone()
-        idx = idx.long()
-
-        idx_shape = idx.shape[:-1]
-        last_dim = idx.shape[-1]
-
-        flat_idx = idx.reshape(-1, last_dim)
-        flat_upd = upd.reshape(-1, *upd.shape[len(idx_shape) :])
-
-        for i in range(flat_idx.shape[0]):
-            data_idx = tuple(flat_idx[i].tolist())
-            output[data_idx] = flat_upd[i]
-
-        return output
-
-    return builder.call_function(_scatter_nd, args=(data, indices, updates))
-
-
-# =============================================================================
 # Embedding and LayerNorm variants
 # =============================================================================
 

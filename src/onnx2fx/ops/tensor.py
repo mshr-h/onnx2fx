@@ -619,3 +619,211 @@ def constant_of_shape(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
         return torch.full(shape, fill_value, dtype=dtype)
 
     return builder.call_function(_constant_of_shape, args=(shape, fill_value, dtype))
+
+
+# =============================================================================
+# Tensor generation operators
+# =============================================================================
+
+
+@register("Range")
+def range_(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Generate a range of values."""
+    start = builder.get_value(node.input[0])
+    limit = builder.get_value(node.input[1])
+    delta = builder.get_value(node.input[2])
+
+    def _range(start, limit, delta):
+        # Extract scalar values
+        st = start.item() if isinstance(start, torch.Tensor) else start
+        lim = limit.item() if isinstance(limit, torch.Tensor) else limit
+        dlt = delta.item() if isinstance(delta, torch.Tensor) else delta
+        dtype = start.dtype if isinstance(start, torch.Tensor) else torch.float32
+        return torch.arange(st, lim, dlt, dtype=dtype)
+
+    return builder.call_function(_range, args=(start, limit, delta))
+
+
+@register("OneHot")
+def one_hot(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """One-hot encoding."""
+    indices = builder.get_value(node.input[0])
+    depth = builder.get_value(node.input[1])
+    values = builder.get_value(node.input[2])
+
+    axis = get_attribute(node, "axis", -1)
+
+    def _one_hot(indices, depth, values, axis):
+        d = depth.item() if isinstance(depth, torch.Tensor) else depth
+        off_value = values[0]
+        on_value = values[1]
+
+        # Create one-hot tensor
+        result = torch.nn.functional.one_hot(indices.long(), int(d))
+        result = result.to(values.dtype)
+
+        # Apply on/off values
+        result = result * (on_value - off_value) + off_value
+
+        # Move axis if needed
+        if axis != -1 and axis != indices.dim():
+            # Permute to move the one-hot dimension to the correct axis
+            ndim = result.dim()
+            if axis < 0:
+                axis = ndim + axis
+            perm = list(range(ndim - 1))
+            perm.insert(axis, ndim - 1)
+            result = result.permute(perm)
+
+        return result
+
+    return builder.call_function(_one_hot, args=(indices, depth, values, axis))
+
+
+@register("NonZero")
+def non_zero(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Find indices of non-zero elements."""
+    x = builder.get_value(node.input[0])
+
+    def _non_zero(x):
+        # ONNX returns shape (rank, num_nonzero), PyTorch returns tuple
+        result = torch.nonzero(x, as_tuple=False).T
+        return result.to(torch.int64)
+
+    return builder.call_function(_non_zero, args=(x,))
+
+
+@register("Unique")
+def unique(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Find unique elements."""
+    x = builder.get_value(node.input[0])
+
+    axis = get_attribute(node, "axis")
+    sorted_ = get_attribute(node, "sorted", 1)
+
+    def _unique(x, axis, sorted_):
+        if axis is not None:
+            return torch.unique(
+                x,
+                sorted=bool(sorted_),
+                return_inverse=True,
+                return_counts=True,
+                dim=axis,
+            )
+        return torch.unique(
+            x, sorted=bool(sorted_), return_inverse=True, return_counts=True
+        )
+
+    return builder.call_function(_unique, args=(x, axis, sorted_))
+
+
+@register("Trilu")
+def trilu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Triangular part of matrix."""
+    x = builder.get_value(node.input[0])
+
+    k = 0
+    if len(node.input) > 1 and node.input[1]:
+        k = builder.get_value(node.input[1])
+
+    upper = get_attribute(node, "upper", 1)
+
+    def _trilu(x, k, upper):
+        k_val = k.item() if isinstance(k, torch.Tensor) else k
+        if upper:
+            return torch.triu(x, diagonal=int(k_val))
+        return torch.tril(x, diagonal=int(k_val))
+
+    return builder.call_function(_trilu, args=(x, k, upper))
+
+
+@register("EyeLike")
+def eye_like(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Create an identity matrix with the same shape as input.
+
+    Note: The dtype attribute is ignored; output uses input tensor's dtype.
+    """
+    x = builder.get_value(node.input[0])
+    k = get_attribute(node, "k", 0)
+
+    def _eye_like(t: torch.Tensor, diag: int) -> torch.Tensor:
+        n, m = t.shape[-2], t.shape[-1]
+        eye = torch.eye(n, m, dtype=t.dtype, device=t.device)
+        if diag != 0:
+            eye = torch.diagonal(eye, offset=diag)
+        return eye
+
+    return builder.call_function(_eye_like, args=(x, k))
+
+
+# =============================================================================
+# Scatter ND operators
+# =============================================================================
+
+
+@register("ScatterND")
+def scatter_nd(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Scatter updates into data at indices."""
+    data = builder.get_value(node.input[0])
+    indices = builder.get_value(node.input[1])
+    updates = builder.get_value(node.input[2])
+
+    _reduction = get_attribute(node, "reduction", "none")
+
+    def _scatter_nd(
+        d: torch.Tensor, idx: torch.Tensor, upd: torch.Tensor
+    ) -> torch.Tensor:
+        output = d.clone()
+        idx = idx.long()
+
+        idx_shape = idx.shape[:-1]
+        last_dim = idx.shape[-1]
+
+        flat_idx = idx.reshape(-1, last_dim)
+        flat_upd = upd.reshape(-1, *upd.shape[len(idx_shape) :])
+
+        for i in range(flat_idx.shape[0]):
+            data_idx = tuple(flat_idx[i].tolist())
+            output[data_idx] = flat_upd[i]
+
+        return output
+
+    return builder.call_function(_scatter_nd, args=(data, indices, updates))
+
+
+# =============================================================================
+# Select and Compress operators
+# =============================================================================
+
+
+@register("Select")
+def select_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Select elements based on indices (like advanced indexing)."""
+    data = builder.get_value(node.input[0])
+    indices = builder.get_value(node.input[1])
+
+    return builder.call_function(torch.index_select, args=(data, 0, indices))
+
+
+@register("Compress")
+def compress_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Select elements based on a boolean condition tensor."""
+    data = builder.get_value(node.input[0])
+    condition = builder.get_value(node.input[1])
+
+    axis = get_attribute(node, "axis", None)
+
+    if axis is not None:
+
+        def _compress_axis(d: torch.Tensor, c: torch.Tensor, ax: int) -> torch.Tensor:
+            # Get indices where condition is True
+            indices = torch.nonzero(c, as_tuple=True)[0]
+            return torch.index_select(d, ax, indices)
+
+        return builder.call_function(_compress_axis, args=(data, condition, axis))
+    else:
+        # Flatten and compress
+        def _compress_flat(d: torch.Tensor, c: torch.Tensor) -> torch.Tensor:
+            return d.flatten()[c.flatten().bool()]
+
+        return builder.call_function(_compress_flat, args=(data, condition))

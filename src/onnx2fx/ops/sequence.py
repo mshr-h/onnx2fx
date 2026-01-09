@@ -138,3 +138,35 @@ def split_to_sequence(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
             return list(torch.split(t, 1, dim=ax))
 
         return builder.call_function(_split_ones, args=(x, axis))
+
+
+@register("ReverseSequence")
+def reverse_sequence(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Reverse sequences in a tensor."""
+    x = builder.get_value(node.input[0])
+    sequence_lens = builder.get_value(node.input[1])
+
+    batch_axis = get_attribute(node, "batch_axis", 1)
+    time_axis = get_attribute(node, "time_axis", 0)
+
+    def _reverse_sequence(x, sequence_lens, batch_axis, time_axis):
+        result = x.clone()
+        for i, seq_len in enumerate(sequence_lens):
+            seq_len_val = (
+                seq_len.item() if isinstance(seq_len, torch.Tensor) else seq_len
+            )
+            # Create indices for this batch
+            idx = [slice(None)] * x.dim()
+            idx[batch_axis] = i
+            idx[time_axis] = slice(None, int(seq_len_val))
+
+            reversed_idx = list(idx)
+            reversed_idx[time_axis] = slice(int(seq_len_val) - 1, None, -1)
+
+            result[tuple(idx)] = x[tuple(reversed_idx)]
+
+        return result
+
+    return builder.call_function(
+        _reverse_sequence, args=(x, sequence_lens, batch_axis, time_axis)
+    )

@@ -298,3 +298,70 @@ def argmin(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(
         _argmin, args=(x, axis, bool(keepdims), bool(select_last_index))
     )
+
+
+# =============================================================================
+# Cumulative and TopK operators
+# =============================================================================
+
+
+@register("CumSum")
+def cumsum(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Cumulative sum."""
+    x = builder.get_value(node.input[0])
+    axis = builder.get_value(node.input[1])
+
+    exclusive = get_attribute(node, "exclusive", 0)
+    reverse = get_attribute(node, "reverse", 0)
+
+    def _cumsum(x, axis, exclusive, reverse):
+        ax = axis.item() if isinstance(axis, torch.Tensor) else axis
+
+        if reverse:
+            x = torch.flip(x, [int(ax)])
+
+        result = torch.cumsum(x, dim=int(ax))
+
+        if exclusive:
+            # Shift by one and pad with zero
+            pad_shape = list(x.shape)
+            pad_shape[int(ax)] = 1
+            zero_pad = torch.zeros(pad_shape, dtype=x.dtype, device=x.device)
+            result = torch.cat(
+                [zero_pad, result.narrow(int(ax), 0, x.shape[int(ax)] - 1)], dim=int(ax)
+            )
+
+        if reverse:
+            result = torch.flip(result, [int(ax)])
+
+        return result
+
+    return builder.call_function(_cumsum, args=(x, axis, exclusive, reverse))
+
+
+@register("TopK")
+def topk(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Find top K values and indices."""
+    x = builder.get_value(node.input[0])
+    k = builder.get_value(node.input[1])
+
+    axis = get_attribute(node, "axis", -1)
+    largest = get_attribute(node, "largest", 1)
+    sorted_ = get_attribute(node, "sorted", 1)
+
+    def _topk(x, k, axis, largest, sorted_):
+        k_val = k.item() if isinstance(k, torch.Tensor) else k
+        values, indices = torch.topk(
+            x, int(k_val), dim=axis, largest=bool(largest), sorted=bool(sorted_)
+        )
+        return values, indices
+
+    result = builder.call_function(_topk, args=(x, k, axis, largest, sorted_))
+
+    # Handle multiple outputs
+    for i, output_name in enumerate(node.output):
+        if output_name:
+            idx_node = builder.call_function(lambda t, idx: t[idx], args=(result, i))
+            builder.env[output_name] = idx_node
+
+    return result

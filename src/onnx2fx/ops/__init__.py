@@ -7,6 +7,7 @@ from . import advanced
 from . import arithmetic
 from . import attention
 from . import control
+from . import image
 from . import loss
 from . import misc
 from . import nn
@@ -22,6 +23,7 @@ __all__ = [
     "arithmetic",
     "attention",
     "control",
+    "image",
     "loss",
     "misc",
     "nn",

@@ -217,3 +217,17 @@ def hard_swish(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Hard Swish activation."""
     x = builder.get_value(node.input[0])
     return builder.call_function(F.hardswish, args=(x,))
+
+
+@register("Hardmax")
+def hardmax(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Hardmax - one-hot encoding of argmax."""
+    x = builder.get_value(node.input[0])
+    axis = get_attribute(node, "axis", -1)
+
+    def _hardmax(t: torch.Tensor, ax: int) -> torch.Tensor:
+        return torch.nn.functional.one_hot(
+            torch.argmax(t, dim=ax), num_classes=t.shape[ax]
+        ).to(t.dtype)
+
+    return builder.call_function(_hardmax, args=(x, axis))

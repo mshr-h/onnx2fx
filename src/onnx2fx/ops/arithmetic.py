@@ -308,3 +308,179 @@ def clip_v11(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(
         torch.clamp, args=(x,), kwargs={"min": min_val, "max": max_val}
     )
+
+
+# =============================================================================
+# Trigonometric functions
+# =============================================================================
+
+
+@register("Sin")
+def sin(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Sine."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.sin, args=(x,))
+
+
+@register("Cos")
+def cos(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Cosine."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.cos, args=(x,))
+
+
+@register("Tan")
+def tan(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Tangent."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.tan, args=(x,))
+
+
+@register("Asin")
+def asin(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Arc sine."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.asin, args=(x,))
+
+
+@register("Acos")
+def acos(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Arc cosine."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.acos, args=(x,))
+
+
+@register("Atan")
+def atan(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Arc tangent."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.atan, args=(x,))
+
+
+# =============================================================================
+# Hyperbolic functions
+# =============================================================================
+
+
+@register("Sinh")
+def sinh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Hyperbolic sine."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.sinh, args=(x,))
+
+
+@register("Cosh")
+def cosh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Hyperbolic cosine."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.cosh, args=(x,))
+
+
+@register("Asinh")
+def asinh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Inverse hyperbolic sine."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.asinh, args=(x,))
+
+
+@register("Acosh")
+def acosh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Inverse hyperbolic cosine."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.acosh, args=(x,))
+
+
+@register("Atanh")
+def atanh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Inverse hyperbolic tangent."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.atanh, args=(x,))
+
+
+# =============================================================================
+# Additional math functions
+# =============================================================================
+
+
+@register("Erf")
+def erf(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Error function."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.erf, args=(x,))
+
+
+@register("IsNaN")
+def isnan(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Check for NaN."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.isnan, args=(x,))
+
+
+@register("IsInf")
+def isinf(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Check for Inf."""
+    x = builder.get_value(node.input[0])
+    detect_negative = get_attribute(node, "detect_negative", 1)
+    detect_positive = get_attribute(node, "detect_positive", 1)
+
+    def _isinf(x, detect_neg, detect_pos):
+        if detect_neg and detect_pos:
+            return torch.isinf(x)
+        elif detect_pos:
+            return torch.isposinf(x)
+        elif detect_neg:
+            return torch.isneginf(x)
+        else:
+            return torch.zeros_like(x, dtype=torch.bool)
+
+    return builder.call_function(_isinf, args=(x, detect_negative, detect_positive))
+
+
+# =============================================================================
+# Bitwise operations
+# =============================================================================
+
+
+@register("BitwiseAnd")
+def bitwise_and(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Bitwise AND."""
+    a = builder.get_value(node.input[0])
+    b = builder.get_value(node.input[1])
+    return builder.call_function(torch.bitwise_and, args=(a, b))
+
+
+@register("BitwiseOr")
+def bitwise_or(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Bitwise OR."""
+    a = builder.get_value(node.input[0])
+    b = builder.get_value(node.input[1])
+    return builder.call_function(torch.bitwise_or, args=(a, b))
+
+
+@register("BitwiseXor")
+def bitwise_xor(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Bitwise XOR."""
+    a = builder.get_value(node.input[0])
+    b = builder.get_value(node.input[1])
+    return builder.call_function(torch.bitwise_xor, args=(a, b))
+
+
+@register("BitwiseNot")
+def bitwise_not(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Bitwise NOT."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(torch.bitwise_not, args=(x,))
+
+
+@register("BitShift")
+def bit_shift(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Bitwise shift operation."""
+    x = builder.get_value(node.input[0])
+    y = builder.get_value(node.input[1])
+
+    direction = get_attribute(node, "direction", "LEFT")
+
+    if direction == "LEFT":
+        return builder.call_function(torch.bitwise_left_shift, args=(x, y))
+    else:
+        return builder.call_function(torch.bitwise_right_shift, args=(x, y))

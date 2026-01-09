@@ -18,30 +18,6 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
-# Eye-like operator
-# =============================================================================
-
-
-@register("EyeLike")
-def eye_like(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Create an identity matrix with the same shape as input.
-
-    Note: The dtype attribute is ignored; output uses input tensor's dtype.
-    """
-    x = builder.get_value(node.input[0])
-    k = get_attribute(node, "k", 0)
-
-    def _eye_like(t: torch.Tensor, diag: int) -> torch.Tensor:
-        n, m = t.shape[-2], t.shape[-1]
-        eye = torch.eye(n, m, dtype=t.dtype, device=t.device)
-        if diag != 0:
-            eye = torch.diagonal(eye, offset=diag)
-        return eye
-
-    return builder.call_function(_eye_like, args=(x, k))
-
-
-# =============================================================================
 # Random number generation operators
 # =============================================================================
 

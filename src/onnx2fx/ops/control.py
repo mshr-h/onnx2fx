@@ -500,3 +500,47 @@ def scan_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         return scan_inputs[0]
     else:
         return builder.call_function(torch.cat, args=(scan_inputs,), kwargs={"dim": 0})
+
+
+# =============================================================================
+# Optional operators
+# =============================================================================
+
+
+@register("Optional")
+def optional_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Create an optional value."""
+    if len(node.input) > 0 and node.input[0]:
+        # Has a value
+        return builder.get_value(node.input[0])
+    else:
+        # Empty optional - return None wrapped
+        return builder.call_function(lambda: None, args=())
+
+
+@register("OptionalHasElement")
+def optional_has_element(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
+    """Check if optional has a value."""
+    opt = builder.get_value(node.input[0])
+
+    def _has_element(x) -> torch.Tensor:
+        return torch.tensor(x is not None, dtype=torch.bool)
+
+    return builder.call_function(_has_element, args=(opt,))
+
+
+@register("OptionalGetElement")
+def optional_get_element(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
+    """Get the value from an optional."""
+    opt = builder.get_value(node.input[0])
+
+    def _get_element(x):
+        if x is None:
+            raise RuntimeError("Optional has no element")
+        return x
+
+    return builder.call_function(_get_element, args=(opt,))
