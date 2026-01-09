@@ -35,31 +35,32 @@ onnx2fx/
 # Clone and install in development mode
 git clone https://github.com/mshr-h/onnx2fx.git
 cd onnx2fx
-pip install -e ".[dev]"
+uv sync --dev
 ```
 
 Requirements:
 - Python >= 3.11
 - PyTorch >= 2.9.0
 - ONNX >= 1.19.1
+- uv
 
 ## Running Tests
 
 ```bash
 # Run all tests
-pytest
+uv run pytest
 
 # Run all tests in parallel for faster execution
-pytest -n auto
+uv run pytest -n auto
 
 # Run tests excluding slow tests
-pytest -m "not slow"
+uv run pytest -m "not slow"
 
 # Run specific test file
-pytest tests/test_activation.py
+uv run pytest tests/test_activation.py
 
 # Run with verbose output
-pytest -v
+uv run pytest -v
 ```
 
 ## Code Style
@@ -67,8 +68,8 @@ pytest -v
 This project uses `ruff` for linting and formatting. Run before committing:
 
 ```bash
-ruff check .
-ruff format .
+uv run ruff check .
+uv run ruff format .
 ```
 
 ## Adding New ONNX Operators
