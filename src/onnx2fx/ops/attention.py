@@ -18,16 +18,6 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
-@register("LogSoftmax")
-def log_softmax(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Log of softmax."""
-    x = builder.get_value(node.input[0])
-    axis = get_attribute(node, "axis", -1)
-    return builder.call_function(
-        torch.nn.functional.log_softmax, args=(x,), kwargs={"dim": axis}
-    )
-
-
 @register("Hardmax")
 def hardmax(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Hardmax - one-hot encoding of argmax."""
@@ -43,40 +33,8 @@ def hardmax(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 
 # =============================================================================
-# Gather/Scatter ND operators
+# Scatter ND operators
 # =============================================================================
-
-
-@register("GatherND")
-def gather_nd(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Gather elements from data using indices."""
-    data = builder.get_value(node.input[0])
-    indices = builder.get_value(node.input[1])
-
-    batch_dims = get_attribute(node, "batch_dims", 0)
-
-    def _gather_nd(d: torch.Tensor, idx: torch.Tensor, bd: int) -> torch.Tensor:
-        idx = idx.long()
-        idx_shape = idx.shape[:-1]
-        last_dim = idx.shape[-1]
-        data_shape = d.shape[last_dim:]
-
-        result_shape = idx_shape + data_shape
-        result = torch.zeros(result_shape, dtype=d.dtype, device=d.device)
-
-        # Flatten for iteration
-        flat_idx = idx.reshape(-1, last_dim)
-        flat_result = (
-            result.reshape(-1, *data_shape) if data_shape else result.reshape(-1)
-        )
-
-        for i in range(flat_idx.shape[0]):
-            data_idx = tuple(flat_idx[i].tolist())
-            flat_result[i] = d[data_idx]
-
-        return result
-
-    return builder.call_function(_gather_nd, args=(data, indices, batch_dims))
 
 
 @register("ScatterND")
