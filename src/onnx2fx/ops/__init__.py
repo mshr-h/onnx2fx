@@ -8,8 +8,10 @@ from . import arithmetic
 from . import attention
 from . import control
 from . import loss
+from . import misc
 from . import nn
 from . import quantization
+from . import random
 from . import reduction
 from . import sequence
 from . import tensor
@@ -21,8 +23,10 @@ __all__ = [
     "attention",
     "control",
     "loss",
+    "misc",
     "nn",
     "quantization",
+    "random",
     "reduction",
     "sequence",
     "tensor",
