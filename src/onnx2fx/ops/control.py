@@ -631,11 +631,12 @@ def constant_of_shape(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
 
 @register("EyeLike")
 def eye_like(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Create an identity matrix with the same shape as input."""
-    x = builder.get_value(node.input[0])
+    """Create an identity matrix with the same shape as input.
 
+    Note: The dtype attribute is ignored; output uses input tensor's dtype.
+    """
+    x = builder.get_value(node.input[0])
     k = get_attribute(node, "k", 0)
-    _dtype = get_attribute(node, "dtype", None)
 
     def _eye_like(t: torch.Tensor, diag: int) -> torch.Tensor:
         n, m = t.shape[-2], t.shape[-1]
@@ -649,11 +650,13 @@ def eye_like(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 @register("RandomNormal")
 def random_normal(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Generate random values from normal distribution."""
+    """Generate random values from normal distribution.
+
+    Note: The seed attribute is not supported; use torch.manual_seed() instead.
+    """
     mean = get_attribute(node, "mean", 0.0)
     scale = get_attribute(node, "scale", 1.0)
     shape = get_attribute(node, "shape")
-    _seed = get_attribute(node, "seed", None)
 
     def _random_normal(m: float, s: float, sh: list) -> torch.Tensor:
         return torch.randn(sh) * s + m

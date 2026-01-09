@@ -160,10 +160,10 @@ def qlinear_conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
     bias = builder.get_value(node.input[8]) if len(node.input) > 8 else None
 
     # Get convolution attributes
+    # Note: kernel_shape is inferred from weight tensor, not from attribute
     auto_pad = get_attribute(node, "auto_pad", "NOTSET")
     dilations = get_attribute(node, "dilations", [1, 1])
     group = get_attribute(node, "group", 1)
-    _kernel_shape = get_attribute(node, "kernel_shape")
     pads = get_attribute(node, "pads", [0, 0, 0, 0])
     strides = get_attribute(node, "strides", [1, 1])
 
@@ -440,7 +440,7 @@ def conv_integer(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
     w_zero_point = builder.get_value(node.input[3]) if len(node.input) > 3 else None
 
     # Get convolution attributes
-    _auto_pad = get_attribute(node, "auto_pad", "NOTSET")
+    # Note: auto_pad is not implemented; use explicit pads instead
     dilations = get_attribute(node, "dilations", [1, 1])
     group = get_attribute(node, "group", 1)
     pads = get_attribute(node, "pads", [0, 0, 0, 0])

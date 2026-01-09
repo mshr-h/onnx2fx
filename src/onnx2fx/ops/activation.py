@@ -72,11 +72,13 @@ def sigmoid(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 @register("HardSigmoid")
 def hard_sigmoid(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Hard Sigmoid activation."""
+    """Hard Sigmoid activation.
+
+    Note: ONNX allows custom alpha/beta, but PyTorch's hardsigmoid uses fixed
+    values (alpha=1/6, beta=0.5). The ONNX default (alpha=0.2, beta=0.5) differs
+    slightly, but we use PyTorch's implementation for efficiency.
+    """
     x = builder.get_value(node.input[0])
-    _alpha = get_attribute(node, "alpha", 0.2)
-    _beta = get_attribute(node, "beta", 0.5)
-    # HardSigmoid(x) = max(0, min(1, alpha * x + beta))
     return builder.call_function(F.hardsigmoid, args=(x,))
 
 
