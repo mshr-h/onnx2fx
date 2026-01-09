@@ -13,7 +13,9 @@ if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
 
 
-def _get_reduction_axes(node: onnx.NodeProto, builder: "GraphBuilder"):
+def _get_reduction_axes(
+    node: onnx.NodeProto, builder: "GraphBuilder"
+) -> list[int] | None:
     """Get axes for reduction, handling both attribute and input formats.
 
     In opset < 13, axes is an attribute.

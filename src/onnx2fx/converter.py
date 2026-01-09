@@ -1,4 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
+"""Main entry point for converting ONNX models to PyTorch FX.
+
+This module provides the primary `convert` function for transforming
+ONNX models into equivalent PyTorch FX GraphModules.
+"""
+
 from typing import Union
 
 import onnx

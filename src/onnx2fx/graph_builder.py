@@ -99,7 +99,30 @@ def _topological_sort(
 
 
 class GraphBuilder:
-    def __init__(self, model: onnx.ModelProto):
+    """Builds a PyTorch FX GraphModule from an ONNX model.
+
+    This class handles the conversion of ONNX graph structure to PyTorch FX,
+    including initializer loading, placeholder creation, node conversion,
+    and output creation.
+
+    Parameters
+    ----------
+    model : onnx.ModelProto
+        The ONNX model to convert.
+
+    Attributes
+    ----------
+    model : onnx.ModelProto
+        The input ONNX model (with shape inference if successful).
+    graph : torch.fx.Graph
+        The FX graph being constructed.
+    env : Dict[str, torch.fx.Node]
+        Mapping from ONNX tensor names to FX nodes.
+    opset_version : int
+        The opset version for the default ONNX domain.
+    """
+
+    def __init__(self, model: onnx.ModelProto) -> None:
         # Try shape inference but preserve original model if it fails
         # (shape_inference may drop graph contents for large models with external data)
         try:
