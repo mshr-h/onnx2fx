@@ -21,6 +21,14 @@ try:
 except ImportError:
     HAS_HF_HUB = False
 
+# Check if transformers is available for tokenizer
+try:
+    from transformers import AutoTokenizer
+
+    HAS_TRANSFORMERS = True
+except ImportError:
+    HAS_TRANSFORMERS = False
+
 
 MODEL_ID = "onnx-community/LFM2-350M-ENJP-MT-ONNX"
 
@@ -64,12 +72,14 @@ def lfm2_onnx_model(lfm2_model_path):
     return onnx.load(lfm2_model_path)
 
 
-def create_lfm2_inputs(batch_size: int = 1, seq_len: int = 5, past_seq_len: int = 0):
-    """Create dummy inputs for LFM2 model.
+def create_lfm2_inputs(
+    text: str,
+    past_seq_len: int = 0,
+):
+    """Create inputs for LFM2 model.
 
     Args:
-        batch_size: Batch size
-        seq_len: Current sequence length
+        text: Text to tokenize using the model's tokenizer.
         past_seq_len: Past sequence length for KV cache
 
     Returns:
@@ -80,12 +90,23 @@ def create_lfm2_inputs(batch_size: int = 1, seq_len: int = 5, past_seq_len: int 
     head_dim = 64
     conv_kernel = 3
 
-    # Map ONNX dtype 7 (int64), 10 (float16)
+    # Generate input_ids from text
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    encoded = tokenizer(text, return_tensors="np")
+    input_ids = encoded["input_ids"]
+    attention_mask_base = encoded["attention_mask"]
+    batch_size = input_ids.shape[0]
+
+    # Extend attention_mask to include past sequence length
+    if past_seq_len > 0:
+        past_mask = np.ones((batch_size, past_seq_len), dtype=np.int64)
+        attention_mask = np.concatenate([past_mask, attention_mask_base], axis=1)
+    else:
+        attention_mask = attention_mask_base
+
     np_inputs = {
-        "input_ids": np.random.randint(0, 1000, size=(batch_size, seq_len)).astype(
-            np.int64
-        ),
-        "attention_mask": np.ones((batch_size, seq_len + past_seq_len), dtype=np.int64),
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
     }
 
     # Add past_conv inputs (for causal conv layers)
@@ -148,15 +169,14 @@ class TestLFM2Model:
         assert hasattr(fx_module, "forward")
 
     @pytest.mark.slow
-    @pytest.mark.xfail(reason="Test may fail due to numerical precision differences")
+    @pytest.mark.skipif(not HAS_TRANSFORMERS, reason="transformers not available")
     def test_model_forward_pass(self, lfm2_model_path, lfm2_onnx_model):
         """Test forward pass of converted model matches ONNX Runtime."""
         fx_module = convert(lfm2_onnx_model)
 
-        # Create inputs
-        np_inputs, torch_inputs = create_lfm2_inputs(
-            batch_size=1, seq_len=5, past_seq_len=0
-        )
+        # Create inputs from actual text
+        test_prompt = "Hello, how are you today?"
+        np_inputs, torch_inputs = create_lfm2_inputs(text=test_prompt, past_seq_len=0)
 
         # Run ONNX Runtime
         ort_session = ort.InferenceSession(
