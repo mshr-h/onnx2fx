@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import onnx
 import torch
 
+from ..exceptions import ConversionError
 from ..op_registry import register
 from ..utils.attributes import get_attribute
 
@@ -41,7 +42,11 @@ def if_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             else_branch = attr.g
 
     if then_branch is None or else_branch is None:
-        raise ValueError("If operator requires both then_branch and else_branch")
+        raise ConversionError(
+            "If operator requires both then_branch and else_branch",
+            node_name=node.name,
+            op_type="If",
+        )
 
     # For FX graph, we create a function that evaluates condition at runtime
     def _if_then_else(
@@ -88,7 +93,11 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             body = attr.g
 
     if body is None:
-        raise ValueError("Loop operator requires a body subgraph")
+        raise ConversionError(
+            "Loop operator requires a body subgraph",
+            node_name=node.name,
+            op_type="Loop",
+        )
 
     # Build a map of body initializers
     body_initializers = {}

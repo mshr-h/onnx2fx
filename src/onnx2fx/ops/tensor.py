@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import onnx
 import torch
 
+from ..exceptions import ConversionError
 from ..op_registry import register
 from ..utils.attributes import get_attribute
 
@@ -37,7 +38,11 @@ def constant(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             value = torch.tensor(value_ints, dtype=torch.int64)
 
     if value is None:
-        raise ValueError(f"Constant node {node.name} has no value attribute")
+        raise ConversionError(
+            "Constant node has no value attribute",
+            node_name=node.name,
+            op_type="Constant",
+        )
 
     output_name = node.output[0]
     safe_name = output_name.replace(".", "_").replace("/", "_")
@@ -67,7 +72,11 @@ def cast(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     torch_dtype = onnx_dtype_to_torch(to_dtype)
 
     if torch_dtype is None:
-        raise ValueError(f"Unsupported cast target dtype: {to_dtype}")
+        raise ConversionError(
+            f"Unsupported cast target dtype: {to_dtype}",
+            node_name=node.name,
+            op_type="Cast",
+        )
 
     return builder.call_function(lambda t, dtype: t.to(dtype), args=(x, torch_dtype))
 
@@ -194,7 +203,11 @@ def unsqueeze_v1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
 
     axes = get_attribute(node, "axes")
     if axes is None:
-        raise ValueError("Unsqueeze requires axes attribute in opset < 13")
+        raise ConversionError(
+            "Unsqueeze requires axes attribute in opset < 13",
+            node_name=node.name,
+            op_type="Unsqueeze",
+        )
 
     # Handle single axis
     if isinstance(axes, int):
@@ -216,7 +229,11 @@ def unsqueeze_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Nod
     x = builder.get_value(node.input[0])
 
     if len(node.input) < 2 or not node.input[1]:
-        raise ValueError("Unsqueeze requires axes input in opset 13+")
+        raise ConversionError(
+            "Unsqueeze requires axes input in opset 13+",
+            node_name=node.name,
+            op_type="Unsqueeze",
+        )
 
     axes = builder.get_value(node.input[1])
 
