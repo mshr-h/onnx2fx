@@ -645,6 +645,500 @@ class TestGroupQueryAttention:
         assert result.shape == (batch_size, seq_len, hidden_size)
 
 
+class TestRotaryEmbedding:
+    """Test RotaryEmbedding operator (com.microsoft domain)."""
+
+    def test_rotary_embedding_3d_non_interleaved(self):
+        """Test RotaryEmbedding with 3D input and non-interleaved format."""
+        batch_size = 2
+        seq_len = 4
+        num_heads = 4
+        head_size = 8
+        hidden_size = num_heads * head_size
+        max_seq_len = 16
+        rotary_dim = head_size  # Full rotation
+
+        # Create input tensor value infos
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        position_ids_info = helper.make_tensor_value_info(
+            "position_ids", TensorProto.INT64, [1]
+        )
+        cos_cache_info = helper.make_tensor_value_info(
+            "cos_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        sin_cache_info = helper.make_tensor_value_info(
+            "sin_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+
+        node = helper.make_node(
+            "RotaryEmbedding",
+            ["input", "position_ids", "cos_cache", "sin_cache"],
+            ["output"],
+            name="rotary_emb",
+            interleaved=0,
+            num_heads=num_heads,
+            domain="com.microsoft",
+        )
+
+        graph = helper.make_graph(
+            [node],
+            "rotary_embedding_test",
+            [input_info, position_ids_info, cos_cache_info, sin_cache_info],
+            [output_info],
+        )
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
+
+        fx_module = convert(model)
+
+        # Create test inputs
+        input_tensor = torch.randn(batch_size, seq_len, hidden_size)
+        position_ids = torch.tensor([0], dtype=torch.int64)
+
+        # Generate cos/sin cache
+        inv_freq = 1.0 / (
+            10000 ** (torch.arange(0, rotary_dim // 2).float() / (rotary_dim // 2))
+        )
+        positions = torch.arange(max_seq_len).float()
+        freqs = torch.outer(positions, inv_freq)
+        cos_cache = torch.cos(freqs)
+        sin_cache = torch.sin(freqs)
+
+        result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
+
+        # Check output shape matches input
+        assert result.shape == input_tensor.shape
+
+    def test_rotary_embedding_4d_non_interleaved(self):
+        """Test RotaryEmbedding with 4D input (batch, heads, seq, head_size)."""
+        batch_size = 2
+        num_heads = 4
+        seq_len = 4
+        head_size = 8
+        max_seq_len = 16
+        rotary_dim = head_size
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, num_heads, seq_len, head_size]
+        )
+        position_ids_info = helper.make_tensor_value_info(
+            "position_ids", TensorProto.INT64, [seq_len]
+        )
+        cos_cache_info = helper.make_tensor_value_info(
+            "cos_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        sin_cache_info = helper.make_tensor_value_info(
+            "sin_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, num_heads, seq_len, head_size]
+        )
+
+        node = helper.make_node(
+            "RotaryEmbedding",
+            ["input", "position_ids", "cos_cache", "sin_cache"],
+            ["output"],
+            name="rotary_emb",
+            interleaved=0,
+            domain="com.microsoft",
+        )
+
+        graph = helper.make_graph(
+            [node],
+            "rotary_embedding_test",
+            [input_info, position_ids_info, cos_cache_info, sin_cache_info],
+            [output_info],
+        )
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
+
+        fx_module = convert(model)
+
+        input_tensor = torch.randn(batch_size, num_heads, seq_len, head_size)
+        position_ids = torch.arange(seq_len, dtype=torch.int64)
+
+        inv_freq = 1.0 / (
+            10000 ** (torch.arange(0, rotary_dim // 2).float() / (rotary_dim // 2))
+        )
+        positions = torch.arange(max_seq_len).float()
+        freqs = torch.outer(positions, inv_freq)
+        cos_cache = torch.cos(freqs)
+        sin_cache = torch.sin(freqs)
+
+        result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
+
+        assert result.shape == input_tensor.shape
+
+    def test_rotary_embedding_interleaved(self):
+        """Test RotaryEmbedding with interleaved format (GPT-NeoX style)."""
+        batch_size = 2
+        num_heads = 4
+        seq_len = 4
+        head_size = 8
+        max_seq_len = 16
+        rotary_dim = head_size
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, num_heads, seq_len, head_size]
+        )
+        position_ids_info = helper.make_tensor_value_info(
+            "position_ids", TensorProto.INT64, [seq_len]
+        )
+        cos_cache_info = helper.make_tensor_value_info(
+            "cos_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        sin_cache_info = helper.make_tensor_value_info(
+            "sin_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, num_heads, seq_len, head_size]
+        )
+
+        node = helper.make_node(
+            "RotaryEmbedding",
+            ["input", "position_ids", "cos_cache", "sin_cache"],
+            ["output"],
+            name="rotary_emb",
+            interleaved=1,  # Interleaved format
+            domain="com.microsoft",
+        )
+
+        graph = helper.make_graph(
+            [node],
+            "rotary_embedding_test",
+            [input_info, position_ids_info, cos_cache_info, sin_cache_info],
+            [output_info],
+        )
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
+
+        fx_module = convert(model)
+
+        input_tensor = torch.randn(batch_size, num_heads, seq_len, head_size)
+        position_ids = torch.arange(seq_len, dtype=torch.int64)
+
+        inv_freq = 1.0 / (
+            10000 ** (torch.arange(0, rotary_dim // 2).float() / (rotary_dim // 2))
+        )
+        positions = torch.arange(max_seq_len).float()
+        freqs = torch.outer(positions, inv_freq)
+        cos_cache = torch.cos(freqs)
+        sin_cache = torch.sin(freqs)
+
+        result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
+
+        assert result.shape == input_tensor.shape
+
+    def test_rotary_embedding_with_scale(self):
+        """Test RotaryEmbedding with custom scale."""
+        batch_size = 2
+        num_heads = 4
+        seq_len = 4
+        head_size = 8
+        max_seq_len = 16
+        rotary_dim = head_size
+        scale = 0.5
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, num_heads, seq_len, head_size]
+        )
+        position_ids_info = helper.make_tensor_value_info(
+            "position_ids", TensorProto.INT64, [seq_len]
+        )
+        cos_cache_info = helper.make_tensor_value_info(
+            "cos_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        sin_cache_info = helper.make_tensor_value_info(
+            "sin_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, num_heads, seq_len, head_size]
+        )
+
+        node = helper.make_node(
+            "RotaryEmbedding",
+            ["input", "position_ids", "cos_cache", "sin_cache"],
+            ["output"],
+            name="rotary_emb",
+            interleaved=0,
+            scale=scale,
+            domain="com.microsoft",
+        )
+
+        graph = helper.make_graph(
+            [node],
+            "rotary_embedding_test",
+            [input_info, position_ids_info, cos_cache_info, sin_cache_info],
+            [output_info],
+        )
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
+
+        fx_module = convert(model)
+
+        input_tensor = torch.randn(batch_size, num_heads, seq_len, head_size)
+        position_ids = torch.arange(seq_len, dtype=torch.int64)
+
+        inv_freq = 1.0 / (
+            10000 ** (torch.arange(0, rotary_dim // 2).float() / (rotary_dim // 2))
+        )
+        positions = torch.arange(max_seq_len).float()
+        freqs = torch.outer(positions, inv_freq)
+        cos_cache = torch.cos(freqs)
+        sin_cache = torch.sin(freqs)
+
+        result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
+
+        assert result.shape == input_tensor.shape
+
+    def test_rotary_embedding_partial_rotation(self):
+        """Test RotaryEmbedding with partial rotation (rotary_dim < head_size)."""
+        batch_size = 2
+        num_heads = 4
+        seq_len = 4
+        head_size = 16
+        max_seq_len = 16
+        rotary_dim = 8  # Only rotate first 8 dimensions
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, num_heads, seq_len, head_size]
+        )
+        position_ids_info = helper.make_tensor_value_info(
+            "position_ids", TensorProto.INT64, [seq_len]
+        )
+        cos_cache_info = helper.make_tensor_value_info(
+            "cos_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        sin_cache_info = helper.make_tensor_value_info(
+            "sin_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, num_heads, seq_len, head_size]
+        )
+
+        node = helper.make_node(
+            "RotaryEmbedding",
+            ["input", "position_ids", "cos_cache", "sin_cache"],
+            ["output"],
+            name="rotary_emb",
+            interleaved=0,
+            rotary_embedding_dim=rotary_dim,
+            domain="com.microsoft",
+        )
+
+        graph = helper.make_graph(
+            [node],
+            "rotary_embedding_test",
+            [input_info, position_ids_info, cos_cache_info, sin_cache_info],
+            [output_info],
+        )
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
+
+        fx_module = convert(model)
+
+        input_tensor = torch.randn(batch_size, num_heads, seq_len, head_size)
+        position_ids = torch.arange(seq_len, dtype=torch.int64)
+
+        # cos/sin cache matches rotary_dim
+        inv_freq = 1.0 / (
+            10000 ** (torch.arange(0, rotary_dim // 2).float() / (rotary_dim // 2))
+        )
+        positions = torch.arange(max_seq_len).float()
+        freqs = torch.outer(positions, inv_freq)
+        cos_cache = torch.cos(freqs)
+        sin_cache = torch.sin(freqs)
+
+        result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
+
+        # Check output shape
+        assert result.shape == input_tensor.shape
+
+        # The pass-through part should be unchanged
+        torch.testing.assert_close(
+            result[..., rotary_dim:],
+            input_tensor[..., rotary_dim:],
+        )
+
+    def test_rotary_embedding_2d_position_ids(self):
+        """Test RotaryEmbedding with 2D position_ids (batch, seq)."""
+        batch_size = 2
+        num_heads = 4
+        seq_len = 4
+        head_size = 8
+        max_seq_len = 16
+        rotary_dim = head_size
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, num_heads, seq_len, head_size]
+        )
+        position_ids_info = helper.make_tensor_value_info(
+            "position_ids", TensorProto.INT64, [batch_size, seq_len]
+        )
+        cos_cache_info = helper.make_tensor_value_info(
+            "cos_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        sin_cache_info = helper.make_tensor_value_info(
+            "sin_cache", TensorProto.FLOAT, [max_seq_len, rotary_dim // 2]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, num_heads, seq_len, head_size]
+        )
+
+        node = helper.make_node(
+            "RotaryEmbedding",
+            ["input", "position_ids", "cos_cache", "sin_cache"],
+            ["output"],
+            name="rotary_emb",
+            interleaved=0,
+            domain="com.microsoft",
+        )
+
+        graph = helper.make_graph(
+            [node],
+            "rotary_embedding_test",
+            [input_info, position_ids_info, cos_cache_info, sin_cache_info],
+            [output_info],
+        )
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
+
+        fx_module = convert(model)
+
+        input_tensor = torch.randn(batch_size, num_heads, seq_len, head_size)
+        # 2D position_ids with same positions for each batch
+        position_ids = (
+            torch.arange(seq_len, dtype=torch.int64).unsqueeze(0).expand(batch_size, -1)
+        )
+
+        inv_freq = 1.0 / (
+            10000 ** (torch.arange(0, rotary_dim // 2).float() / (rotary_dim // 2))
+        )
+        positions = torch.arange(max_seq_len).float()
+        freqs = torch.outer(positions, inv_freq)
+        cos_cache = torch.cos(freqs)
+        sin_cache = torch.sin(freqs)
+
+        result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
+
+        assert result.shape == input_tensor.shape
+
+    def test_rotary_embedding_num_heads_zero_3d(self):
+        """Test RotaryEmbedding with num_heads=0 and 3D input (LFM2.5 style).
+
+        When num_heads=0, the implementation should infer head_size from cos_cache
+        dimension and calculate num_heads as hidden_size / head_size.
+        """
+        batch_size = 2
+        seq_len = 4
+        num_heads = 32  # Will be inferred, not passed to the operator
+        head_size = 64
+        hidden_size = num_heads * head_size  # 2048
+        max_seq_len = 16
+        rotary_half_dim = 32  # cos_cache.shape[-1]
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        position_ids_info = helper.make_tensor_value_info(
+            "position_ids", TensorProto.INT64, [1]
+        )
+        cos_cache_info = helper.make_tensor_value_info(
+            "cos_cache", TensorProto.FLOAT, [max_seq_len, rotary_half_dim]
+        )
+        sin_cache_info = helper.make_tensor_value_info(
+            "sin_cache", TensorProto.FLOAT, [max_seq_len, rotary_half_dim]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+
+        # num_heads=0 means infer from cos_cache
+        node = helper.make_node(
+            "RotaryEmbedding",
+            ["input", "position_ids", "cos_cache", "sin_cache"],
+            ["output"],
+            name="rotary_emb",
+            interleaved=0,
+            num_heads=0,  # Key: num_heads=0
+            rotary_embedding_dim=0,  # Key: rotary_embedding_dim=0
+            domain="com.microsoft",
+        )
+
+        graph = helper.make_graph(
+            [node],
+            "rotary_embedding_test",
+            [input_info, position_ids_info, cos_cache_info, sin_cache_info],
+            [output_info],
+        )
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
+
+        fx_module = convert(model)
+
+        # Create test inputs
+        input_tensor = torch.randn(batch_size, seq_len, hidden_size)
+        position_ids = torch.tensor([0], dtype=torch.int64)
+
+        # Generate cos/sin cache with rotary_half_dim=32 (so rotary_dim=64)
+        inv_freq = 1.0 / (
+            10000 ** (torch.arange(0, rotary_half_dim).float() / rotary_half_dim)
+        )
+        positions = torch.arange(max_seq_len).float()
+        freqs = torch.outer(positions, inv_freq)
+        cos_cache = torch.cos(freqs)
+        sin_cache = torch.sin(freqs)
+
+        result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
+
+        # Check output shape matches input
+        assert result.shape == input_tensor.shape
+
+        # Verify that rotation was applied correctly by checking it's different from input
+        # (rotation should change the values)
+        assert not torch.allclose(result, input_tensor)
+
+
 class TestAttentionOpsMultiOpset:
     """Test attention-related operators across multiple opset versions."""
 

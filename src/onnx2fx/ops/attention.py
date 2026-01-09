@@ -627,3 +627,172 @@ def group_query_attention(
 
     # Return tuple output
     return result
+
+
+# =============================================================================
+# Rotary Embedding (com.microsoft domain)
+# =============================================================================
+
+
+@register("RotaryEmbedding", domain="com.microsoft")
+def rotary_embedding(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Rotary Position Embedding (RoPE) operator.
+
+    Applies rotary position embeddings to the input tensor. The positions are
+    represented as rotation matrices that are multiplied to query and key
+    before the inner product of query and key is taken.
+
+    Inputs:
+        - input: 3D tensor with shape (batch_size, sequence_length, hidden_size)
+                 or 4D with shape (batch_size, num_heads, sequence_length, head_size)
+        - position_ids: 1D tensor with shape (1) or 2D tensor with shape
+                        (batch_size, sequence_length)
+        - cos_cache: 2D tensor with shape (max_sequence_length, head_size / 2)
+                     or (max_sequence_length, rotary_embedding_dim / 2)
+        - sin_cache: 2D tensor with shape (max_sequence_length, head_size / 2)
+                     or (max_sequence_length, rotary_embedding_dim / 2)
+
+    Attributes:
+        - interleaved: Indicates whether the input has real and imaginary parts
+                       interleaved. Default is 0 (False).
+        - num_heads: Number of attention heads. Default is 0.
+        - rotary_embedding_dim: Rotary embedding dimension. Default is 0.
+        - scale: Custom scale. Default is 1.0.
+
+    Outputs:
+        - output: tensor with same shape as input.
+    """
+    # Get inputs
+    input_tensor = builder.get_value(node.input[0])
+    position_ids = builder.get_value(node.input[1])
+    cos_cache = builder.get_value(node.input[2])
+    sin_cache = builder.get_value(node.input[3])
+
+    # Get attributes
+    interleaved = get_attribute(node, "interleaved", 0)
+    num_heads = get_attribute(node, "num_heads", 0)
+    rotary_embedding_dim = get_attribute(node, "rotary_embedding_dim", 0)
+    scale = get_attribute(node, "scale", 1.0)
+
+    def _rotary_embedding(
+        x: torch.Tensor,
+        pos_ids: torch.Tensor,
+        cos_cache: torch.Tensor,
+        sin_cache: torch.Tensor,
+        interleaved: int,
+        num_heads: int,
+        rotary_dim: int,
+        scale: float,
+    ) -> torch.Tensor:
+        """Apply rotary position embeddings."""
+        original_shape = x.shape
+        is_3d = x.dim() == 3
+
+        if is_3d:
+            # Input is (batch_size, seq_len, hidden_size)
+            batch_size, seq_len, hidden_size = x.shape
+
+            # Determine head_size and num_heads
+            if num_heads > 0:
+                head_size = hidden_size // num_heads
+                actual_num_heads = num_heads
+            else:
+                # Infer head_size from cos_cache dimension
+                # cos_cache has shape (max_seq, rotary_dim/2)
+                rotary_half_dim = cos_cache.shape[-1]
+                head_size = rotary_half_dim * 2  # rotary_dim == head_size typically
+                actual_num_heads = hidden_size // head_size
+
+            # Reshape to (batch, num_heads, seq, head_size)
+            x = x.view(batch_size, seq_len, actual_num_heads, head_size).transpose(1, 2)
+        else:
+            # Input is (batch_size, num_heads, seq_len, head_size)
+            batch_size, actual_num_heads, seq_len, head_size = x.shape
+
+        # Get cos/sin values for positions
+        # position_ids can be (1,) scalar or (batch, seq) or (seq,)
+        if pos_ids.dim() == 1:
+            if pos_ids.numel() == 1:
+                # Single position offset - generate sequence
+                start_pos = pos_ids.item()
+                positions = torch.arange(
+                    start_pos, start_pos + seq_len, device=x.device, dtype=torch.long
+                )
+            else:
+                positions = pos_ids
+        else:
+            # (batch, seq) - use first batch for now (they should be the same)
+            positions = pos_ids[0] if pos_ids.shape[0] > 1 else pos_ids.squeeze(0)
+
+        # Gather cos/sin from cache based on positions
+        cos = cos_cache[positions]  # (seq_len, rotary_dim/2)
+        sin = sin_cache[positions]  # (seq_len, rotary_dim/2)
+
+        # Determine rotary dimension
+        if rotary_dim > 0:
+            rot_dim = rotary_dim
+        else:
+            rot_dim = cos.shape[-1] * 2  # cos/sin cache is half the rotary dim
+
+        # Expand cos/sin for batch and heads: (1, 1, seq_len, rotary_dim/2)
+        cos = cos.unsqueeze(0).unsqueeze(0)
+        sin = sin.unsqueeze(0).unsqueeze(0)
+
+        # Apply scale if specified
+        if scale != 1.0:
+            x = x * scale
+
+        # Split into rotary and pass-through parts
+        x_rot = x[..., :rot_dim]
+        x_pass = x[..., rot_dim:] if rot_dim < x.shape[-1] else None
+
+        if interleaved:
+            # Interleaved format: [x0, y0, x1, y1, ...] pairs
+            # Rotate pairs: (x, y) -> (x*cos - y*sin, x*sin + y*cos)
+            x1 = x_rot[..., ::2]  # Even indices
+            x2 = x_rot[..., 1::2]  # Odd indices
+
+            # Make sure cos/sin match the half dimension
+            cos_half = cos[..., : x1.shape[-1]]
+            sin_half = sin[..., : x1.shape[-1]]
+
+            # Apply rotation
+            x_rot_new = torch.stack(
+                [x1 * cos_half - x2 * sin_half, x1 * sin_half + x2 * cos_half], dim=-1
+            ).flatten(-2)
+        else:
+            # Non-interleaved format: first half real, second half imaginary
+            # x = [x1, x2] where x1 and x2 are halves
+            half_dim = rot_dim // 2
+            x1 = x_rot[..., :half_dim]
+            x2 = x_rot[..., half_dim:rot_dim]
+
+            # Apply rotation: (x1, x2) -> (x1*cos - x2*sin, x1*sin + x2*cos)
+            x_rot_new = torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1)
+
+        # Concatenate with pass-through part
+        if x_pass is not None:
+            x_out = torch.cat([x_rot_new, x_pass], dim=-1)
+        else:
+            x_out = x_rot_new
+
+        # Reshape back to original shape
+        if is_3d:
+            # Always reshape back from (batch, num_heads, seq, head_size) to (batch, seq, hidden)
+            x_out = x_out.transpose(1, 2).contiguous().view(original_shape)
+
+        return x_out
+
+    return builder.call_function(
+        _rotary_embedding,
+        args=(
+            input_tensor,
+            position_ids,
+            cos_cache,
+            sin_cache,
+            interleaved,
+            num_heads,
+            rotary_embedding_dim,
+            scale,
+        ),
+    )

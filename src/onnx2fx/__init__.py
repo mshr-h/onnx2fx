@@ -14,10 +14,14 @@ from .op_registry import (
     get_registered_domains,
     is_supported,
 )
+from .utils.analyze import analyze_model, AnalysisResult
 
 __all__ = [
     # Core API
     "convert",
+    # Model analysis
+    "analyze_model",
+    "AnalysisResult",
     # Operator registration
     "register_custom_op",
     "unregister_op",

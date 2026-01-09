@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+from collections import deque
 from typing import Dict, List, Optional, Tuple, Sequence
 
 import torch
@@ -11,6 +12,90 @@ from .utils.dtype import DTYPE_MAP
 
 # Import ops module to register all operators
 from . import ops  # noqa: F401
+
+
+def _topological_sort(
+    nodes: List[onnx.NodeProto],
+    graph_inputs: set,
+    initializers: set,
+) -> List[onnx.NodeProto]:
+    """Topologically sort ONNX graph nodes using Kahn's algorithm.
+
+    Some ONNX models have nodes in non-topological order (e.g., Cast nodes
+    at the end of the graph but their outputs used earlier). This function
+    reorders nodes so dependencies are processed before their consumers.
+
+    Parameters
+    ----------
+    nodes : List[onnx.NodeProto]
+        The list of ONNX nodes to sort.
+    graph_inputs : set
+        Set of graph input names.
+    initializers : set
+        Set of initializer names.
+
+    Returns
+    -------
+    List[onnx.NodeProto]
+        Topologically sorted list of nodes.
+    """
+    if not nodes:
+        return []
+
+    # Build output->node mapping (which node produces each output)
+    output_to_node: Dict[str, onnx.NodeProto] = {}
+    for node in nodes:
+        for output in node.output:
+            if output:  # Skip empty outputs
+                output_to_node[output] = node
+
+    # Available values: graph inputs + initializers
+    available = graph_inputs | initializers
+
+    # Compute in-degree for each node (number of unsatisfied dependencies)
+    in_degree: Dict[int, int] = {}
+    node_id: Dict[int, onnx.NodeProto] = {}
+    for i, node in enumerate(nodes):
+        node_id[id(node)] = node
+        # Count inputs that are neither available nor empty
+        deps = 0
+        for inp in node.input:
+            if inp and inp not in available:
+                deps += 1
+        in_degree[id(node)] = deps
+
+    # Initialize queue with nodes that have no dependencies
+    queue = deque()
+    for node in nodes:
+        if in_degree[id(node)] == 0:
+            queue.append(node)
+
+    sorted_nodes: List[onnx.NodeProto] = []
+    while queue:
+        node = queue.popleft()
+        sorted_nodes.append(node)
+
+        # Mark this node's outputs as available
+        for output in node.output:
+            if output:
+                available.add(output)
+
+        # Reduce in-degree for nodes that depend on this node's outputs
+        for candidate in nodes:
+            if in_degree[id(candidate)] > 0:
+                # Check if any of candidate's inputs are now satisfied
+                for inp in candidate.input:
+                    if inp in node.output and inp:
+                        in_degree[id(candidate)] -= 1
+                        if in_degree[id(candidate)] == 0:
+                            queue.append(candidate)
+
+    # If we couldn't sort all nodes, there's a cycle or missing dependency
+    # Fall back to original order
+    if len(sorted_nodes) != len(nodes):
+        return list(nodes)
+
+    return sorted_nodes
 
 
 class GraphBuilder:
@@ -208,7 +293,18 @@ class GraphBuilder:
             self.input_names.append(value.name)
 
     def _convert_nodes(self) -> None:
-        for node in self.model.graph.node:
+        # Get graph inputs and initializers for topological sort
+        graph_inputs = {inp.name for inp in self.model.graph.input}
+        initializers = set(self.initializer_map.keys())
+
+        # Topologically sort nodes to handle out-of-order dependencies
+        sorted_nodes = _topological_sort(
+            list(self.model.graph.node),
+            graph_inputs,
+            initializers,
+        )
+
+        for node in sorted_nodes:
             # Get handler with domain and opset version support
             domain = node.domain if node.domain else ""
             opset = self.get_opset_version(domain)
