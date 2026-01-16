@@ -364,7 +364,6 @@ class TestMLPPattern:
         )
 
 
-@pytest.mark.slow
 class TestTinyLlamaE2E:
     """End-to-end tests for TinyLlama model.
 
@@ -395,6 +394,7 @@ class TestTinyLlamaE2E:
         except Exception as e:
             pytest.skip(f"Failed to download model: {e}")
 
+    @pytest.mark.slow
     def test_conversion_success(self, tinyllama_model_path):
         """Test that TinyLlama model converts without errors."""
         model = onnx.load(tinyllama_model_path)
@@ -413,6 +413,7 @@ class TestTinyLlamaE2E:
         assert "output" in node_ops  # output
         assert "call_function" in node_ops  # operations
 
+    @pytest.mark.slow
     def test_inference_basic(self, tinyllama_model_path):
         """Test basic inference on converted TinyLlama model."""
         model = onnx.load(tinyllama_model_path)
