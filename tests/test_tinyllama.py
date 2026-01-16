@@ -394,7 +394,6 @@ class TestTinyLlamaE2E:
         except Exception as e:
             pytest.skip(f"Failed to download model: {e}")
 
-    @pytest.mark.slow
     def test_conversion_success(self, tinyllama_model_path):
         """Test that TinyLlama model converts without errors."""
         model = onnx.load(tinyllama_model_path)

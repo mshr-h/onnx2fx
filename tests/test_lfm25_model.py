@@ -177,6 +177,7 @@ class TestLFM25Model:
         assert fx_module is not None
         assert hasattr(fx_module, "forward")
 
+    @pytest.mark.slow
     @pytest.mark.skipif(not HAS_TRANSFORMERS, reason="transformers not available")
     def test_model_forward_pass(self, lfm25_model_path, lfm25_onnx_model):
         """Test forward pass of converted model matches ONNX Runtime."""
