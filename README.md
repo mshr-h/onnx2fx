@@ -9,13 +9,23 @@ Yet another ONNX to PyTorch FX converter.
 ## Features
 
 - **Simple API**: Convert ONNX models with a single function call
-- **Extensive Operator Support**: 170+ ONNX operators including standard and Microsoft domain operators
+- **Extensive Operator Support**: 180+ ONNX operators including standard and Microsoft domain operators
 - **Multi-Opset Version Support**: Automatic selection of version-specific operator handlers based on model opset
 - **Custom Operator Registration**: Easily extend support for unsupported or custom ONNX operators
 - **PyTorch FX Output**: Get a `torch.fx.GraphModule` for easy inspection, optimization, and compilation
 - **Dynamic Shape Support**: Handle models with dynamic input dimensions
 - **Quantization Support**: Support for quantized operators (QLinear*, DequantizeLinear, etc.)
 - **Training Support**: Convert models to trainable modules with `make_trainable()` utility
+
+## Tested Models
+
+The following models have been tested and verified to work with onnx2fx:
+
+- **PaddleOCRv5**: Text detection and recognition models (mobile and server variants)
+  - PP-OCRv5_mobile_det, PP-OCRv5_mobile_rec
+  - PP-OCRv5_server_det, PP-OCRv5_server_rec
+- **TorchVision Models**: ResNet, VGG, MobileNet, etc. (via ONNX export)
+- **LFM2**: Language Foundation Model (LFM2-350M-ENJP-MT)
 
 ## Installation
 

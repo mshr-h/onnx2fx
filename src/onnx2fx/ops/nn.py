@@ -292,7 +292,32 @@ def max_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         ndim = len(kernel_shape)
 
         padding = 0
-        if pads is not None:
+        # Handle auto_pad first (before explicit pads)
+        if auto_pad in ("SAME_UPPER", "SAME_LOWER"):
+            # Compute padding for SAME
+            input_shape = x.shape[2:]
+            output_shape = [(s + st - 1) // st for s, st in zip(input_shape, strides)]
+            pad_total = [
+                max(0, (o - 1) * st + (k - 1) * d + 1 - i)
+                for i, o, k, st, d in zip(
+                    input_shape,
+                    output_shape,
+                    kernel_shape,
+                    strides,
+                    dilations,
+                )
+            ]
+            if auto_pad == "SAME_UPPER":
+                pad_list = []
+                for p in reversed(pad_total):
+                    pad_list.extend([p // 2, p - p // 2])
+            else:
+                pad_list = []
+                for p in reversed(pad_total):
+                    pad_list.extend([p - p // 2, p // 2])
+            x = F.pad(x, pad_list, value=float("-inf"))
+            padding = 0
+        elif pads is not None:
             n = len(pads) // 2
             symmetric = all(pads[i] == pads[i + n] for i in range(n))
             if symmetric:

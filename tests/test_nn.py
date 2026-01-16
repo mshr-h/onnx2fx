@@ -175,6 +175,87 @@ class TestPoolingOps:
         expected = torch.nn.functional.max_pool2d(x, kernel_size=2, stride=2)
         torch.testing.assert_close(result, expected)
 
+    def test_max_pool2d_auto_pad_same_upper(self):
+        """Test MaxPool2D with auto_pad=SAME_UPPER."""
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [1, 3, 7, 7]
+        )
+        y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
+
+        pool_node = onnx.helper.make_node(
+            "MaxPool",
+            ["X"],
+            ["Y"],
+            kernel_shape=[2, 2],
+            strides=[1, 1],
+            auto_pad="SAME_UPPER",
+        )
+
+        graph = onnx.helper.make_graph([pool_node], "test", [x_info], [y_info])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 11)]
+        )
+        model.ir_version = 6  # Compatible with ONNX Runtime
+
+        fx_model = convert(model)
+
+        x = torch.randn(1, 3, 7, 7)
+
+        with torch.inference_mode():
+            result = fx_model(x)
+
+        # SAME_UPPER should preserve spatial dimensions
+        assert result.shape == x.shape, f"Expected {x.shape}, got {result.shape}"
+
+        # Compare with ONNX Runtime
+        import numpy as np
+        import onnxruntime as ort
+
+        ort_session = ort.InferenceSession(
+            model.SerializeToString(), providers=["CPUExecutionProvider"]
+        )
+        ort_output = ort_session.run(None, {"X": x.numpy()})[0]
+        np.testing.assert_allclose(result.numpy(), ort_output, rtol=1e-5, atol=1e-5)
+
+    def test_max_pool2d_auto_pad_same_lower(self):
+        """Test MaxPool2D with auto_pad=SAME_LOWER."""
+        x_info = onnx.helper.make_tensor_value_info(
+            "X", onnx.TensorProto.FLOAT, [1, 3, 7, 7]
+        )
+        y_info = onnx.helper.make_tensor_value_info("Y", onnx.TensorProto.FLOAT, None)
+
+        pool_node = onnx.helper.make_node(
+            "MaxPool",
+            ["X"],
+            ["Y"],
+            kernel_shape=[3, 3],
+            strides=[2, 2],
+            auto_pad="SAME_LOWER",
+        )
+
+        graph = onnx.helper.make_graph([pool_node], "test", [x_info], [y_info])
+        model = onnx.helper.make_model(
+            graph, opset_imports=[onnx.helper.make_opsetid("", 11)]
+        )
+        model.ir_version = 6  # Compatible with ONNX Runtime
+
+        fx_model = convert(model)
+
+        x = torch.randn(1, 3, 7, 7)
+
+        with torch.inference_mode():
+            result = fx_model(x)
+
+        # Compare with ONNX Runtime
+        import numpy as np
+        import onnxruntime as ort
+
+        ort_session = ort.InferenceSession(
+            model.SerializeToString(), providers=["CPUExecutionProvider"]
+        )
+        ort_output = ort_session.run(None, {"X": x.numpy()})[0]
+        np.testing.assert_allclose(result.numpy(), ort_output, rtol=1e-5, atol=1e-5)
+
     def test_average_pool2d(self):
         """Test AveragePool2D."""
         x_info = onnx.helper.make_tensor_value_info(
