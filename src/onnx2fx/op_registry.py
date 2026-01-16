@@ -15,19 +15,6 @@ OpHandler = Callable[["GraphBuilder", onnx.NodeProto], object]
 # Empty string "" represents the default ONNX domain.
 _VERSIONED_REGISTRY: Dict[str, Dict[str, List[Tuple[int, OpHandler]]]] = {"": {}}
 
-# Backward compatibility alias - returns flat dict of op_type -> handler
-# Note: This only returns the latest handler for each op in the default domain
-OP_REGISTRY: Dict[str, OpHandler] = {}
-
-
-def _update_legacy_registry() -> None:
-    """Update the legacy OP_REGISTRY for backward compatibility."""
-    OP_REGISTRY.clear()
-    for op_type, handlers in _VERSIONED_REGISTRY.get("", {}).items():
-        if handlers:
-            # Use the handler with the highest since_version
-            OP_REGISTRY[op_type] = handlers[0][1]
-
 
 def register(
     op_type: str, domain: str = "", since_version: int = 1
@@ -89,10 +76,6 @@ def register(
         handlers.append((since_version, func))
         # Keep sorted in descending order by version for efficient lookup
         handlers.sort(key=lambda x: x[0], reverse=True)
-
-        # Update legacy registry for backward compatibility
-        if domain == "":
-            _update_legacy_registry()
 
         return func
 
@@ -175,9 +158,6 @@ def register_custom_op(
         handlers.append((since_version, handler))
         handlers.sort(key=lambda x: x[0], reverse=True)
 
-        if domain == "":
-            _update_legacy_registry()
-
         return handler
     else:
         # Decorator usage: @register_custom_op("Op")
@@ -212,8 +192,6 @@ def unregister_op(
     if since_version is None:
         # Remove all versions
         del _VERSIONED_REGISTRY[domain][op_type]
-        if domain == "":
-            _update_legacy_registry()
         return True
     else:
         # Remove specific version
@@ -222,8 +200,6 @@ def unregister_op(
         if len(handlers) < original_len:
             if not handlers:
                 del _VERSIONED_REGISTRY[domain][op_type]
-            if domain == "":
-                _update_legacy_registry()
             return True
         return False
 
