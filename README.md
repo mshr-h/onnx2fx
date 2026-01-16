@@ -15,6 +15,7 @@ Yet another ONNX to PyTorch FX converter.
 - **PyTorch FX Output**: Get a `torch.fx.GraphModule` for easy inspection, optimization, and compilation
 - **Dynamic Shape Support**: Handle models with dynamic input dimensions
 - **Quantization Support**: Support for quantized operators (QLinear*, DequantizeLinear, etc.)
+- **Training Support**: Convert models to trainable modules with `make_trainable()` utility
 
 ## Installation
 
@@ -117,6 +118,30 @@ from onnx2fx import convert
 # Models with different opset versions are handled automatically
 fx_module_v11 = convert("model_opset11.onnx")  # Uses opset 11 semantics
 fx_module_v17 = convert("model_opset17.onnx")  # Uses opset 17 semantics
+```
+
+### Training Converted Models
+
+By default, ONNX weights are loaded as non-trainable buffers. Use `make_trainable()` to enable training:
+
+```python
+import torch
+from onnx2fx import convert, make_trainable
+
+# Convert and make trainable
+fx_module = convert("model.onnx")
+fx_module = make_trainable(fx_module)  # Convert buffers to trainable parameters
+
+# Now you can train the model
+optimizer = torch.optim.Adam(fx_module.parameters(), lr=1e-4)
+criterion = torch.nn.CrossEntropyLoss()
+
+for inputs, targets in dataloader:
+    optimizer.zero_grad()
+    outputs = fx_module(inputs)
+    loss = criterion(outputs, targets)
+    loss.backward()
+    optimizer.step()
 ```
 
 ### Querying Supported Operators

@@ -24,7 +24,8 @@ onnx2fx/
 │   │   └── advanced.py    # Advanced ops (Einsum, etc.)
 │   └── utils/             # Utility modules
 │       ├── attributes.py  # ONNX attribute parsing
-│       └── dtype.py       # ONNX to PyTorch dtype mapping
+│       ├── dtype.py       # ONNX to PyTorch dtype mapping
+│       └── training.py    # Training utilities (make_trainable)
 ├── tests/                 # Test suite
 └── pyproject.toml         # Project configuration
 ```
@@ -124,6 +125,7 @@ def bias_gelu(builder, node):
 ### Public API
 
 - `convert(model)` - Convert ONNX model to FX GraphModule
+- `make_trainable(module)` - Convert buffers to trainable parameters for training
 - `register_custom_op(op_type, handler, domain)` - Register custom operator
 - `is_supported(op_type, domain)` - Check if operator is supported
 - `get_supported_ops(domain)` - List supported operators for a domain

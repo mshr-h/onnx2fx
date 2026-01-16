@@ -15,10 +15,13 @@ from .op_registry import (
     is_supported,
 )
 from .utils.analyze import analyze_model, AnalysisResult
+from .utils.training import make_trainable
 
 __all__ = [
     # Core API
     "convert",
+    # Training utilities
+    "make_trainable",
     # Model analysis
     "analyze_model",
     "AnalysisResult",

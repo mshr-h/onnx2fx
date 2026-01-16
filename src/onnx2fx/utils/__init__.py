@@ -10,6 +10,7 @@ This package provides utilities for:
 from .dtype import DTYPE_MAP, onnx_dtype_to_torch
 from .attributes import get_attribute, get_attributes
 from .analyze import analyze_model, AnalysisResult
+from .training import make_trainable
 
 __all__ = [
     "DTYPE_MAP",
@@ -18,4 +19,5 @@ __all__ = [
     "get_attributes",
     "analyze_model",
     "AnalysisResult",
+    "make_trainable",
 ]
