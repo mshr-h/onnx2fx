@@ -7,7 +7,7 @@ from .exceptions import (
     ValueNotFoundError,
 )
 from .op_registry import (
-    register_custom_op,
+    register_op,
     unregister_op,
     get_supported_ops,
     get_all_supported_ops,
@@ -26,7 +26,7 @@ __all__ = [
     "analyze_model",
     "AnalysisResult",
     # Operator registration
-    "register_custom_op",
+    "register_op",
     "unregister_op",
     "get_supported_ops",
     "get_all_supported_ops",

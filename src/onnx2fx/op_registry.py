@@ -89,13 +89,13 @@ def register(
     return decorator
 
 
-def register_custom_op(
+def register_op(
     op_type: str,
     handler: Optional[OpHandler] = None,
     domain: str = "",
     since_version: int = 1,
 ) -> Union[OpHandler, Callable[[OpHandler], OpHandler]]:
-    """Register a custom ONNX operator handler with version support.
+    """Register an ONNX operator handler with version support.
 
     This function can be used as a decorator or called directly to register
     custom operator handlers for ONNX operators that are not natively supported.
@@ -121,7 +121,7 @@ def register_custom_op(
     --------
     Using as a decorator:
 
-    >>> @register_custom_op("MyCustomOp")
+    >>> @register_op("MyCustomOp")
     ... def my_custom_op(builder, node):
     ...     x = builder.get_value(node.input[0])
     ...     return builder.call_function(torch.sigmoid, args=(x,))
@@ -131,11 +131,11 @@ def register_custom_op(
     >>> def my_handler(builder, node):
     ...     x = builder.get_value(node.input[0])
     ...     return builder.call_function(torch.tanh, args=(x,))
-    >>> register_custom_op("TanhCustom", my_handler)
+    >>> register_op("TanhCustom", my_handler)
 
     Registering for a custom domain:
 
-    >>> @register_custom_op("BiasGelu", domain="com.microsoft")
+    >>> @register_op("BiasGelu", domain="com.microsoft")
     ... def bias_gelu(builder, node):
     ...     x = builder.get_value(node.input[0])
     ...     bias = builder.get_value(node.input[1])
@@ -146,14 +146,14 @@ def register_custom_op(
 
     Registering version-specific handlers:
 
-    >>> @register_custom_op("MyOp", since_version=1)
+    >>> @register_op("MyOp", since_version=1)
     ... def my_op_v1(builder, node): ...
 
-    >>> @register_custom_op("MyOp", since_version=13)
+    >>> @register_op("MyOp", since_version=13)
     ... def my_op_v13(builder, node): ...
     """
     if handler is not None:
-        # Direct call: register_custom_op("Op", handler)
+        # Direct call: register_op("Op", handler)
         if domain not in _VERSIONED_REGISTRY:
             _VERSIONED_REGISTRY[domain] = {}
         if op_type not in _VERSIONED_REGISTRY[domain]:
@@ -167,7 +167,7 @@ def register_custom_op(
 
         return handler
     else:
-        # Decorator usage: @register_custom_op("Op")
+        # Decorator usage: @register_op("Op")
         return register(op_type, domain, since_version)
 
 
@@ -233,7 +233,7 @@ def get_handler(
         The appropriate handler function, or None if not found.
     """
     # Normalize domain: "ai.onnx" is equivalent to ""
-    if domain in ("ai.onnx", "ai.onnx.ml"):
+    if domain == "ai.onnx":
         domain = ""
 
     if domain not in _VERSIONED_REGISTRY:

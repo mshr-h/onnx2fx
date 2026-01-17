@@ -92,10 +92,10 @@ For unsupported or custom ONNX operators, you can register your own handlers:
 
 ```python
 import torch
-from onnx2fx import convert, register_custom_op
+from onnx2fx import convert, register_op
 
 # Using decorator
-@register_custom_op("MyCustomOp")
+@register_op("MyCustomOp")
 def my_custom_op(builder, node):
     x = builder.get_value(node.input[0])
     return builder.call_function(torch.sigmoid, args=(x,))
@@ -105,10 +105,10 @@ def my_handler(builder, node):
     x = builder.get_value(node.input[0])
     return builder.call_function(torch.tanh, args=(x,))
 
-register_custom_op("TanhCustom", my_handler)
+register_op("TanhCustom", my_handler)
 
 # For custom domains (e.g., Microsoft operators)
-@register_custom_op("BiasGelu", domain="com.microsoft")
+@register_op("BiasGelu", domain="com.microsoft")
 def bias_gelu(builder, node):
     x = builder.get_value(node.input[0])
     bias = builder.get_value(node.input[1])
@@ -117,6 +117,10 @@ def bias_gelu(builder, node):
         args=(x, bias)
     )
 ```
+
+
+> Note: `ai.onnx.ml` is treated as a distinct domain. If you register or query
+> operators in that domain, pass `domain="ai.onnx.ml"` explicitly.
 
 ### Multi-Opset Version Support
 

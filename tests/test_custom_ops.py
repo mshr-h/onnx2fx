@@ -6,7 +6,7 @@ import torch
 
 from onnx2fx import (
     convert,
-    register_custom_op,
+    register_op,
     unregister_op,
     get_supported_ops,
     get_all_supported_ops,
@@ -52,10 +52,10 @@ def make_simple_onnx_model(
 class TestCustomOpRegistration:
     """Test custom operator registration."""
 
-    def test_register_custom_op_decorator(self):
+    def test_register_op_decorator(self):
         """Test registering custom op using decorator."""
 
-        @register_custom_op("TestCustomRelu")
+        @register_op("TestCustomRelu")
         def test_custom_relu(builder, node):
             x = builder.get_value(node.input[0])
             return builder.call_function(torch.relu, args=(x,))
@@ -75,14 +75,14 @@ class TestCustomOpRegistration:
         finally:
             unregister_op("TestCustomRelu")
 
-    def test_register_custom_op_function(self):
+    def test_register_op_function(self):
         """Test registering custom op using function call."""
 
         def custom_sigmoid(builder, node):
             x = builder.get_value(node.input[0])
             return builder.call_function(torch.sigmoid, args=(x,))
 
-        register_custom_op("TestCustomSigmoid", custom_sigmoid)
+        register_op("TestCustomSigmoid", custom_sigmoid)
 
         try:
             assert is_supported("TestCustomSigmoid")
@@ -100,7 +100,7 @@ class TestCustomOpRegistration:
     def test_register_custom_domain_op(self):
         """Test registering custom op with custom domain."""
 
-        @register_custom_op("BiasAdd", domain="com.test")
+        @register_op("BiasAdd", domain="com.test")
         def bias_add(builder, node):
             x = builder.get_value(node.input[0])
             bias = builder.get_value(node.input[1])
@@ -129,7 +129,7 @@ class TestCustomOpRegistration:
     def test_unregister_op(self):
         """Test unregistering an operator."""
 
-        @register_custom_op("TestTempOp")
+        @register_op("TestTempOp")
         def temp_op(builder, node):
             x = builder.get_value(node.input[0])
             return builder.call_function(torch.neg, args=(x,))
@@ -147,7 +147,7 @@ class TestCustomOpRegistration:
         assert "Relu" in original_ops
 
         # Override Relu with a custom implementation
-        @register_custom_op("Relu")
+        @register_op("Relu")
         def custom_relu(builder, node):
             x = builder.get_value(node.input[0])
 
@@ -183,7 +183,7 @@ class TestMultiInputCustomOp:
     def test_custom_binary_op(self):
         """Test custom op with two inputs."""
 
-        @register_custom_op("WeightedAdd")
+        @register_op("WeightedAdd")
         def weighted_add(builder, node):
             x = builder.get_value(node.input[0])
             y = builder.get_value(node.input[1])
@@ -213,7 +213,7 @@ class TestMultiInputCustomOp:
         """Test custom op that reads attributes."""
         from onnx2fx.utils.attributes import get_attribute
 
-        @register_custom_op("ScaleOp")
+        @register_op("ScaleOp")
         def scale_op(builder, node):
             x = builder.get_value(node.input[0])
             scale = get_attribute(node, "scale", 1.0)
@@ -273,6 +273,20 @@ class TestRegistryQueries:
         assert isinstance(domains, list)
         assert "" in domains  # Default domain always exists
 
+    def test_ai_onnx_ml_domain_not_normalized(self):
+        """Test ai.onnx.ml is treated as a separate domain."""
+
+        @register_op("MlDomainOp", domain="ai.onnx.ml")
+        def ml_domain_op(builder, node):
+            x = builder.get_value(node.input[0])
+            return builder.call_function(torch.relu, args=(x,))
+
+        try:
+            assert is_supported("MlDomainOp", domain="ai.onnx.ml")
+            assert not is_supported("MlDomainOp")
+        finally:
+            unregister_op("MlDomainOp", domain="ai.onnx.ml")
+
     def test_is_supported(self):
         """Test checking if op is supported."""
         assert is_supported("Add")
@@ -287,7 +301,7 @@ class TestMicrosoftDomainOps:
     def test_bias_gelu(self):
         """Test BiasGelu from com.microsoft domain."""
 
-        @register_custom_op("BiasGelu", domain="com.microsoft")
+        @register_op("BiasGelu", domain="com.microsoft")
         def bias_gelu(builder, node):
             x = builder.get_value(node.input[0])
             bias = builder.get_value(node.input[1])
@@ -317,7 +331,7 @@ class TestMicrosoftDomainOps:
     def test_fused_matmul(self):
         """Test FusedMatMul from com.microsoft domain."""
 
-        @register_custom_op("FusedMatMul", domain="com.microsoft")
+        @register_op("FusedMatMul", domain="com.microsoft")
         def fused_matmul(builder, node):
             from onnx2fx.utils.attributes import get_attribute
 
@@ -379,7 +393,7 @@ class TestCustomOpIntegration:
     def test_custom_op_in_sequence(self):
         """Test custom op used in a sequence with built-in ops."""
 
-        @register_custom_op("DoubleScale")
+        @register_op("DoubleScale")
         def double_scale(builder, node):
             x = builder.get_value(node.input[0])
             return builder.call_function(lambda t: t * 2, args=(x,))
