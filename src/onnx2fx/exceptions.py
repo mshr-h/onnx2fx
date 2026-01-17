@@ -106,29 +106,3 @@ class ValueNotFoundError(Onnx2FxError):
         if available:
             message += f". Available: {available}"
         super().__init__(message)
-
-
-class AttributeError(Onnx2FxError):
-    """Raised when a required ONNX attribute is missing or invalid.
-
-    Parameters
-    ----------
-    node_name : str
-        The name of the ONNX node.
-    attr_name : str
-        The name of the missing or invalid attribute.
-    message : str, optional
-        Additional details about the error.
-    """
-
-    def __init__(
-        self,
-        node_name: str,
-        attr_name: str,
-        message: str = "required attribute is missing",
-    ):
-        self.node_name = node_name
-        self.attr_name = attr_name
-
-        full_message = f"Attribute error in node '{node_name}': {attr_name} - {message}"
-        super().__init__(full_message)

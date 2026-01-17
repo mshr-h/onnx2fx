@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 from collections import deque
-from typing import Dict, List, Optional, Tuple, Sequence
+from typing import Any, Callable, Dict, List, Optional, Tuple, Sequence, Union
 
 import torch
+import torch.fx
 import onnx
 from onnx import numpy_helper
 
@@ -224,10 +225,26 @@ class GraphBuilder:
 
     def call_function(
         self,
-        func,
-        args: Sequence[torch.fx.Node | object] = (),
-        kwargs: Dict[str, object] = {},
+        func: Callable[..., Any],
+        args: Sequence[Union[torch.fx.Node, Any]] = (),
+        kwargs: Optional[Dict[str, Any]] = None,
     ) -> torch.fx.Node:
+        """Create a function call node in the FX graph.
+
+        Parameters
+        ----------
+        func : Callable[..., Any]
+            The function to call. Can be a PyTorch function, lambda, or any callable.
+        args : Sequence[Union[torch.fx.Node, Any]], optional
+            Positional arguments to the function. Can include FX nodes or constants.
+        kwargs : Optional[Dict[str, Any]], optional
+            Keyword arguments to the function.
+
+        Returns
+        -------
+        torch.fx.Node
+            The FX node representing this function call.
+        """
         fx_node = self.graph.call_function(func, args=tuple(args), kwargs=kwargs or {})
         return fx_node
 

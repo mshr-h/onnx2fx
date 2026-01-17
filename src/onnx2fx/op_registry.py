@@ -8,7 +8,14 @@ import onnx
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
     from .graph_builder import GraphBuilder
 
-OpHandler = Callable[["GraphBuilder", onnx.NodeProto], object]
+import torch.fx
+
+# Type alias for operator handler functions.
+# Handlers take a GraphBuilder and ONNX node, returning one or more FX nodes.
+OpHandler = Callable[
+    ["GraphBuilder", onnx.NodeProto],
+    Union[torch.fx.Node, Tuple[torch.fx.Node, ...]]
+]
 
 # Registry: {domain: {op_type: [(since_version, handler), ...]}}
 # Handlers are stored in descending version order for efficient lookup.
