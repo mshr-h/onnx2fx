@@ -13,15 +13,24 @@ onnx2fx/
 │   ├── converter.py       # Entry point (convert function)
 │   ├── graph_builder.py   # FX graph construction logic
 │   ├── op_registry.py     # Operator registration system
+│   ├── exceptions.py      # Custom exception classes
 │   ├── ops/               # ONNX operator implementations
 │   │   ├── activation.py  # Activation functions (Relu, Sigmoid, etc.)
+│   │   ├── advanced.py    # Advanced ops (Einsum, Det, NMS, etc.)
 │   │   ├── arithmetic.py  # Arithmetic ops (Add, Mul, etc.)
-│   │   ├── tensor.py      # Tensor ops (Reshape, Transpose, etc.)
-│   │   ├── nn.py          # Neural network ops (Conv, BatchNorm, etc.)
-│   │   ├── reduction.py   # Reduction ops (Sum, Mean, etc.)
 │   │   ├── attention.py   # Attention ops (MultiHeadAttention, etc.)
-│   │   └── advanced.py    # Advanced ops (Einsum, etc.)
+│   │   ├── control_flow.py # Control flow ops (Loop, If)
+│   │   ├── image.py       # Image ops (Resize, DepthToSpace, etc.)
+│   │   ├── loss.py        # Loss functions (SoftmaxCrossEntropyLoss, etc.)
+│   │   ├── misc.py        # Miscellaneous ops (StringNormalizer)
+│   │   ├── nn.py          # Neural network ops (Conv, BatchNorm, etc.)
+│   │   ├── quantization.py # Quantization ops (QLinear*, etc.)
+│   │   ├── random.py      # Random ops (RandomNormal, etc.)
+│   │   ├── reduction.py   # Reduction ops (Sum, Mean, etc.)
+│   │   ├── sequence.py    # Sequence ops (SequenceConstruct, etc.)
+│   │   └── tensor.py      # Tensor ops (Reshape, Transpose, etc.)
 │   └── utils/             # Utility modules
+│       ├── analyze.py     # Model analysis utilities
 │       ├── attributes.py  # ONNX attribute parsing
 │       ├── dtype.py       # ONNX to PyTorch dtype mapping
 │       └── training.py    # Training utilities (make_trainable)
@@ -116,18 +125,37 @@ def bias_gelu(builder, node):
 ### GraphBuilder Methods
 
 - `builder.get_value(name)` - Get FX node by ONNX tensor name
+- `builder.has_value(name)` - Check if value exists in environment
 - `builder.call_function(func, args, kwargs)` - Create function call node
+- `builder.call_module(module_name, args, kwargs)` - Create module call node
+- `builder.add_submodule(name, module)` - Register a submodule
 - `builder.get_attribute(node, name, default)` - Get ONNX node attribute
 - `builder.opset_version` - Get current opset version for default domain
 - `builder.get_opset_version(domain)` - Get opset version for specific domain
 
 ### Public API
 
+#### Core Functions
 - `convert(model)` - Convert ONNX model to FX GraphModule
 - `make_trainable(module)` - Convert buffers to trainable parameters for training
-- `register_custom_op(op_type, handler, domain)` - Register custom operator
+
+#### Model Analysis
+- `analyze_model(model)` - Analyze ONNX model for operator support
+- `AnalysisResult` - Dataclass with analysis results (supported_ops, unsupported_ops, etc.)
+
+#### Operator Registration
+- `register_op(op_type, handler, domain, since_version)` - Register custom operator
+- `unregister_op(op_type, domain)` - Unregister an operator handler
 - `is_supported(op_type, domain)` - Check if operator is supported
 - `get_supported_ops(domain)` - List supported operators for a domain
+- `get_all_supported_ops()` - Get all supported operators across all domains
+- `get_registered_domains()` - Get list of registered domains
+
+#### Exceptions
+- `Onnx2FxError` - Base exception for all onnx2fx errors
+- `UnsupportedOpError` - Raised when an operator is not supported
+- `ConversionError` - Raised when conversion fails
+- `ValueNotFoundError` - Raised when a value is not found in environment
 
 ## Testing Guidelines
 

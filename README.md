@@ -183,6 +183,47 @@ all_ops = get_all_supported_ops()
 domains = get_registered_domains()  # ['', 'com.microsoft']
 ```
 
+### Analyzing Model Compatibility
+
+Before converting, you can analyze a model to check operator support:
+
+```python
+from onnx2fx import analyze_model
+
+# Analyze an ONNX model
+result = analyze_model("model.onnx")
+
+# Check results
+print(f"Supported operators: {result.supported_ops}")
+print(f"Unsupported operators: {result.unsupported_ops}")
+print(f"Is fully supported: {result.is_fully_supported}")
+
+# Get detailed summary
+print(result.summary())
+```
+
+### Exception Handling
+
+Handle conversion errors gracefully:
+
+```python
+from onnx2fx import (
+    convert,
+    Onnx2FxError,
+    UnsupportedOpError,
+    ConversionError,
+)
+
+try:
+    fx_module = convert("model.onnx")
+except UnsupportedOpError as e:
+    print(f"Unsupported operator: {e}")
+except ConversionError as e:
+    print(f"Conversion failed: {e}")
+except Onnx2FxError as e:
+    print(f"onnx2fx error: {e}")
+```
+
 ## Supported Operators
 
 ### Standard ONNX Domain
@@ -226,9 +267,12 @@ domains = get_registered_domains()  # ['', 'com.microsoft']
 - ScatterElements, ScatterND
 - Expand, Tile, Flatten
 - Pad, Resize
-- Shape, Size
+- Shape, Size, Select
 - Cast, CastLike, Identity
 - Constant, ConstantOfShape
+
+#### Control Flow
+- Loop, If
 
 #### Neural Network Layers
 - Conv, ConvTranspose, ConvInteger
@@ -269,6 +313,7 @@ domains = get_registered_domains()  # ['', 'com.microsoft']
 - EmbedLayerNormalization
 - SkipLayerNormalization, SkipSimplifiedLayerNormalization
 - SimplifiedLayerNormalization
+- RotaryEmbedding
 
 ## API Reference
 
@@ -282,7 +327,7 @@ Converts an ONNX model to a PyTorch FX `GraphModule`.
 **Returns:**
 - `torch.fx.GraphModule`: A PyTorch FX Graph module.
 
-### `register_custom_op(op_type, handler=None, domain="")`
+### `register_op(op_type, handler=None, domain="", since_version=1)`
 
 Register a custom ONNX operator handler.
 
@@ -290,6 +335,7 @@ Register a custom ONNX operator handler.
 - `op_type` (`str`): The ONNX operator type name.
 - `handler` (`OpHandler`, optional): The handler function. If not provided, returns a decorator.
 - `domain` (`str`, optional): The ONNX domain. Default is "" (standard ONNX domain).
+- `since_version` (`int`, optional): The minimum opset version for this handler. Default is 1.
 
 ### `unregister_op(op_type, domain="")`
 
@@ -317,6 +363,37 @@ Get all supported operators across all domains.
 ### `get_registered_domains()`
 
 Get list of registered domains.
+
+### `analyze_model(model)`
+
+Analyze an ONNX model for operator support.
+
+**Parameters:**
+- `model` (`Union[onnx.ModelProto, str]`): Either an in-memory `onnx.ModelProto` or a file path.
+
+**Returns:**
+- `AnalysisResult`: Analysis results with supported/unsupported operators.
+
+### `AnalysisResult`
+
+Dataclass containing model analysis results.
+
+**Attributes:**
+- `supported_ops` (`set[str]`): Set of supported operator names.
+- `unsupported_ops` (`set[str]`): Set of unsupported operator names.
+- `total_ops` (`int`): Total number of operators in the model.
+- `supported_count` (`int`): Number of supported operators.
+- `is_fully_supported` (`bool`): True if all operators are supported.
+
+**Methods:**
+- `summary()`: Returns a human-readable summary string.
+
+### Exceptions
+
+- `Onnx2FxError`: Base exception for all onnx2fx errors.
+- `UnsupportedOpError`: Raised when an operator is not supported.
+- `ConversionError`: Raised when conversion fails.
+- `ValueNotFoundError`: Raised when a value is not found in the environment.
 
 ## Development
 
