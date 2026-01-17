@@ -141,6 +141,7 @@ class GraphBuilder:
         self.input_names: List[str] = []
         self.env: Dict[str, torch.fx.Node] = {}
         self._constants: Dict[str, torch.Tensor] = {}
+        self._submodules: Dict[str, torch.nn.Module] = {}
         self._opset_versions: Dict[str, int] = self._extract_opset_versions()
 
     def _extract_opset_versions(self) -> Dict[str, int]:
@@ -193,6 +194,9 @@ class GraphBuilder:
         # Register constants as buffers
         for name, tensor in self._constants.items():
             root_module.register_buffer(name.replace(".", "_"), tensor)
+        # Register submodules
+        for name, submod in self._submodules.items():
+            root_module.add_module(name, submod)
         module = torch.fx.GraphModule(root_module, self.graph)
         module.graph.lint()
         return module
@@ -246,6 +250,57 @@ class GraphBuilder:
             The FX node representing this function call.
         """
         fx_node = self.graph.call_function(func, args=tuple(args), kwargs=kwargs or {})
+        return fx_node
+
+    def register_submodule(self, name: str, module: torch.nn.Module) -> str:
+        """Register a submodule for use in the graph.
+
+        Parameters
+        ----------
+        name : str
+            Base name for the submodule.
+        module : torch.nn.Module
+            The submodule to register.
+
+        Returns
+        -------
+        str
+            The actual name used (may be modified to avoid conflicts).
+        """
+        # Sanitize name
+        safe_name = name.replace(".", "_").replace("/", "_").replace("-", "_")
+        # Ensure unique name
+        if safe_name in self._submodules:
+            counter = 0
+            while f"{safe_name}_{counter}" in self._submodules:
+                counter += 1
+            safe_name = f"{safe_name}_{counter}"
+        self._submodules[safe_name] = module
+        return safe_name
+
+    def call_module(
+        self,
+        module_name: str,
+        args: Sequence[Union[torch.fx.Node, Any]] = (),
+        kwargs: Optional[Dict[str, Any]] = None,
+    ) -> torch.fx.Node:
+        """Create a module call node in the FX graph.
+
+        Parameters
+        ----------
+        module_name : str
+            The name of a registered submodule.
+        args : Sequence[Union[torch.fx.Node, Any]], optional
+            Positional arguments to the module.
+        kwargs : Optional[Dict[str, Any]], optional
+            Keyword arguments to the module.
+
+        Returns
+        -------
+        torch.fx.Node
+            The FX node representing this module call.
+        """
+        fx_node = self.graph.call_module(module_name, args=tuple(args), kwargs=kwargs or {})
         return fx_node
 
     def _create_value_info_map(
