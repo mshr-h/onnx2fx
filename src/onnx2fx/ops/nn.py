@@ -72,27 +72,6 @@ def _get_conv_params(node: onnx.NodeProto) -> dict:
     }
 
 
-def _convert_pads(
-    pads: Optional[List[int]], auto_pad: str, kernel_shape: List[int]
-) -> Tuple:
-    """Convert ONNX padding format to PyTorch format."""
-    if auto_pad == "SAME_UPPER" or auto_pad == "SAME_LOWER":
-        # PyTorch doesn't support SAME padding directly, need to compute
-        return None  # Will be handled dynamically
-    elif auto_pad == "VALID" or pads is None:
-        return 0
-
-    # ONNX: [x1_begin, x2_begin, ..., x1_end, x2_end, ...]
-    # PyTorch: single value or tuple
-    n = len(pads) // 2
-    # Check if padding is symmetric
-    symmetric = all(pads[i] == pads[i + n] for i in range(n))
-    if symmetric:
-        return tuple(pads[:n]) if n > 1 else pads[0]
-    # Asymmetric padding - will need F.pad
-    return pads
-
-
 @register("Conv")
 def conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """N-dimensional convolution."""

@@ -48,18 +48,6 @@ def if_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             op_type="If",
         )
 
-    # For FX graph, we create a function that evaluates condition at runtime
-    def _if_then_else(
-        cond: torch.Tensor,
-        then_fn,
-        else_fn,
-        inputs: dict,
-    ) -> torch.Tensor:
-        if cond.item():
-            return then_fn(inputs)
-        else:
-            return else_fn(inputs)
-
     # Since FX doesn't support dynamic control flow well,
     # we'll use torch.where for simple cases or cond for complex ones
     def _simple_if(cond: torch.Tensor) -> bool:
