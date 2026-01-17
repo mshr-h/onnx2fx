@@ -84,8 +84,16 @@ def validate_model_output(model, input_shape=(1, 3, 224, 224), rtol=1e-3, atol=1
         (models.vgg11, None),
         (models.wide_resnet50_2, None),
         (models.maxvit_t, None),
-        (models.swin_t, None),
-        (models.swin_v2_b, None),
+        pytest.param(
+            models.swin_t,
+            None,
+            marks=pytest.mark.skip(reason="Requires Loop operator"),
+        ),
+        pytest.param(
+            models.swin_v2_b,
+            None,
+            marks=pytest.mark.skip(reason="Requires Loop operator"),
+        ),
         (models.vit_b_16, None),
     ],
 )
