@@ -44,7 +44,9 @@ class TestLoopOp:
         initial_cond = helper.make_tensor_value_info(
             "initial_cond", TensorProto.BOOL, []
         )
-        initial_sum = helper.make_tensor_value_info("initial_sum", TensorProto.FLOAT, [])
+        initial_sum = helper.make_tensor_value_info(
+            "initial_sum", TensorProto.FLOAT, []
+        )
         final_sum = helper.make_tensor_value_info("final_sum", TensorProto.FLOAT, [])
 
         loop_node = helper.make_node(
@@ -119,7 +121,9 @@ class TestLoopOp:
         initial_cond = helper.make_tensor_value_info(
             "initial_cond", TensorProto.BOOL, []
         )
-        initial_val = helper.make_tensor_value_info("initial_val", TensorProto.FLOAT, [])
+        initial_val = helper.make_tensor_value_info(
+            "initial_val", TensorProto.FLOAT, []
+        )
         final_val = helper.make_tensor_value_info("final_val", TensorProto.FLOAT, [])
 
         loop_node = helper.make_node(
@@ -164,7 +168,9 @@ class TestIfOp:
     def test_if_simple(self):
         """Test simple if-else that returns different values based on condition."""
         # Then branch: return x * 2 (x is from outer scope)
-        then_output = helper.make_tensor_value_info("then_out", TensorProto.FLOAT, [2, 3])
+        then_output = helper.make_tensor_value_info(
+            "then_out", TensorProto.FLOAT, [2, 3]
+        )
         two_tensor = numpy_helper.from_array(
             np.array(2.0, dtype=np.float32), name="two"
         )
@@ -178,7 +184,9 @@ class TestIfOp:
         )
 
         # Else branch: return x * 3
-        else_output = helper.make_tensor_value_info("else_out", TensorProto.FLOAT, [2, 3])
+        else_output = helper.make_tensor_value_info(
+            "else_out", TensorProto.FLOAT, [2, 3]
+        )
         three_tensor = numpy_helper.from_array(
             np.array(3.0, dtype=np.float32), name="three"
         )
@@ -313,7 +321,9 @@ class TestNestedControlFlow:
 
         # Then branch (even): val + 1
         then_output = helper.make_tensor_value_info("then_out", TensorProto.FLOAT, [])
-        one_tensor = numpy_helper.from_array(np.array(1.0, dtype=np.float32), name="one")
+        one_tensor = numpy_helper.from_array(
+            np.array(1.0, dtype=np.float32), name="one"
+        )
         then_add = helper.make_node("Add", ["val_in", "one"], ["then_out"])
         then_graph = helper.make_graph(
             [then_add],
@@ -361,7 +371,9 @@ class TestNestedControlFlow:
         initial_cond = helper.make_tensor_value_info(
             "initial_cond", TensorProto.BOOL, []
         )
-        initial_val = helper.make_tensor_value_info("initial_val", TensorProto.FLOAT, [])
+        initial_val = helper.make_tensor_value_info(
+            "initial_val", TensorProto.FLOAT, []
+        )
         final_val = helper.make_tensor_value_info("final_val", TensorProto.FLOAT, [])
 
         loop_node = helper.make_node(

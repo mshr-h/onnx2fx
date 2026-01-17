@@ -13,8 +13,7 @@ import torch.fx
 # Type alias for operator handler functions.
 # Handlers take a GraphBuilder and ONNX node, returning one or more FX nodes.
 OpHandler = Callable[
-    ["GraphBuilder", onnx.NodeProto],
-    Union[torch.fx.Node, Tuple[torch.fx.Node, ...]]
+    ["GraphBuilder", onnx.NodeProto], Union[torch.fx.Node, Tuple[torch.fx.Node, ...]]
 ]
 
 # Registry: {domain: {op_type: [(since_version, handler), ...]}}

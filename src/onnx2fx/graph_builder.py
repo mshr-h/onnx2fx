@@ -300,7 +300,9 @@ class GraphBuilder:
         torch.fx.Node
             The FX node representing this module call.
         """
-        fx_node = self.graph.call_module(module_name, args=tuple(args), kwargs=kwargs or {})
+        fx_node = self.graph.call_module(
+            module_name, args=tuple(args), kwargs=kwargs or {}
+        )
         return fx_node
 
     def _create_value_info_map(

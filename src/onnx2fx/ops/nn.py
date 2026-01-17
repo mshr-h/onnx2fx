@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Neural network layer operators."""
 
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 import onnx
 import torch

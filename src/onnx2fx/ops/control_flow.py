@@ -79,7 +79,9 @@ def _build_subgraph_module(
             if inp_name and inp_name not in env and inp_name in parent_env:
                 if inp_name not in outer_refs:  # Avoid duplicates
                     outer_refs.append(inp_name)
-                    safe_name = inp_name.replace(".", "_").replace("/", "_").replace("-", "_")
+                    safe_name = (
+                        inp_name.replace(".", "_").replace("/", "_").replace("-", "_")
+                    )
                     placeholder = graph.placeholder(f"outer_{safe_name}")
                     env[inp_name] = placeholder
 
@@ -132,7 +134,9 @@ def _build_subgraph_module(
             args: tuple = (),
             kwargs: Optional[Dict[str, Any]] = None,
         ) -> torch.fx.Node:
-            return self.graph.call_module(module_name, args=tuple(args), kwargs=kwargs or {})
+            return self.graph.call_module(
+                module_name, args=tuple(args), kwargs=kwargs or {}
+            )
 
     builder = SubgraphBuilder()
 
@@ -210,18 +214,24 @@ class LoopModule(nn.Module):
         Returns final loop-carried values followed by concatenated scan outputs.
         """
         # Split args into loop_vars and outer_vals
-        loop_vars = list(args[:self.n_loop_vars])
-        outer_vals = list(args[self.n_loop_vars:])
+        loop_vars = list(args[: self.n_loop_vars])
+        outer_vals = list(args[self.n_loop_vars :])
 
         # Determine max iterations
         if max_iters is not None:
-            max_i = int(max_iters.item()) if hasattr(max_iters, 'item') else int(max_iters)
+            max_i = (
+                int(max_iters.item()) if hasattr(max_iters, "item") else int(max_iters)
+            )
         else:
             max_i = 2**63 - 1  # Very large number
 
         # Initial condition
         if init_cond is not None:
-            cond = bool(init_cond.item()) if hasattr(init_cond, 'item') else bool(init_cond)
+            cond = (
+                bool(init_cond.item())
+                if hasattr(init_cond, "item")
+                else bool(init_cond)
+            )
         else:
             cond = True
 
@@ -229,7 +239,9 @@ class LoopModule(nn.Module):
         current_vars = list(loop_vars)
 
         # Scan output accumulators
-        scan_outputs: List[List[torch.Tensor]] = [[] for _ in range(self.n_scan_outputs)]
+        scan_outputs: List[List[torch.Tensor]] = [
+            [] for _ in range(self.n_scan_outputs)
+        ]
 
         i = 0
         while i < max_i and cond:
@@ -247,10 +259,12 @@ class LoopModule(nn.Module):
 
             # First output is new condition
             new_cond = outputs[0]
-            cond = bool(new_cond.item()) if hasattr(new_cond, 'item') else bool(new_cond)
+            cond = (
+                bool(new_cond.item()) if hasattr(new_cond, "item") else bool(new_cond)
+            )
 
             # Next n_loop_carried outputs are updated loop-carried values
-            current_vars = list(outputs[1:1 + self.n_loop_carried])
+            current_vars = list(outputs[1 : 1 + self.n_loop_carried])
 
             # Remaining outputs are scan outputs for this iteration
             for j in range(self.n_scan_outputs):
@@ -293,10 +307,12 @@ class IfModule(nn.Module):
         Args are: then_outer..., else_outer...
         Returns the outputs of the selected branch.
         """
-        then_outer = list(args[:self.n_then_outer])
-        else_outer = list(args[self.n_then_outer:])
+        then_outer = list(args[: self.n_then_outer])
+        else_outer = list(args[self.n_then_outer :])
 
-        cond_val = bool(condition.item()) if hasattr(condition, 'item') else bool(condition)
+        cond_val = (
+            bool(condition.item()) if hasattr(condition, "item") else bool(condition)
+        )
 
         if cond_val:
             result = self.then_branch(*then_outer)
@@ -322,14 +338,18 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     # Get inputs
     max_trip_count = builder.get_value(node.input[0]) if node.input[0] else None
-    initial_cond = builder.get_value(node.input[1]) if len(node.input) > 1 and node.input[1] else None
+    initial_cond = (
+        builder.get_value(node.input[1])
+        if len(node.input) > 1 and node.input[1]
+        else None
+    )
     loop_carried_inputs = [
         builder.get_value(node.input[i]) for i in range(2, len(node.input))
     ]
 
     # Build subgraph module
-    body_module, body_input_names, body_output_names, outer_refs = _build_subgraph_module(
-        body_graph, builder.env, builder._opset_versions
+    body_module, body_input_names, body_output_names, outer_refs = (
+        _build_subgraph_module(body_graph, builder.env, builder._opset_versions)
     )
 
     # Get outer scope values that the body references
@@ -376,14 +396,16 @@ def if_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     else_graph = get_attribute(node, "else_branch")
 
     if then_graph is None or else_graph is None:
-        raise ValueError("If operator requires 'then_branch' and 'else_branch' attributes")
+        raise ValueError(
+            "If operator requires 'then_branch' and 'else_branch' attributes"
+        )
 
     # Build subgraph modules for both branches
-    then_module, then_input_names, then_output_names, then_outer_refs = _build_subgraph_module(
-        then_graph, builder.env, builder._opset_versions
+    then_module, then_input_names, then_output_names, then_outer_refs = (
+        _build_subgraph_module(then_graph, builder.env, builder._opset_versions)
     )
-    else_module, else_input_names, else_output_names, else_outer_refs = _build_subgraph_module(
-        else_graph, builder.env, builder._opset_versions
+    else_module, else_input_names, else_output_names, else_outer_refs = (
+        _build_subgraph_module(else_graph, builder.env, builder._opset_versions)
     )
 
     # Get outer scope values for both branches
