@@ -242,9 +242,6 @@ domains = get_registered_domains()  # ['', 'com.microsoft']
 - QLinearConv, QLinearMatMul, QLinearAdd, QLinearMul
 - QLinearSigmoid, QLinearLeakyRelu, QLinearGlobalAveragePool
 
-#### Control Flow
-- If, Loop, Scan
-
 #### Sequence Operations
 - SequenceConstruct, SequenceAt, SequenceEmpty
 - SequenceInsert, SequenceErase, SequenceLength
@@ -262,10 +259,6 @@ domains = get_registered_domains()  # ['', 'com.microsoft']
 - RandomNormal, RandomNormalLike
 - RandomUniform, RandomUniformLike
 - Multinomial, Bernoulli
-
-#### Optional & Type Operations
-- Optional, OptionalGetElement, OptionalHasElement
-- Select
 
 #### Loss Functions
 - NegativeLogLikelihoodLoss, SoftmaxCrossEntropyLoss

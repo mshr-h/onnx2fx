@@ -3,6 +3,7 @@
 
 import pytest
 import torch
+from onnx import TensorProto, helper
 from onnxscript import FLOAT, script
 from onnxscript import opset23 as op
 
@@ -363,4 +364,95 @@ class TestArithmeticOpsMultiOpset:
         y = torch.randn(3, 4)
         result = fx_model(x, y)
         expected = torch.matmul(x, y)
+        torch.testing.assert_close(result, expected)
+
+
+class TestBitShiftOp:
+    """Test BitShift operator."""
+
+    def test_bit_shift_left(self):
+        """Test left bit shift."""
+        x_input = helper.make_tensor_value_info("x", TensorProto.INT32, [3])
+        y_input = helper.make_tensor_value_info("y", TensorProto.INT32, [3])
+        output = helper.make_tensor_value_info("output", TensorProto.INT32, [3])
+
+        shift_node = helper.make_node(
+            "BitShift",
+            ["x", "y"],
+            ["output"],
+            name="shift_left",
+            direction="LEFT",
+        )
+
+        graph = helper.make_graph(
+            [shift_node], "shift_left_test", [x_input, y_input], [output]
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        x = torch.tensor([1, 2, 4], dtype=torch.int32)
+        y = torch.tensor([1, 2, 3], dtype=torch.int32)
+
+        result = fx_module(x, y)
+        expected = torch.tensor([2, 8, 32], dtype=torch.int32)
+
+        torch.testing.assert_close(result, expected)
+
+    def test_bit_shift_right(self):
+        """Test right bit shift."""
+        x_input = helper.make_tensor_value_info("x", TensorProto.INT32, [3])
+        y_input = helper.make_tensor_value_info("y", TensorProto.INT32, [3])
+        output = helper.make_tensor_value_info("output", TensorProto.INT32, [3])
+
+        shift_node = helper.make_node(
+            "BitShift",
+            ["x", "y"],
+            ["output"],
+            name="shift_right",
+            direction="RIGHT",
+        )
+
+        graph = helper.make_graph(
+            [shift_node], "shift_right_test", [x_input, y_input], [output]
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        x = torch.tensor([16, 32, 64], dtype=torch.int32)
+        y = torch.tensor([1, 2, 3], dtype=torch.int32)
+
+        result = fx_module(x, y)
+        expected = torch.tensor([8, 8, 8], dtype=torch.int32)
+
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_bitshift_left_all_opsets(self, opset):
+        """BitShift LEFT should work across all opsets (11+)."""
+        x_input = helper.make_tensor_value_info("x", TensorProto.INT32, [3])
+        y_input = helper.make_tensor_value_info("y", TensorProto.INT32, [3])
+        output = helper.make_tensor_value_info("output", TensorProto.INT32, [3])
+
+        shift_node = helper.make_node(
+            "BitShift",
+            ["x", "y"],
+            ["output"],
+            direction="LEFT",
+        )
+
+        graph = helper.make_graph([shift_node], "test", [x_input, y_input], [output])
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_module = convert(model)
+
+        x = torch.tensor([1, 2, 4], dtype=torch.int32)
+        y = torch.tensor([1, 2, 3], dtype=torch.int32)
+
+        result = fx_module(x, y)
+        expected = x << y
+
         torch.testing.assert_close(result, expected)

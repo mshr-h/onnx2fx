@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for tensor manipulation operators."""
 
+import onnxscript
 import pytest
 import torch
 import onnx
+from onnx import TensorProto, helper
 from onnxscript import FLOAT, INT64, script
 from onnxscript import opset23 as op
 
@@ -302,3 +304,227 @@ class TestReductionOpsMultiOpset:
         result = fx_model(x)
         expected = x.min()
         torch.testing.assert_close(result, expected)
+
+
+class TestCompressOp:
+    """Test Compress operator."""
+
+    def test_compress_with_axis(self):
+        """Test compress along an axis."""
+        data_input = helper.make_tensor_value_info("data", TensorProto.FLOAT, [3, 4])
+        cond_input = helper.make_tensor_value_info("condition", TensorProto.BOOL, [3])
+        output = helper.make_tensor_value_info("output", TensorProto.FLOAT, None)
+
+        compress_node = helper.make_node(
+            "Compress",
+            ["data", "condition"],
+            ["output"],
+            name="compress",
+            axis=0,
+        )
+
+        graph = helper.make_graph(
+            [compress_node], "compress_test", [data_input, cond_input], [output]
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        data = torch.tensor(
+            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]
+        )
+        condition = torch.tensor([True, False, True])
+
+        result = fx_module(data, condition)
+        expected = torch.tensor([[1.0, 2.0, 3.0, 4.0], [9.0, 10.0, 11.0, 12.0]])
+
+        torch.testing.assert_close(result, expected)
+
+    def test_compress_flat(self):
+        """Test compress without axis (flattened)."""
+        data_input = helper.make_tensor_value_info("data", TensorProto.FLOAT, [2, 3])
+        cond_input = helper.make_tensor_value_info("condition", TensorProto.BOOL, [6])
+        output = helper.make_tensor_value_info("output", TensorProto.FLOAT, None)
+
+        compress_node = helper.make_node(
+            "Compress",
+            ["data", "condition"],
+            ["output"],
+            name="compress_flat",
+        )
+
+        graph = helper.make_graph(
+            [compress_node], "compress_flat_test", [data_input, cond_input], [output]
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        data = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        condition = torch.tensor([True, False, True, False, True, False])
+
+        result = fx_module(data, condition)
+        expected = torch.tensor([1.0, 3.0, 5.0])
+
+        torch.testing.assert_close(result, expected)
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_compress_all_opsets(self, opset):
+        """Compress should work across all opsets (9+)."""
+        data_input = helper.make_tensor_value_info("data", TensorProto.FLOAT, [3, 4])
+        cond_input = helper.make_tensor_value_info("condition", TensorProto.BOOL, [3])
+        output = helper.make_tensor_value_info("output", TensorProto.FLOAT, None)
+
+        compress_node = helper.make_node(
+            "Compress",
+            ["data", "condition"],
+            ["output"],
+            axis=0,
+        )
+
+        graph = helper.make_graph(
+            [compress_node], "test", [data_input, cond_input], [output]
+        )
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_module = convert(model)
+
+        data = torch.tensor(
+            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]
+        )
+        condition = torch.tensor([True, False, True])
+
+        result = fx_module(data, condition)
+        expected = torch.tensor([[1.0, 2.0, 3.0, 4.0], [9.0, 10.0, 11.0, 12.0]])
+
+        torch.testing.assert_close(result, expected)
+
+
+class TestConstantOfShapeOp:
+    """Test ConstantOfShape operator."""
+
+    def test_constant_of_shape(self):
+        """Test creating constant tensor of given shape."""
+        shape_input = helper.make_tensor_value_info("shape", TensorProto.INT64, [2])
+        output = helper.make_tensor_value_info("output", TensorProto.FLOAT, None)
+
+        # Create value tensor for fill value
+        value_tensor = helper.make_tensor("value", TensorProto.FLOAT, [1], [3.14])
+
+        const_node = helper.make_node(
+            "ConstantOfShape",
+            ["shape"],
+            ["output"],
+            name="constant_of_shape",
+            value=value_tensor,
+        )
+
+        graph = helper.make_graph(
+            [const_node], "constant_of_shape_test", [shape_input], [output]
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        shape = torch.tensor([2, 3], dtype=torch.int64)
+
+        result = fx_module(shape)
+
+        assert result.shape == (2, 3)
+        torch.testing.assert_close(result, torch.full((2, 3), 3.14))
+
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    def test_constant_of_shape_all_opsets(self, opset):
+        """ConstantOfShape should work across all opsets (9+)."""
+        shape_input = helper.make_tensor_value_info("shape", TensorProto.INT64, [2])
+        output = helper.make_tensor_value_info("output", TensorProto.FLOAT, None)
+
+        value_tensor = helper.make_tensor("value", TensorProto.FLOAT, [1], [3.14])
+        node = helper.make_node(
+            "ConstantOfShape",
+            ["shape"],
+            ["output"],
+            value=value_tensor,
+        )
+
+        graph = helper.make_graph([node], "test", [shape_input], [output])
+        model = helper.make_model(
+            graph, opset_imports=[helper.make_opsetid("", opset.version)]
+        )
+
+        fx_module = convert(model)
+
+        shape = torch.tensor([2, 3], dtype=torch.int64)
+        result = fx_module(shape)
+        expected = torch.full((2, 3), 3.14)
+
+        torch.testing.assert_close(result, expected)
+
+
+class TestMultiOutputOps:
+    """Test operators with multiple outputs."""
+
+    def test_split_multi_output(self):
+        """Test Split operator with multiple outputs."""
+
+        @onnxscript.script()
+        def split_model(x: onnxscript.FLOAT[6, 4]) -> tuple:
+            a, b, c = op.Split(x, num_outputs=3, axis=0)
+            return a, b, c
+
+        model = split_model.to_model_proto()
+        fx_module = convert(model)
+
+        x = torch.randn(6, 4)
+        result = fx_module(x)
+
+        # Result should be a tuple of 3 tensors
+        assert len(result) == 3
+        assert result[0].shape == (2, 4)
+        assert result[1].shape == (2, 4)
+        assert result[2].shape == (2, 4)
+
+        # Verify split is correct
+        expected = torch.split(x, 2, dim=0)
+        for i in range(3):
+            torch.testing.assert_close(result[i], expected[i])
+
+    def test_topk_multi_output(self):
+        """Test TopK operator with multiple outputs (values and indices)."""
+        x_input = helper.make_tensor_value_info("x", TensorProto.FLOAT, [3, 4])
+        k_input = helper.make_tensor_value_info("k", TensorProto.INT64, [1])
+        values_output = helper.make_tensor_value_info("values", TensorProto.FLOAT, None)
+        indices_output = helper.make_tensor_value_info(
+            "indices", TensorProto.INT64, None
+        )
+
+        topk_node = helper.make_node(
+            "TopK",
+            ["x", "k"],
+            ["values", "indices"],
+            name="topk",
+            axis=-1,
+        )
+
+        graph = helper.make_graph(
+            [topk_node],
+            "topk_test",
+            [x_input, k_input],
+            [values_output, indices_output],
+        )
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+
+        fx_module = convert(model)
+
+        x = torch.tensor(
+            [[1.0, 4.0, 2.0, 3.0], [5.0, 2.0, 8.0, 1.0], [3.0, 6.0, 4.0, 7.0]]
+        )
+        k = torch.tensor([2], dtype=torch.int64)
+
+        values, indices = fx_module(x, k)
+
+        expected_values, expected_indices = torch.topk(x, 2, dim=-1)
+        torch.testing.assert_close(values, expected_values)
+        torch.testing.assert_close(indices, expected_indices)

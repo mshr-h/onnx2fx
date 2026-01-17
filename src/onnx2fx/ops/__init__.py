@@ -6,7 +6,6 @@ from . import activation
 from . import advanced
 from . import arithmetic
 from . import attention
-from . import control
 from . import image
 from . import loss
 from . import misc
@@ -22,7 +21,6 @@ __all__ = [
     "advanced",
     "arithmetic",
     "attention",
-    "control",
     "image",
     "loss",
     "misc",

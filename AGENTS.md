@@ -20,7 +20,6 @@ onnx2fx/
 │   │   ├── nn.py          # Neural network ops (Conv, BatchNorm, etc.)
 │   │   ├── reduction.py   # Reduction ops (Sum, Mean, etc.)
 │   │   ├── attention.py   # Attention ops (MultiHeadAttention, etc.)
-│   │   ├── control.py     # Control flow ops (If, Loop, etc.)
 │   │   └── advanced.py    # Advanced ops (Einsum, etc.)
 │   └── utils/             # Utility modules
 │       ├── attributes.py  # ONNX attribute parsing
