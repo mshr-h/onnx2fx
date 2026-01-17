@@ -56,6 +56,7 @@ def validate_model_output(model, input_shape=(1, 3, 224, 224), rtol=1e-3, atol=1
     torch.testing.assert_close(result, expected, rtol=rtol, atol=atol)
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(not HAS_TORCHVISION, reason="torchvision not available")
 @pytest.mark.parametrize(
     "model_fn,weights",
@@ -120,6 +121,7 @@ class DetectionBackboneWrapper(torch.nn.Module):
         return features
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(not HAS_TORCHVISION, reason="torchvision not available")
 @pytest.mark.parametrize(
     "model_fn",
@@ -133,6 +135,7 @@ def test_torchvision_segmentations(model_fn):
     validate_model_output(wrapped_model)
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(not HAS_TORCHVISION, reason="torchvision not available")
 @pytest.mark.parametrize(
     "model_fn,input_shape",
