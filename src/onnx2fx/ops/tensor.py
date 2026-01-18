@@ -361,9 +361,30 @@ def split_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 # =============================================================================
 
 
-@register("Slice")
-def slice_(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Slice tensor along axes."""
+@register("Slice", since_version=1)
+def slice_v1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Slice tensor along axes (opset 1-9).
+
+    In opset < 10, starts, ends, and axes are attributes.
+    """
+    x = builder.get_value(node.input[0])
+    starts = get_attribute(node, "starts")
+    ends = get_attribute(node, "ends")
+    axes = get_attribute(node, "axes")
+    # Note: steps attribute doesn't exist in opset < 10
+
+    return builder.call_function(
+        _dynamic_slice,
+        args=(x, list(starts), list(ends), list(axes) if axes else None, None),
+    )
+
+
+@register("Slice", since_version=10)
+def slice_v10(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Slice tensor along axes (opset 10+).
+
+    In opset 10+, starts, ends, axes, and steps are inputs.
+    """
     x = builder.get_value(node.input[0])
     starts = builder.get_value(node.input[1])
     ends = builder.get_value(node.input[2])
