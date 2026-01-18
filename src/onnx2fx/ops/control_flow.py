@@ -20,6 +20,50 @@ if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
 
 
+def _collect_all_subgraph_inputs(node: onnx.NodeProto) -> set:
+    """Recursively collect all inputs from a node including nested subgraph inputs.
+
+    For control flow nodes like If and Loop, this also collects inputs that
+    are referenced by nested subgraphs.
+
+    Parameters
+    ----------
+    node : onnx.NodeProto
+        The ONNX node to collect inputs from.
+
+    Returns
+    -------
+    set
+        Set of all input names referenced by this node and its nested subgraphs.
+    """
+    inputs = set(node.input)
+
+    # Collect inputs from subgraphs (for If, Loop, etc.)
+    for attr in node.attribute:
+        if attr.type == onnx.AttributeProto.GRAPH:
+            subgraph = attr.g
+            # Collect subgraph's own initializers and inputs as local values
+            local_values = set()
+            for init in subgraph.initializer:
+                local_values.add(init.name)
+            for inp in subgraph.input:
+                local_values.add(inp.name)
+
+            # Recursively collect inputs from subgraph nodes
+            for sub_node in subgraph.node:
+                sub_inputs = _collect_all_subgraph_inputs(sub_node)
+                # Add outputs of this subgraph node to local values
+                for out in sub_node.output:
+                    if out:
+                        local_values.add(out)
+                # Inputs not satisfied locally are outer references
+                for sub_inp in sub_inputs:
+                    if sub_inp and sub_inp not in local_values:
+                        inputs.add(sub_inp)
+
+    return inputs
+
+
 def _build_subgraph_module(
     body_graph: onnx.GraphProto,
     parent_env: Dict[str, torch.fx.Node],
@@ -72,12 +116,24 @@ def _build_subgraph_module(
         placeholder = graph.placeholder(safe_name)
         env[inp.name] = placeholder
 
+    # Collect all values that will be produced by nodes in this subgraph
+    subgraph_outputs = set()
+    for node in body_graph.node:
+        for out in node.output:
+            if out:
+                subgraph_outputs.add(out)
+
     # Add references to parent scope values that are used in the subgraph
-    # These will be passed as additional inputs
+    # (including nested subgraphs). These will be passed as additional inputs.
     outer_refs: List[str] = []
     for node in body_graph.node:
-        for inp_name in node.input:
-            if inp_name and inp_name not in env and inp_name in parent_env:
+        # Collect all inputs including from nested subgraphs
+        all_inputs = _collect_all_subgraph_inputs(node)
+        for inp_name in all_inputs:
+            # Skip if empty, already in env, or will be produced by a node in this subgraph
+            if not inp_name or inp_name in env or inp_name in subgraph_outputs:
+                continue
+            if inp_name in parent_env:
                 if inp_name not in outer_refs:  # Avoid duplicates
                     outer_refs.append(inp_name)
                     safe_name = sanitize_name(inp_name)

@@ -16,6 +16,50 @@ from .utils.names import sanitize_name
 from . import ops  # noqa: F401
 
 
+def _collect_all_inputs(node: onnx.NodeProto) -> set:
+    """Recursively collect all inputs from a node including subgraph inputs.
+
+    For control flow nodes like If and Loop, this also collects inputs that
+    are referenced by the subgraphs (then_branch, else_branch, body).
+
+    Parameters
+    ----------
+    node : onnx.NodeProto
+        The ONNX node to collect inputs from.
+
+    Returns
+    -------
+    set
+        Set of all input names referenced by this node and its subgraphs.
+    """
+    inputs = set(node.input)
+
+    # Collect inputs from subgraphs (for If, Loop, etc.)
+    for attr in node.attribute:
+        if attr.type == onnx.AttributeProto.GRAPH:
+            subgraph = attr.g
+            # Collect subgraph's own initializers and inputs as local values
+            local_values = set()
+            for init in subgraph.initializer:
+                local_values.add(init.name)
+            for inp in subgraph.input:
+                local_values.add(inp.name)
+
+            # Recursively collect inputs from subgraph nodes
+            for sub_node in subgraph.node:
+                sub_inputs = _collect_all_inputs(sub_node)
+                # Add outputs of this subgraph node to local values
+                for out in sub_node.output:
+                    if out:
+                        local_values.add(out)
+                # Inputs not satisfied locally are outer references
+                for sub_inp in sub_inputs:
+                    if sub_inp and sub_inp not in local_values:
+                        inputs.add(sub_inp)
+
+    return inputs
+
+
 def _topological_sort(
     nodes: List[onnx.NodeProto],
     graph_inputs: set,
@@ -26,6 +70,9 @@ def _topological_sort(
     Some ONNX models have nodes in non-topological order (e.g., Cast nodes
     at the end of the graph but their outputs used earlier). This function
     reorders nodes so dependencies are processed before their consumers.
+
+    This function also considers inputs referenced by subgraphs (for nodes
+    like If and Loop) to ensure proper ordering.
 
     Parameters
     ----------
@@ -44,6 +91,11 @@ def _topological_sort(
     if not nodes:
         return []
 
+    # Pre-compute all inputs for each node (including subgraph inputs)
+    node_all_inputs: Dict[int, set] = {}
+    for node in nodes:
+        node_all_inputs[id(node)] = _collect_all_inputs(node)
+
     # Build output->node mapping (which node produces each output)
     output_to_node: Dict[str, onnx.NodeProto] = {}
     for node in nodes:
@@ -61,7 +113,8 @@ def _topological_sort(
         node_id[id(node)] = node
         # Count inputs that are neither available nor empty
         deps = 0
-        for inp in node.input:
+        all_inputs = node_all_inputs[id(node)]
+        for inp in all_inputs:
             if inp and inp not in available:
                 deps += 1
         in_degree[id(node)] = deps
@@ -86,7 +139,8 @@ def _topological_sort(
         for candidate in nodes:
             if in_degree[id(candidate)] > 0:
                 # Check if any of candidate's inputs are now satisfied
-                for inp in candidate.input:
+                all_inputs = node_all_inputs[id(candidate)]
+                for inp in all_inputs:
                     if inp in node.output and inp:
                         in_degree[id(candidate)] -= 1
                         if in_degree[id(candidate)] == 0:
