@@ -33,10 +33,28 @@ def leaky_relu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 @register("PRelu")
 def prelu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Parametric ReLU activation."""
+    """Parametric ReLU activation.
+
+    ONNX PRelu allows slope to be broadcastable to the input tensor,
+    while PyTorch's F.prelu expects slope to match channel dimension.
+    We implement using torch.where for proper broadcasting support.
+
+    When slope has shape [C] and input has shape [N, C, ...], we need to
+    reshape slope to [1, C, 1, ...] for proper broadcasting.
+    """
     x = builder.get_value(node.input[0])
     slope = builder.get_value(node.input[1])
-    return builder.call_function(F.prelu, args=(x, slope))
+
+    def _prelu(x: torch.Tensor, slope: torch.Tensor) -> torch.Tensor:
+        # If slope is 1D with size matching channels and input is ND with N > 1,
+        # reshape slope for proper broadcasting along channel dimension (dim=1)
+        if slope.ndim == 1 and x.ndim > 1 and slope.numel() == x.shape[1]:
+            # Reshape [C] to [1, C, 1, 1, ...] for broadcasting
+            shape = [1, slope.numel()] + [1] * (x.ndim - 2)
+            slope = slope.view(shape)
+        return torch.where(x >= 0, x, x * slope)
+
+    return builder.call_function(_prelu, args=(x, slope))
 
 
 @register("Elu")
