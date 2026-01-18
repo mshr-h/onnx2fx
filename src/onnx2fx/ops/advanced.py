@@ -2,7 +2,7 @@
 """Advanced operators.
 
 This module implements specialized ONNX operators including
-Einsum, matrix determinant, and non-maximum suppression.
+Einsum, matrix determinant, non-maximum suppression, and STFT.
 """
 
 from typing import TYPE_CHECKING
@@ -15,6 +15,112 @@ from ..utils.attributes import get_attribute
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
+
+
+# =============================================================================
+# STFT (Short-time Fourier Transform)
+# =============================================================================
+
+
+@register("STFT", since_version=17)
+def stft(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Short-time Fourier Transform.
+
+    ONNX STFT operator computes the STFT of the input signal.
+
+    Inputs:
+        signal: [batch_size, signal_length, 1] for real or [batch_size, signal_length, 2] for complex
+        frame_step: scalar, the hop length
+        window (optional): 1D window tensor
+        frame_length (optional): scalar, the FFT size
+
+    Attributes:
+        onesided: int (default 1), whether to return one-sided output
+
+    Output:
+        [batch_size, frames, dft_unique_bins, 2] with real and imaginary components
+    """
+    signal = builder.get_value(node.input[0])
+    frame_step = builder.get_value(node.input[1])
+
+    # Optional window input
+    window = None
+    if len(node.input) > 2 and node.input[2]:
+        window = builder.get_value(node.input[2])
+
+    # Optional frame_length input
+    frame_length = None
+    if len(node.input) > 3 and node.input[3]:
+        frame_length = builder.get_value(node.input[3])
+
+    # Get onesided attribute (default is 1)
+    onesided = get_attribute(node, "onesided", 1)
+
+    def _stft(signal, frame_step, window, frame_length, onesided):
+        # ONNX signal shape: [batch, signal_length, 1] (real) or [batch, signal_length, 2] (complex)
+        # We need to convert to PyTorch format: [batch, signal_length]
+
+        # Check if input is complex (last dim is 2)
+        is_complex_input = signal.shape[-1] == 2
+
+        if is_complex_input:
+            # Convert to complex tensor
+            signal_2d = torch.complex(signal[..., 0], signal[..., 1])
+        else:
+            # Squeeze the last dimension for real input
+            signal_2d = signal.squeeze(-1)
+
+        # Get scalar values
+        hop_length = (
+            int(frame_step.item())
+            if isinstance(frame_step, torch.Tensor)
+            else int(frame_step)
+        )
+
+        # Determine n_fft
+        if frame_length is not None:
+            n_fft = (
+                int(frame_length.item())
+                if isinstance(frame_length, torch.Tensor)
+                else int(frame_length)
+            )
+        elif window is not None:
+            n_fft = window.shape[0]
+        else:
+            raise ValueError("Either frame_length or window must be provided for STFT")
+
+        # Determine onesided behavior
+        # For complex input, onesided must be False
+        onesided_bool = bool(onesided) and not is_complex_input
+
+        # Call PyTorch stft
+        # PyTorch stft returns [batch, n_fft, frames] (complex) or [batch, n_fft, frames, 2] (real)
+        result = torch.stft(
+            signal_2d,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            win_length=n_fft,
+            window=window,
+            center=False,  # ONNX does not pad
+            onesided=onesided_bool,
+            return_complex=True,
+        )
+
+        # result shape: [batch, bins, frames] (complex)
+        # ONNX expects: [batch, frames, bins, 2]
+
+        # Permute from [batch, bins, frames] to [batch, frames, bins]
+        result = result.permute(0, 2, 1)
+
+        # Convert complex to real representation [batch, frames, bins, 2]
+        result = torch.view_as_real(result)
+
+        return result
+
+    return builder.call_function(
+        _stft,
+        args=(signal, frame_step, window, frame_length, onesided),
+    )
 
 
 # =============================================================================
