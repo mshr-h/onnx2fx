@@ -253,10 +253,30 @@ def unsqueeze_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Nod
 
 @register("Flatten")
 def flatten(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Flatten tensor to 2D."""
+    """Flatten tensor to 2D.
+
+    ONNX Flatten reshapes the input tensor to a 2D tensor:
+    - First dimension = product of dimensions from 0 to axis-1
+    - Second dimension = product of dimensions from axis to end
+    """
     x = builder.get_value(node.input[0])
     axis = get_attribute(node, "axis", 1)
-    return builder.call_function(torch.flatten, args=(x,), kwargs={"start_dim": axis})
+
+    def _flatten_to_2d(t, axis):
+        shape = t.shape
+        # Handle negative axis
+        if axis < 0:
+            axis = len(shape) + axis
+        # Compute dimensions
+        dim0 = 1
+        for i in range(axis):
+            dim0 *= shape[i]
+        dim1 = 1
+        for i in range(axis, len(shape)):
+            dim1 *= shape[i]
+        return t.reshape(dim0, dim1)
+
+    return builder.call_function(_flatten_to_2d, args=(x, axis))
 
 
 @register("Expand")
