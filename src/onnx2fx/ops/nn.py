@@ -353,16 +353,119 @@ def average_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
     x = builder.get_value(node.input[0])
 
     kernel_shape = get_attribute(node, "kernel_shape")
-    strides = get_attribute(node, "strides") or kernel_shape
+    strides = get_attribute(node, "strides") or [1] * len(kernel_shape)
     pads = get_attribute(node, "pads")
     ceil_mode = get_attribute(node, "ceil_mode", 0)
     count_include_pad = get_attribute(node, "count_include_pad", 0)
+    auto_pad = get_attribute(node, "auto_pad", "NOTSET")
 
-    def _avg_pool(x, kernel_shape, strides, pads, ceil_mode, count_include_pad):
+    def _avg_pool(x, kernel_shape, strides, pads, ceil_mode, count_include_pad, auto_pad):
         ndim = len(kernel_shape)
 
         padding = 0
-        if pads is not None:
+        # Handle auto_pad first (before explicit pads)
+        if auto_pad in ("SAME_UPPER", "SAME_LOWER"):
+            # For SAME padding with count_include_pad=0, we need to compute
+            # the average only over valid (non-padded) input positions.
+            # We do this by:
+            # 1. Sum pooling on padded input (pad with 0s, so they don't affect sum)
+            # 2. Count pooling on a mask (to count valid positions per output)
+            # 3. Divide sum by count
+            input_shape = x.shape[2:]
+            output_shape = [(s + st - 1) // st for s, st in zip(input_shape, strides)]
+            pad_total = [
+                max(0, (o - 1) * st + k - i)
+                for i, o, k, st in zip(
+                    input_shape,
+                    output_shape,
+                    kernel_shape,
+                    strides,
+                )
+            ]
+            if auto_pad == "SAME_UPPER":
+                pad_list = []
+                for p in reversed(pad_total):
+                    pad_list.extend([p // 2, p - p // 2])
+            else:
+                pad_list = []
+                for p in reversed(pad_total):
+                    pad_list.extend([p - p // 2, p // 2])
+
+            # Pad input with zeros
+            x_padded = F.pad(x, pad_list, value=0)
+
+            # Create a mask of ones (same shape as input) to count valid positions
+            ones_mask = torch.ones_like(x)
+            ones_padded = F.pad(ones_mask, pad_list, value=0)
+
+            kernel = tuple(kernel_shape)
+            stride = tuple(strides)
+
+            # Sum pooling (count_include_pad=True since we manually handle padding)
+            if ndim == 1:
+                sum_pool = F.avg_pool1d(
+                    x_padded,
+                    kernel[0],
+                    stride=stride[0],
+                    padding=0,
+                    ceil_mode=bool(ceil_mode),
+                    count_include_pad=True,
+                )
+                count_pool = F.avg_pool1d(
+                    ones_padded,
+                    kernel[0],
+                    stride=stride[0],
+                    padding=0,
+                    ceil_mode=bool(ceil_mode),
+                    count_include_pad=True,
+                )
+            elif ndim == 2:
+                sum_pool = F.avg_pool2d(
+                    x_padded,
+                    kernel,
+                    stride=stride,
+                    padding=0,
+                    ceil_mode=bool(ceil_mode),
+                    count_include_pad=True,
+                )
+                count_pool = F.avg_pool2d(
+                    ones_padded,
+                    kernel,
+                    stride=stride,
+                    padding=0,
+                    ceil_mode=bool(ceil_mode),
+                    count_include_pad=True,
+                )
+            elif ndim == 3:
+                sum_pool = F.avg_pool3d(
+                    x_padded,
+                    kernel,
+                    stride=stride,
+                    padding=0,
+                    ceil_mode=bool(ceil_mode),
+                    count_include_pad=True,
+                )
+                count_pool = F.avg_pool3d(
+                    ones_padded,
+                    kernel,
+                    stride=stride,
+                    padding=0,
+                    ceil_mode=bool(ceil_mode),
+                    count_include_pad=True,
+                )
+            else:
+                raise NotImplementedError(f"AveragePool{ndim}D not supported")
+
+            # avg_pool returns sum/kernel_size when count_include_pad=True
+            # We need to recover the sum, then divide by actual count
+            kernel_size = 1
+            for k in kernel:
+                kernel_size *= k
+            sum_result = sum_pool * kernel_size
+            count_result = count_pool * kernel_size
+            return sum_result / count_result
+
+        elif pads is not None:
             n = len(pads) // 2
             padding = tuple(pads[:n])
 
@@ -400,7 +503,8 @@ def average_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
             raise NotImplementedError(f"AveragePool{ndim}D not supported")
 
     return builder.call_function(
-        _avg_pool, args=(x, kernel_shape, strides, pads, ceil_mode, count_include_pad)
+        _avg_pool,
+        args=(x, kernel_shape, strides, pads, ceil_mode, count_include_pad, auto_pad),
     )
 
 
