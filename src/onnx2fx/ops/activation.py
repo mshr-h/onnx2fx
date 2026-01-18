@@ -248,6 +248,16 @@ def silu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(F.silu, args=(x,))
 
 
+@register("Swish")
+def swish(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Swish activation (alias for SiLU).
+
+    Swish(x) = x * sigmoid(x)
+    """
+    x = builder.get_value(node.input[0])
+    return builder.call_function(F.silu, args=(x,))
+
+
 @register("Mish")
 def mish(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Mish activation."""
