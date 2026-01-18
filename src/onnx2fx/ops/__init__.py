@@ -16,6 +16,7 @@ from . import random
 from . import reduction
 from . import sequence
 from . import tensor
+from . import training
 
 __all__ = [
     "activation",
@@ -32,4 +33,5 @@ __all__ = [
     "reduction",
     "sequence",
     "tensor",
+    "training",
 ]
