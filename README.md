@@ -9,7 +9,7 @@ Yet another ONNX to PyTorch FX converter.
 ## Features
 
 - **Simple API**: Convert ONNX models with a single function call
-- **Extensive Operator Support**: 180+ ONNX operators including standard and Microsoft domain operators
+- **Extensive Operator Support**: 170+ ONNX operators including standard and Microsoft domain operators
 - **Multi-Opset Version Support**: Automatic selection of version-specific operator handlers based on model opset
 - **Custom Operator Registration**: Easily extend support for unsupported or custom ONNX operators
 - **PyTorch FX Output**: Get a `torch.fx.GraphModule` for easy inspection, optimization, and compilation
@@ -263,6 +263,7 @@ except Onnx2FxError as e:
 - ReduceL1, ReduceL2
 - ReduceLogSum, ReduceLogSumExp, ReduceSumSquare
 - ArgMax, ArgMin
+- TopK, CumSum
 
 #### Tensor Manipulation
 - Reshape, Transpose, Squeeze, Unsqueeze
@@ -270,12 +271,12 @@ except Onnx2FxError as e:
 - ScatterElements, ScatterND
 - Expand, Tile, Flatten
 - Pad, Resize
-- Shape, Size, Select
+- Shape, Size
 - Cast, CastLike, Identity
 - Constant, ConstantOfShape
 
 #### Control Flow
-- If
+- If, Loop
 
 #### Neural Network Layers
 - Conv, ConvTranspose, ConvInteger
@@ -293,14 +294,14 @@ except Onnx2FxError as e:
 - SequenceConstruct, SequenceAt, SequenceEmpty
 - SequenceInsert, SequenceErase, SequenceLength
 - ConcatFromSequence, SplitToSequence
+- ReverseSequence
 
 #### Other
-- Einsum, TopK, NonZero, NonMaxSuppression
+- Einsum, NonZero, NonMaxSuppression
 - OneHot, Range, EyeLike, Det
 - Unique, Compress, Trilu
 - DepthToSpace, SpaceToDepth
-- ReverseSequence, CumSum
-- Resize, StringNormalizer
+- StringNormalizer
 
 #### Random & Sampling
 - RandomNormal, RandomNormalLike
@@ -310,12 +311,18 @@ except Onnx2FxError as e:
 #### Loss Functions
 - NegativeLogLikelihoodLoss, SoftmaxCrossEntropyLoss
 
-### Microsoft Domain (`com.microsoft`)
-
+#### Attention & Normalization Extensions
 - Attention, GroupQueryAttention
 - EmbedLayerNormalization
 - SkipLayerNormalization, SkipSimplifiedLayerNormalization
 - SimplifiedLayerNormalization
+
+### Microsoft Domain (`com.microsoft`)
+
+> Note: SimplifiedLayerNormalization, SkipSimplifiedLayerNormalization, and GroupQueryAttention are also available in the standard ONNX domain.
+
+- SimplifiedLayerNormalization, SkipSimplifiedLayerNormalization
+- GroupQueryAttention
 - RotaryEmbedding
 
 ## API Reference
