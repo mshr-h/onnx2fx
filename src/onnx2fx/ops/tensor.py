@@ -118,6 +118,9 @@ def reshape(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         else:
             shape = list(shape)
 
+        # Convert to integers (shape may contain floats from tensor operations)
+        shape = [int(d) for d in shape]
+
         # ONNX: if allowzero=0, a value of 0 in shape means copy from input
         if not allowzero:
             for i, dim in enumerate(shape):

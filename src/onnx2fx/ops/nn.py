@@ -572,7 +572,13 @@ def batch_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.
 
 @register("LayerNormalization")
 def layer_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Layer normalization."""
+    """Layer normalization.
+
+    ONNX LayerNormalization returns up to 3 outputs:
+    - Y: normalized output (required)
+    - Mean: mean values (optional)
+    - InvStdDev: inverse standard deviation (optional)
+    """
     x = builder.get_value(node.input[0])
     scale = builder.get_value(node.input[1])
 
@@ -582,15 +588,67 @@ def layer_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.
 
     axis = get_attribute(node, "axis", -1)
     epsilon = get_attribute(node, "epsilon", 1e-5)
+    stash_type = get_attribute(node, "stash_type", 1)  # 1 = float32
 
-    def _layer_norm(x, scale, bias, axis, epsilon):
+    # Check how many outputs are requested
+    num_outputs = len([o for o in node.output if o])
+
+    def _layer_norm_single(x, scale, bias, axis, epsilon):
         # Compute normalized shape from axis
         if axis < 0:
             axis = x.dim() + axis
         normalized_shape = x.shape[axis:]
         return F.layer_norm(x, normalized_shape, weight=scale, bias=bias, eps=epsilon)
 
-    return builder.call_function(_layer_norm, args=(x, scale, bias, axis, epsilon))
+    def _layer_norm_with_stats(x, scale, bias, axis, epsilon, stash_type):
+        # Compute normalized shape from axis
+        if axis < 0:
+            axis = x.dim() + axis
+
+        # Determine stash dtype for mean/invstddev computation
+        if stash_type == 1:
+            stash_dtype = torch.float32
+        elif stash_type == 11:
+            stash_dtype = torch.float64
+        elif stash_type == 10:
+            stash_dtype = torch.float16
+        elif stash_type == 16:
+            stash_dtype = torch.bfloat16
+        else:
+            stash_dtype = torch.float32
+
+        # Cast input to stash dtype for computing statistics
+        original_dtype = x.dtype
+        x_stash = x.to(stash_dtype)
+
+        # Compute mean and variance over the normalized dimensions
+        dims = list(range(axis, x.dim()))
+        mean = x_stash.mean(dim=dims, keepdim=True)
+        var = x_stash.var(dim=dims, unbiased=False, keepdim=True)
+        inv_std_dev = 1.0 / torch.sqrt(var + epsilon)
+
+        # Normalize
+        x_norm = (x_stash - mean) * inv_std_dev
+
+        # Apply scale and bias
+        if scale is not None:
+            x_norm = x_norm * scale.to(stash_dtype)
+        if bias is not None:
+            x_norm = x_norm + bias.to(stash_dtype)
+
+        # Cast back to original dtype
+        y = x_norm.to(original_dtype)
+
+        return (y, mean, inv_std_dev)
+
+    if num_outputs == 1:
+        return builder.call_function(
+            _layer_norm_single, args=(x, scale, bias, axis, epsilon)
+        )
+    else:
+        return builder.call_function(
+            _layer_norm_with_stats, args=(x, scale, bias, axis, epsilon, stash_type)
+        )
 
 
 @register("InstanceNormalization")
