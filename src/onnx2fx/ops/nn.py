@@ -406,6 +406,66 @@ def conv_transpose(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
     )
 
 
+@register("DeformConv")
+def deform_conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Deformable convolution.
+
+    Performs deformable convolution as described in:
+    - Deformable Convolutional Networks (https://arxiv.org/abs/1703.06211)
+    - Deformable ConvNets v2 (https://arxiv.org/abs/1811.11168) when mask is provided
+
+    Note: Only 2D deformable convolution is supported as torchvision.ops.deform_conv2d
+    only supports 2D inputs.
+    """
+    import torchvision.ops
+
+    x = builder.get_value(node.input[0])
+    weight = builder.get_value(node.input[1])
+    offset = builder.get_value(node.input[2])
+
+    bias = None
+    if len(node.input) > 3 and node.input[3]:
+        bias = builder.get_value(node.input[3])
+
+    mask = None
+    if len(node.input) > 4 and node.input[4]:
+        mask = builder.get_value(node.input[4])
+
+    strides = get_attribute(node, "strides") or [1, 1]
+    dilations = get_attribute(node, "dilations") or [1, 1]
+    pads = get_attribute(node, "pads") or [0, 0, 0, 0]
+    # Note: group and offset_group are inferred from tensor shapes by torchvision
+    # ONNX attributes are parsed but not explicitly passed to the function
+
+    def _deform_conv(x, weight, offset, bias, mask, strides, dilations, pads):
+        # Handle padding - ONNX uses [begin0, begin1, end0, end1] format
+        # torchvision.ops.deform_conv2d expects (pad_H, pad_W)
+        # For simplicity, assume symmetric padding (ONNX pads should be symmetric)
+        n = len(pads) // 2
+        padding = tuple(pads[:n])
+
+        stride = tuple(strides) if len(strides) > 1 else (strides[0], strides[0])
+        dilation = (
+            tuple(dilations) if len(dilations) > 1 else (dilations[0], dilations[0])
+        )
+
+        return torchvision.ops.deform_conv2d(
+            x,
+            offset,
+            weight,
+            bias=bias,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            mask=mask,
+        )
+
+    return builder.call_function(
+        _deform_conv,
+        args=(x, weight, offset, bias, mask, strides, dilations, pads),
+    )
+
+
 # =============================================================================
 # Pooling operators
 # =============================================================================
