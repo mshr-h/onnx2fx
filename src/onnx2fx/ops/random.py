@@ -127,3 +127,28 @@ def hann_window(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         return torch.hann_window(length, periodic=periodic, dtype=dtype)
 
     return builder.call_function(_hann_window, args=(size, bool(periodic), dtype))
+
+
+@register("BlackmanWindow", since_version=17)
+def blackman_window(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Generate a Blackman window.
+
+    Attributes:
+        periodic: If 1, returns periodic window. If 0, returns symmetric window.
+        output_datatype: ONNX TensorProto data type for output (default: FLOAT).
+    """
+    from ..utils.dtype import onnx_dtype_to_torch
+
+    size = builder.get_value(node.input[0])
+    periodic = get_attribute(node, "periodic", 1)
+    output_datatype = get_attribute(node, "output_datatype", 1)  # Default: FLOAT
+
+    dtype = onnx_dtype_to_torch(output_datatype)
+
+    def _blackman_window(
+        window_length: torch.Tensor, periodic: bool, dtype: torch.dtype
+    ) -> torch.Tensor:
+        length = int(window_length.item())
+        return torch.blackman_window(length, periodic=periodic, dtype=dtype)
+
+    return builder.call_function(_blackman_window, args=(size, bool(periodic), dtype))
