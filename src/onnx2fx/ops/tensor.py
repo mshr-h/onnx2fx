@@ -527,7 +527,13 @@ def tile(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Tile tensor by repeating."""
     x = builder.get_value(node.input[0])
     repeats = builder.get_value(node.input[1])
-    return builder.call_function(torch.tile, args=(x, repeats))
+
+    def _tile(t, reps):
+        if isinstance(reps, torch.Tensor):
+            reps = tuple(int(r) for r in reps.tolist())
+        return torch.tile(t, reps)
+
+    return builder.call_function(_tile, args=(x, repeats))
 
 
 @register("Pad")
