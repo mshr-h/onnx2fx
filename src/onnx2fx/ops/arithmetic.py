@@ -469,7 +469,24 @@ def bitwise_xor(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 def bitwise_not(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Bitwise NOT."""
     x = builder.get_value(node.input[0])
-    return builder.call_function(torch.bitwise_not, args=(x,))
+
+    # PyTorch bitwise_not doesn't support some unsigned types (e.g., uint16) on CPU.
+    # We handle this by casting to a signed type with the same bit width,
+    # performing the operation, and casting back.
+    def _bitwise_not(x):
+        original_dtype = x.dtype
+        # Map unsigned types to signed equivalents with same bit width
+        dtype_map = {
+            torch.uint16: torch.int16,
+            torch.uint32: torch.int32,
+        }
+        if original_dtype in dtype_map:
+            x = x.to(dtype_map[original_dtype])
+            result = torch.bitwise_not(x)
+            return result.to(original_dtype)
+        return torch.bitwise_not(x)
+
+    return builder.call_function(_bitwise_not, args=(x,))
 
 
 @register("BitShift")
