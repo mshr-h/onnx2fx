@@ -941,6 +941,167 @@ def group_query_attention(
 
 
 # =============================================================================
+# Rotary Embedding (ONNX standard domain, since opset 23)
+# =============================================================================
+
+
+@register("RotaryEmbedding", since_version=23)
+def rotary_embedding_onnx(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
+    """ONNX RotaryEmbedding operator (standard domain, since opset 23).
+
+    Applies rotary position embeddings (RoPE) to the input tensor based on
+    https://arxiv.org/pdf/2104.09864
+
+    Inputs:
+        - X: 4D tensor (batch_size, num_heads, sequence_length, head_size) or
+             3D tensor (batch_size, sequence_length, hidden_size)
+        - cos_cache: 2D tensor (max_position_id+1, head_size/2) when position_ids provided,
+                     or 3D tensor (batch_size, sequence_length, head_size/2) otherwise
+        - sin_cache: Same shape as cos_cache
+        - position_ids (optional): 2D tensor (batch_size, sequence_length)
+
+    Attributes:
+        - interleaved: Whether to use interleaved pattern. Default is 0 (False).
+        - num_heads: Number of attention heads (required for 3D input).
+        - rotary_embedding_dim: Partial rotary dimension. Default is 0 (full rotation).
+
+    Outputs:
+        - Y: Tensor with same shape as input.
+    """
+    # Get inputs
+    input_tensor = builder.get_value(node.input[0])
+    cos_cache = builder.get_value(node.input[1])
+    sin_cache = builder.get_value(node.input[2])
+    position_ids = (
+        builder.get_value(node.input[3])
+        if len(node.input) > 3 and node.input[3]
+        else None
+    )
+
+    # Get attributes
+    interleaved = get_attribute(node, "interleaved", 0)
+    num_heads = get_attribute(node, "num_heads", 0)
+    rotary_embedding_dim = get_attribute(node, "rotary_embedding_dim", 0)
+
+    def _rotary_embedding_onnx(
+        x: torch.Tensor,
+        cos_cache: torch.Tensor,
+        sin_cache: torch.Tensor,
+        position_ids: torch.Tensor | None,
+        interleaved: int,
+        num_heads: int,
+        rotary_dim: int,
+    ) -> torch.Tensor:
+        """Apply ONNX-standard rotary position embeddings."""
+        original_shape = x.shape
+        is_3d = x.dim() == 3
+
+        # First ensure input has shape [batch_size, seq_len, num_heads, head_size]
+        if x.dim() == 4:
+            # Input is (batch_size, num_heads, seq_len, head_size)
+            # Transpose to (batch_size, seq_len, num_heads, head_size)
+            x = x.transpose(1, 2)
+            batch_size, seq_len, n_heads, head_size = x.shape
+        else:
+            # Input is (batch_size, seq_len, hidden_size)
+            batch_size, seq_len, hidden_size = x.shape
+            assert num_heads != 0, "num_heads must be provided for 3D input"
+            head_size = hidden_size // num_heads
+            x = x.view(batch_size, seq_len, num_heads, head_size)
+            n_heads = num_heads
+
+        # Determine rotary_embedding_dim
+        if rotary_dim == 0:
+            rot_dim = head_size
+        else:
+            rot_dim = rotary_dim
+
+        rotary_dim_half = rot_dim // 2
+
+        # Split into rotary and pass-through parts
+        x_rotate = x[..., :rot_dim]
+        x_not_rotate = x[..., rot_dim:] if rot_dim < head_size else None
+
+        # Retrieve sin and cos caches using position ids
+        if position_ids is not None:
+            # cos_cache/sin_cache shape: (max_pos+1, rotary_dim/2)
+            # position_ids shape: (batch_size, seq_len)
+            # Result shape: (batch_size, seq_len, rotary_dim/2)
+            cos = cos_cache[position_ids]
+            sin = sin_cache[position_ids]
+        else:
+            # cos_cache/sin_cache already have shape (batch_size, seq_len, rotary_dim/2)
+            cos = cos_cache
+            sin = sin_cache
+
+        # Validate cache dimensions
+        if cos.shape[-1] != rotary_dim_half:
+            raise ValueError(
+                f"Last dimension of cos cache ({cos.shape[-1]}) does not match "
+                f"rotary_embedding_dim/2 ({rotary_dim_half})."
+            )
+
+        # Add head dimension: (batch_size, seq_len, 1, rotary_dim/2)
+        cos = cos.unsqueeze(2)
+        sin = sin.unsqueeze(2)
+
+        # Apply rotation based on interleaved pattern
+        if interleaved:
+            # Interleaved: x_rotate[..., 0::2] and x_rotate[..., 1::2]
+            x1 = x_rotate[..., 0::2]
+            x2 = x_rotate[..., 1::2]
+
+            # Calculate real and imaginary values
+            real = (cos * x1) - (sin * x2)
+            imag = (sin * x1) + (cos * x2)
+
+            # Interleave back
+            real = real.unsqueeze(-1)
+            imag = imag.unsqueeze(-1)
+            x_rotate_result = torch.cat((real, imag), dim=-1).flatten(-2)
+        else:
+            # Non-interleaved: split in halves
+            x1 = x_rotate[..., :rotary_dim_half]
+            x2 = x_rotate[..., rotary_dim_half:rot_dim]
+
+            # Calculate real and imaginary values
+            real = (cos * x1) - (sin * x2)
+            imag = (sin * x1) + (cos * x2)
+
+            x_rotate_result = torch.cat((real, imag), dim=-1)
+
+        # Concatenate with non-rotated part
+        if x_not_rotate is not None:
+            output = torch.cat((x_rotate_result, x_not_rotate), dim=-1)
+        else:
+            output = x_rotate_result
+
+        # Reshape back to original shape
+        if is_3d:
+            output = output.view(original_shape)
+        else:
+            # Transpose back to (batch_size, num_heads, seq_len, head_size)
+            output = output.transpose(1, 2)
+
+        return output
+
+    return builder.call_function(
+        _rotary_embedding_onnx,
+        args=(
+            input_tensor,
+            cos_cache,
+            sin_cache,
+            position_ids,
+            interleaved,
+            num_heads,
+            rotary_embedding_dim,
+        ),
+    )
+
+
+# =============================================================================
 # Rotary Embedding (com.microsoft domain)
 # =============================================================================
 
