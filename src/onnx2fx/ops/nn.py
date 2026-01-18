@@ -1700,16 +1700,32 @@ def mean_variance_normalization(
 
 @register("Dropout")
 def dropout(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Dropout (inference mode - identity)."""
+    """Dropout (inference mode - identity).
+
+    ONNX Dropout can have 2 outputs:
+    - output: The result after dropout (same as input in inference mode)
+    - mask (optional): Boolean mask indicating which elements were kept (all True in inference mode)
+    """
     x = builder.get_value(node.input[0])
+
+    # Check if mask output is requested (second output)
+    return_mask = len(node.output) > 1 and node.output[1] != ""
 
     # In inference mode, dropout is identity
     # ratio = get_attribute(node, "ratio", 0.5)
     # training_mode from input or default to False
 
-    # For inference, just return input
-    # Note: ONNX Dropout can have 2 outputs (output, mask), we handle first
-    return builder.call_function(lambda t: t, args=(x,))
+    def _dropout_with_mask(x):
+        # In inference mode, output is identity and mask is all True
+        output = x
+        mask = torch.ones_like(x, dtype=torch.bool)
+        return output, mask
+
+    if return_mask:
+        return builder.call_function(_dropout_with_mask, args=(x,))
+    else:
+        # For inference without mask, just return input
+        return builder.call_function(lambda t: t, args=(x,))
 
 
 # =============================================================================
