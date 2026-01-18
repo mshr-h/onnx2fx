@@ -226,9 +226,17 @@ def hardmax(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     axis = get_attribute(node, "axis", -1)
 
     def _hardmax(t: torch.Tensor, ax: int) -> torch.Tensor:
-        return torch.nn.functional.one_hot(
+        # Normalize axis to positive
+        if ax < 0:
+            ax = t.dim() + ax
+        # one_hot appends the class dimension at the end
+        one_hot = torch.nn.functional.one_hot(
             torch.argmax(t, dim=ax), num_classes=t.shape[ax]
         ).to(t.dtype)
+        # Move the one-hot dimension from the end back to the original axis position
+        # one_hot has shape: [...dims before ax..., ...dims after ax..., num_classes]
+        # We need to move the last dim to position ax
+        return torch.movedim(one_hot, -1, ax)
 
     return builder.call_function(_hardmax, args=(x, axis))
 
