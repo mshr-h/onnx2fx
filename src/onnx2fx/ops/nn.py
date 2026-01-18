@@ -1117,6 +1117,245 @@ def global_max_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.N
     return builder.call_function(_global_max_pool, args=(x,))
 
 
+@register("LpPool")
+def lp_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Lp pooling.
+
+    Computes the Lp norm over a sliding window:
+    output = (sum(|x|^p))^(1/p)
+    """
+    x = builder.get_value(node.input[0])
+
+    kernel_shape = get_attribute(node, "kernel_shape")
+    strides = get_attribute(node, "strides") or [1] * len(kernel_shape)
+    pads = get_attribute(node, "pads")
+    dilations = get_attribute(node, "dilations") or [1] * len(kernel_shape)
+    ceil_mode = get_attribute(node, "ceil_mode", 0)
+    auto_pad = get_attribute(node, "auto_pad", "NOTSET")
+    p = get_attribute(node, "p", 2)
+
+    def _lp_pool_dilated(x, kernel_shape, strides, dilations, pads, ceil_mode, p):
+        """Compute Lp pooling with dilation support using unfold.
+
+        PyTorch's lp_pool doesn't support dilation or padding, so we implement
+        it manually.
+        """
+        ndim = len(kernel_shape)
+        spatial_shape = list(x.shape[2:])
+
+        # Compute effective kernel size with dilation
+        # effective_k = (k - 1) * d + 1
+        effective_kernel = [(k - 1) * d + 1 for k, d in zip(kernel_shape, dilations)]
+
+        # Apply padding if specified
+        if pads is not None:
+            n = len(pads) // 2
+            pads_begin = [pads[i] for i in range(n)]
+            pads_end = [pads[i + n] for i in range(n)]
+        else:
+            n = ndim
+            pads_begin = [0] * n
+            pads_end = [0] * n
+
+        # For ceil_mode, add extra end padding if needed to get ceil behavior
+        if ceil_mode:
+            for i in range(ndim):
+                padded_size = spatial_shape[i] + pads_begin[i] + pads_end[i]
+                # Compute output with floor
+                out_floor = (padded_size - effective_kernel[i]) // strides[i] + 1
+                # Compute output with ceil
+                out_ceil = (
+                    padded_size - effective_kernel[i] + strides[i] - 1
+                ) // strides[i] + 1
+                if out_ceil > out_floor:
+                    # Need extra padding to get one more output element
+                    pads_end[i] += strides[i] - 1
+
+        # Build pad_list for F.pad (reversed order: last dim first)
+        pad_list = []
+        for i in range(ndim - 1, -1, -1):
+            pad_list.extend([pads_begin[i], pads_end[i]])
+
+        has_padding = any(p_val > 0 for p_val in pad_list)
+
+        if has_padding:
+            x = F.pad(x, pad_list, value=0)
+
+        # Use unfold to extract patches with dilation
+        if ndim == 1:
+            _, d, s = kernel_shape[0], dilations[0], strides[0]
+            ek = effective_kernel[0]
+
+            # Unfold with effective kernel size and stride
+            patches = x.unfold(2, ek, s)  # (N, C, out_L, ek)
+            # Select dilated elements: indices 0, d, 2d, ..., (k-1)*d
+            indices = torch.arange(0, ek, d, device=x.device)
+            patches = patches.index_select(-1, indices)  # (N, C, out_L, k)
+
+            # Compute Lp norm: (sum(|x|^p))^(1/p)
+            return (patches.abs().pow(p).sum(dim=-1)).pow(1.0 / p)
+
+        elif ndim == 2:
+            k0, k1 = kernel_shape
+            d0, d1 = dilations
+            s0, s1 = strides
+            ek0, ek1 = effective_kernel
+
+            # Unfold along height (dim 2), then width (dim 3)
+            patches = x.unfold(2, ek0, s0).unfold(3, ek1, s1)
+            # patches shape: (N, C, out_H, out_W, ek0, ek1)
+
+            # Select dilated elements
+            indices0 = torch.arange(0, ek0, d0, device=x.device)
+            indices1 = torch.arange(0, ek1, d1, device=x.device)
+            patches = patches.index_select(-2, indices0).index_select(-1, indices1)
+            # patches shape: (N, C, out_H, out_W, k0, k1)
+
+            # Compute Lp norm: (sum(|x|^p))^(1/p)
+            return (patches.abs().pow(p).sum(dim=(-2, -1))).pow(1.0 / p)
+
+        elif ndim == 3:
+            k0, k1, k2 = kernel_shape
+            d0, d1, d2 = dilations
+            s0, s1, s2 = strides
+            ek0, ek1, ek2 = effective_kernel
+
+            # Unfold along each spatial dimension
+            patches = x.unfold(2, ek0, s0).unfold(3, ek1, s1).unfold(4, ek2, s2)
+            # patches shape: (N, C, out_D, out_H, out_W, ek0, ek1, ek2)
+
+            # Select dilated elements
+            indices0 = torch.arange(0, ek0, d0, device=x.device)
+            indices1 = torch.arange(0, ek1, d1, device=x.device)
+            indices2 = torch.arange(0, ek2, d2, device=x.device)
+            patches = (
+                patches.index_select(-3, indices0)
+                .index_select(-2, indices1)
+                .index_select(-1, indices2)
+            )
+            # patches shape: (N, C, out_D, out_H, out_W, k0, k1, k2)
+
+            # Compute Lp norm: (sum(|x|^p))^(1/p)
+            return (patches.abs().pow(p).sum(dim=(-3, -2, -1))).pow(1.0 / p)
+
+        else:
+            raise NotImplementedError(f"LpPool{ndim}D not supported")
+
+    def _lp_pool(x, kernel_shape, strides, pads, dilations, ceil_mode, auto_pad, p):
+        ndim = len(kernel_shape)
+
+        # Check if we have non-trivial dilation
+        has_dilation = any(d != 1 for d in dilations)
+
+        # Handle auto_pad first (before explicit pads)
+        if auto_pad in ("SAME_UPPER", "SAME_LOWER"):
+            input_shape = x.shape[2:]
+            output_shape = [(s + st - 1) // st for s, st in zip(input_shape, strides)]
+            # Compute effective kernel size with dilation
+            effective_kernel = [
+                (k - 1) * d + 1 for k, d in zip(kernel_shape, dilations)
+            ]
+            pad_total = [
+                max(0, (o - 1) * st + ek - i)
+                for i, o, ek, st in zip(
+                    input_shape,
+                    output_shape,
+                    effective_kernel,
+                    strides,
+                )
+            ]
+            if auto_pad == "SAME_UPPER":
+                pad_list = []
+                for p_total in reversed(pad_total):
+                    pad_list.extend([p_total // 2, p_total - p_total // 2])
+            else:
+                pad_list = []
+                for p_total in reversed(pad_total):
+                    pad_list.extend([p_total - p_total // 2, p_total // 2])
+
+            # Convert pad_list to pads format for dilated implementation
+            n = ndim
+            pads_onnx = [0] * (2 * n)
+            for i in range(n):
+                pads_onnx[i] = pad_list[2 * (n - 1 - i)]
+                pads_onnx[i + n] = pad_list[2 * (n - 1 - i) + 1]
+
+            # Use dilated implementation which handles padding correctly
+            return _lp_pool_dilated(
+                x, kernel_shape, strides, dilations, pads_onnx, ceil_mode, p
+            )
+
+        # If we have dilation, use the dilated implementation
+        if has_dilation:
+            return _lp_pool_dilated(
+                x, kernel_shape, strides, dilations, pads, ceil_mode, p
+            )
+
+        # Check if we need to use manual padding (asymmetric or any padding)
+        # PyTorch's lp_pool doesn't support padding at all
+        if pads is not None and any(pad_val > 0 for pad_val in pads):
+            return _lp_pool_dilated(
+                x, kernel_shape, strides, dilations, pads, ceil_mode, p
+            )
+
+        # Use PyTorch's native lp_pool for simple cases (no padding, no dilation)
+        kernel = tuple(kernel_shape)
+        stride = tuple(strides)
+
+        if ndim == 1:
+            return F.lp_pool1d(
+                x,
+                norm_type=float(p),
+                kernel_size=kernel[0],
+                stride=stride[0],
+                ceil_mode=bool(ceil_mode),
+            )
+        elif ndim == 2:
+            return F.lp_pool2d(
+                x,
+                norm_type=float(p),
+                kernel_size=kernel,
+                stride=stride,
+                ceil_mode=bool(ceil_mode),
+            )
+        else:
+            # For 3D+, always use manual implementation
+            return _lp_pool_dilated(
+                x, kernel_shape, strides, dilations, pads, ceil_mode, p
+            )
+
+    return builder.call_function(
+        _lp_pool,
+        args=(
+            x,
+            kernel_shape,
+            strides,
+            pads,
+            dilations,
+            ceil_mode,
+            auto_pad,
+            p,
+        ),
+    )
+
+
+@register("GlobalLpPool")
+def global_lp_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Global Lp pooling.
+
+    Computes the Lp norm over all spatial dimensions.
+    """
+    x = builder.get_value(node.input[0])
+    p = get_attribute(node, "p", 2)
+
+    def _global_lp_pool(x, p):
+        # Lp norm over all spatial dimensions (keep batch and channel)
+        dims = tuple(range(2, x.dim()))
+        return (x.abs().pow(p).sum(dim=dims, keepdim=True)).pow(1.0 / p)
+
+    return builder.call_function(_global_lp_pool, args=(x, p))
+
+
 # =============================================================================
 # Normalization operators
 # =============================================================================
