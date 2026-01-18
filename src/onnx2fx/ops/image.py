@@ -386,6 +386,59 @@ def grid_sample(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 
 # =============================================================================
+# AffineGrid operator
+# =============================================================================
+
+
+@register("AffineGrid", since_version=20)
+def affine_grid(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Generate 2D or 3D flow field (sampling grid) from affine matrices.
+
+    Given a batch of affine matrices theta, generates a grid of sampling
+    locations. This is typically used with GridSample to build Spatial
+    Transformer Networks.
+
+    Inputs:
+        theta: Input batch of affine matrices with shape (N, 2, 3) for 2D
+               or (N, 3, 4) for 3D
+        size: Target output image size (N, C, H, W) for 2D or (N, C, D, H, W)
+              for 3D, as a 1-D tensor
+
+    Attributes:
+        align_corners: If 1, consider -1 and 1 to refer to the centers of the
+                      corner pixels. If 0, consider -1 and 1 to refer to the
+                      outer edge of corner pixels. Default: 0
+
+    Output:
+        grid: Output tensor of shape (N, H, W, 2) for 2D sample coordinates
+              or (N, D, H, W, 3) for 3D sample coordinates
+    """
+    theta = builder.get_value(node.input[0])
+    size = builder.get_value(node.input[1])
+
+    align_corners = get_attribute(node, "align_corners", 0)
+
+    def _affine_grid(theta, size, align_corners):
+        import torch.nn.functional as F
+
+        # Convert size tensor to a list of integers for torch.Size
+        if isinstance(size, torch.Tensor):
+            size_list = size.tolist()
+        else:
+            size_list = list(size)
+        size_tuple = torch.Size([int(s) for s in size_list])
+
+        # Convert align_corners from int to bool
+        align_corners_bool = bool(align_corners)
+
+        return F.affine_grid(theta, size_tuple, align_corners=align_corners_bool)
+
+    return builder.call_function(
+        _affine_grid, args=(theta, size, align_corners)
+    )
+
+
+# =============================================================================
 # CenterCropPad operator
 # =============================================================================
 
