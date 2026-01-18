@@ -130,114 +130,514 @@ def embed_layer_normalization(
 
 
 # =============================================================================
-# Attention operator (custom Microsoft domain)
+# Attention operator (ONNX standard domain, since opset 24)
 # =============================================================================
 
 
 @register("Attention")
 def attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """ONNX Attention operator.
+    """ONNX Attention operator (standard domain, since opset 24).
 
-    Supports two patterns:
-    1. Decomposed SDPA (ViT, etc.): Inputs are Q, K, V tensors directly
-       - 3 inputs: query, key, value
-       - Attributes: is_causal, softcap, qk_matmul_output_mode
+    Inputs:
+        Q: Query tensor
+           - 4D: (batch_size, q_num_heads, q_sequence_length, head_size)
+           - 3D: (batch_size, q_sequence_length, q_num_heads * head_size)
+        K: Key tensor
+           - 4D: (batch_size, kv_num_heads, kv_sequence_length, head_size)
+           - 3D: (batch_size, kv_sequence_length, kv_num_heads * head_size)
+        V: Value tensor (same format as K)
+        attn_mask (optional): Attention mask, broadcastable to
+            (batch_size, q_num_heads, q_sequence_length, total_sequence_length)
+        past_key (optional): Past key cache
+        past_value (optional): Past value cache
+        nonpad_kv_seqlen (optional): Non-padding KV sequence lengths
 
-    2. Fused SDPA (com.microsoft domain): Inputs are input, weight, bias
-       - 5+ inputs: input, weight, bias (optional), mask_index (optional), past (optional)
-       - Attributes: num_heads, unidirectional
+    Attributes:
+        is_causal: If 1, use causal (lower triangular) mask
+        scale: Scaling factor for Q*K^T (default: 1/sqrt(head_size))
+        softcap: Softcap value for attention weights
+        q_num_heads: Number of query heads (required for 3D inputs)
+        kv_num_heads: Number of key/value heads (required for 3D inputs)
+        qk_matmul_output_mode: Output mode for QK matmul (0, 1, or 2)
+
+    Outputs:
+        Y: Output tensor (same format as Q)
+        present_key (optional): Updated key cache
+        present_value (optional): Updated value cache
+        qk_matmul_output (optional): QK matmul output
     """
-    num_inputs = len(node.input)
+    # Get inputs
+    query = builder.get_value(node.input[0])
+    key = builder.get_value(node.input[1])
+    value = builder.get_value(node.input[2])
 
-    # Check if this is Decomposed SDPA pattern (Q, K, V directly)
-    # Heuristic: If we have exactly 3 inputs and is_causal attribute exists
-    is_causal_attr = get_attribute(node, "is_causal", None)
-    softcap = get_attribute(node, "softcap", 0.0)
-
-    if num_inputs == 3 and is_causal_attr is not None:
-        # Decomposed SDPA: Q, K, V are passed directly
-        query = builder.get_value(node.input[0])
-        key = builder.get_value(node.input[1])
-        value = builder.get_value(node.input[2])
-
-        is_causal = is_causal_attr
-
-        def _decomposed_sdpa(
-            q: torch.Tensor,
-            k: torch.Tensor,
-            v: torch.Tensor,
-            is_causal: int,
-            scale: float,
-        ) -> torch.Tensor:
-            # Use scaled_dot_product_attention directly with Q, K, V
-            if is_causal:
-                output = torch.nn.functional.scaled_dot_product_attention(
-                    q, k, v, is_causal=True
-                )
-            else:
-                output = torch.nn.functional.scaled_dot_product_attention(q, k, v)
-            return output
-
-        return builder.call_function(
-            _decomposed_sdpa,
-            args=(query, key, value, is_causal, softcap),
-        )
-
-    # Fused SDPA pattern (Microsoft domain style)
-    input_node = builder.get_value(node.input[0])
-    weight = builder.get_value(node.input[1])
-    bias = (
-        builder.get_value(node.input[2])
-        if len(node.input) > 2 and node.input[2]
-        else None
-    )
-    mask_index = (
+    attn_mask = (
         builder.get_value(node.input[3])
         if len(node.input) > 3 and node.input[3]
         else None
     )
-
-    num_heads = get_attribute(node, "num_heads", 1)
-    unidirectional = get_attribute(node, "unidirectional", 0)
-
-    def _attention_sdpa(
-        inp: torch.Tensor,
-        w: torch.Tensor,
-        b: torch.Tensor | None,
-        mask: torch.Tensor | None,
-        n_heads: int,
-        is_causal: int,
-    ) -> torch.Tensor:
-        # QKV projection: input @ weight + bias
-        qkv = torch.matmul(inp, w)
-        if b is not None:
-            qkv = qkv + b
-
-        # Split QKV into Q, K, V
-        q, k, v = qkv.chunk(3, dim=-1)
-
-        # Use scaled_dot_product_attention
-        # Note: is_causal cannot be used together with attn_mask
-        if mask is not None:
-            # Convert mask to attention mask format (additive mask)
-            # SDPA expects: 0 = attend, -inf = don't attend
-            attn_mask = torch.where(mask == 0, float("-inf"), 0.0)
-            output = torch.nn.functional.scaled_dot_product_attention(
-                q, k, v, attn_mask=attn_mask, is_causal=False
-            )
-        elif is_causal:
-            output = torch.nn.functional.scaled_dot_product_attention(
-                q, k, v, is_causal=True
-            )
-        else:
-            output = torch.nn.functional.scaled_dot_product_attention(q, k, v)
-
-        return output
-
-    return builder.call_function(
-        _attention_sdpa,
-        args=(input_node, weight, bias, mask_index, num_heads, unidirectional),
+    past_key = (
+        builder.get_value(node.input[4])
+        if len(node.input) > 4 and node.input[4]
+        else None
     )
+    past_value = (
+        builder.get_value(node.input[5])
+        if len(node.input) > 5 and node.input[5]
+        else None
+    )
+    nonpad_kv_seqlen = (
+        builder.get_value(node.input[6])
+        if len(node.input) > 6 and node.input[6]
+        else None
+    )
+
+    # Get attributes
+    is_causal = get_attribute(node, "is_causal", 0)
+    scale = get_attribute(node, "scale", None)
+    softcap = get_attribute(node, "softcap", 0.0)
+    q_num_heads = get_attribute(node, "q_num_heads", None)
+    kv_num_heads = get_attribute(node, "kv_num_heads", None)
+    qk_matmul_output_mode = get_attribute(node, "qk_matmul_output_mode", 0)
+
+    # Determine which outputs are needed
+    # Output positions: 0=Y, 1=present_key, 2=present_value, 3=qk_matmul_output
+    num_outputs = len(node.output)
+    has_present_key = num_outputs > 1 and node.output[1]
+    has_present_value = num_outputs > 2 and node.output[2]
+    has_qk_matmul_output = num_outputs > 3 and node.output[3]
+
+    # Check if we need multiple outputs (even if some are empty)
+    needs_multiple_outputs = num_outputs > 1
+
+    # Use manual attention computation when:
+    # 1. We need qk_matmul_output
+    # 2. We have softcap
+    # 3. We have both is_causal and attn_mask
+    needs_manual_attention = (
+        has_qk_matmul_output or softcap != 0.0 or (is_causal and attn_mask is not None)
+    )
+
+    if needs_manual_attention:
+        # Manual attention implementation for advanced features
+
+        def _attention_manual(
+            q: torch.Tensor,
+            k: torch.Tensor,
+            v: torch.Tensor,
+            mask: torch.Tensor | None,
+            past_k: torch.Tensor | None,
+            past_v: torch.Tensor | None,
+            is_causal: int,
+            scale: float | None,
+            softcap: float,
+            q_num_heads: int | None,
+            kv_num_heads: int | None,
+            num_outputs: int,
+            qk_matmul_output_mode: int,
+        ) -> (
+            torch.Tensor
+            | tuple[torch.Tensor, torch.Tensor]
+            | tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+            | tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+        ):
+            is_3d = q.dim() == 3
+
+            if is_3d:
+                batch_size = q.shape[0]
+                q_seq_len = q.shape[1]
+                kv_seq_len = k.shape[1]
+                n_q_heads = q_num_heads if q_num_heads is not None else 1
+                n_kv_heads = kv_num_heads if kv_num_heads is not None else n_q_heads
+                q_head_size = q.shape[2] // n_q_heads
+                kv_head_size = k.shape[2] // n_kv_heads
+                v_head_size = v.shape[2] // n_kv_heads
+                q_4d = q.view(batch_size, q_seq_len, n_q_heads, q_head_size).transpose(
+                    1, 2
+                )
+                k_4d = k.view(
+                    batch_size, kv_seq_len, n_kv_heads, kv_head_size
+                ).transpose(1, 2)
+                v_4d = v.view(
+                    batch_size, kv_seq_len, n_kv_heads, v_head_size
+                ).transpose(1, 2)
+            else:
+                q_4d = q
+                k_4d = k
+                v_4d = v
+                batch_size = q.shape[0]
+                n_q_heads = q.shape[1]
+                n_kv_heads = k.shape[1]
+                q_seq_len = q.shape[2]
+                q_head_size = q.shape[3]
+
+            # Handle past key/value (KV cache)
+            past_seq_len = 0
+            if past_k is not None and past_v is not None:
+                past_seq_len = past_k.shape[2]
+                k_4d = torch.cat([past_k, k_4d], dim=2)
+                v_4d = torch.cat([past_v, v_4d], dim=2)
+
+            # Save present_key and present_value before GQA expansion (if needed for output)
+            present_k = k_4d if num_outputs > 1 else None
+            present_v = v_4d if num_outputs > 2 else None
+
+            # Handle GQA: expand KV heads to match Q heads
+            if n_kv_heads != n_q_heads:
+                n_rep = n_q_heads // n_kv_heads
+                k_4d = k_4d.repeat_interleave(n_rep, dim=1)
+                v_4d = v_4d.repeat_interleave(n_rep, dim=1)
+
+            # Compute attention scale
+            if scale is None:
+                scale_val = 1.0 / (q_head_size**0.5)
+            else:
+                scale_val = scale
+
+            # Q @ K^T with scaling
+            # (batch, heads, q_seq, head) @ (batch, heads, head, kv_seq)
+            # -> (batch, heads, q_seq, kv_seq)
+            qk = torch.matmul(q_4d, k_4d.transpose(-2, -1)) * scale_val
+
+            # Save QK matmul output before applying mask/softmax (if needed for output)
+            # Mode 0: raw QK matmul output
+            qk_output = None
+            if num_outputs > 3 and qk_matmul_output_mode == 0:
+                qk_output = qk.clone()
+
+            # Build combined attention mask (applied BEFORE softcap per ONNX spec)
+            # The ONNX approach: create causal mask first, add attn_mask to it,
+            # then add combined mask to QK scores
+            kv_seq = k_4d.shape[2]
+            combined_mask = None
+
+            # Create causal mask if is_causal=1
+            # ONNX uses: Less(q_pos + past_len, k_pos) to determine masked positions
+            # This creates a strictly lower triangular mask where q_pos + past_len >= k_pos is allowed
+            if is_causal:
+                # Create causal mask: (q_pos + past_seq_len) < k_pos means masked
+                row = torch.arange(q_seq_len, device=q.device).view(-1, 1) + past_seq_len
+                col = torch.arange(kv_seq, device=q.device).view(1, -1)
+                causal_bool = row < col  # True where masked
+                causal_mask = torch.where(
+                    causal_bool, float("-inf"), 0.0
+                ).to(q.dtype).unsqueeze(0).unsqueeze(0)
+                combined_mask = causal_mask
+
+            # Add attention mask to causal mask (or use just attn_mask if no causal)
+            if mask is not None:
+                if combined_mask is not None:
+                    combined_mask = mask + combined_mask  # attn_mask + causal_mask
+                else:
+                    combined_mask = mask
+
+            # Add combined mask to QK scores
+            if combined_mask is not None:
+                qk = qk + combined_mask
+
+            # Mode 1: after attention mask addition (including causal)
+            if num_outputs > 3 and qk_matmul_output_mode == 1:
+                qk_output = qk.clone()
+
+            # Apply softcap if specified (after mask, before softmax per ONNX spec)
+            if softcap != 0.0:
+                qk = softcap * torch.tanh(qk / softcap)
+
+            # Mode 2: after softcap
+            if num_outputs > 3 and qk_matmul_output_mode == 2:
+                qk_output = qk.clone()
+
+            # Softmax
+            attn_weights = torch.nn.functional.softmax(qk, dim=-1)
+
+            # Mode 3: after softmax
+            if num_outputs > 3 and qk_matmul_output_mode == 3:
+                qk_output = attn_weights.clone()
+
+            # Attention @ V
+            output = torch.matmul(attn_weights, v_4d)
+
+            if is_3d:
+                output = (
+                    output.transpose(1, 2).contiguous().view(batch_size, q_seq_len, -1)
+                )
+
+            # Return based on num_outputs (must match exactly)
+            # Output positions: 0=Y, 1=present_key, 2=present_value, 3=qk_matmul_output
+            if num_outputs == 1:
+                return output
+            elif num_outputs == 2:
+                return (output, present_k)
+            elif num_outputs == 3:
+                return (output, present_k, present_v)
+            else:  # num_outputs == 4
+                return (output, present_k, present_v, qk_output)
+
+        return builder.call_function(
+            _attention_manual,
+            args=(
+                query,
+                key,
+                value,
+                attn_mask,
+                past_key,
+                past_value,
+                is_causal,
+                scale,
+                softcap,
+                q_num_heads,
+                kv_num_heads,
+                num_outputs,
+                qk_matmul_output_mode,
+            ),
+        )
+    elif has_present_key or has_present_value:
+        # Use SDPA but also return present_key/present_value
+
+        def _attention_with_cache(
+            q: torch.Tensor,
+            k: torch.Tensor,
+            v: torch.Tensor,
+            mask: torch.Tensor | None,
+            past_k: torch.Tensor | None,
+            past_v: torch.Tensor | None,
+            is_causal: int,
+            scale: float | None,
+            q_num_heads: int | None,
+            kv_num_heads: int | None,
+            has_present_key: bool,
+            has_present_value: bool,
+        ) -> (
+            torch.Tensor
+            | tuple[torch.Tensor, torch.Tensor]
+            | tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        ):
+            is_3d = q.dim() == 3
+
+            if is_3d:
+                batch_size = q.shape[0]
+                q_seq_len = q.shape[1]
+                kv_seq_len = k.shape[1]
+                n_q_heads = q_num_heads if q_num_heads is not None else 1
+                n_kv_heads = kv_num_heads if kv_num_heads is not None else n_q_heads
+                q_head_size = q.shape[2] // n_q_heads
+                kv_head_size = k.shape[2] // n_kv_heads
+                v_head_size = v.shape[2] // n_kv_heads
+                q_4d = q.view(batch_size, q_seq_len, n_q_heads, q_head_size).transpose(
+                    1, 2
+                )
+                k_4d = k.view(
+                    batch_size, kv_seq_len, n_kv_heads, kv_head_size
+                ).transpose(1, 2)
+                v_4d = v.view(
+                    batch_size, kv_seq_len, n_kv_heads, v_head_size
+                ).transpose(1, 2)
+            else:
+                q_4d = q
+                k_4d = k
+                v_4d = v
+                batch_size = q.shape[0]
+                n_q_heads = q.shape[1]
+                n_kv_heads = k.shape[1]
+                q_seq_len = q.shape[2]
+
+            # Handle past key/value (KV cache)
+            if past_k is not None and past_v is not None:
+                k_4d = torch.cat([past_k, k_4d], dim=2)
+                v_4d = torch.cat([past_v, v_4d], dim=2)
+
+            # Save present_key and present_value before GQA expansion
+            present_k = k_4d if has_present_key else None
+            present_v = v_4d if has_present_value else None
+
+            # Handle GQA: expand KV heads to match Q heads
+            if n_kv_heads != n_q_heads:
+                n_rep = n_q_heads // n_kv_heads
+                k_4d = k_4d.repeat_interleave(n_rep, dim=1)
+                v_4d = v_4d.repeat_interleave(n_rep, dim=1)
+
+            # Call SDPA
+            if mask is not None:
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    q_4d, k_4d, v_4d, attn_mask=mask, is_causal=False, scale=scale
+                )
+            elif is_causal:
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    q_4d, k_4d, v_4d, is_causal=True, scale=scale
+                )
+            else:
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    q_4d, k_4d, v_4d, scale=scale
+                )
+
+            if is_3d:
+                output = (
+                    output.transpose(1, 2).contiguous().view(batch_size, q_seq_len, -1)
+                )
+
+            # Build return tuple
+            results = [output]
+            if has_present_key:
+                results.append(present_k)
+            if has_present_value:
+                results.append(present_v)
+
+            if len(results) == 1:
+                return results[0]
+            return tuple(results)
+
+        return builder.call_function(
+            _attention_with_cache,
+            args=(
+                query,
+                key,
+                value,
+                attn_mask,
+                past_key,
+                past_value,
+                is_causal,
+                scale,
+                q_num_heads,
+                kv_num_heads,
+                has_present_key,
+                has_present_value,
+            ),
+        )
+    else:
+        # Simple case: just use SDPA
+
+        def _attention_standard(
+            q: torch.Tensor,
+            k: torch.Tensor,
+            v: torch.Tensor,
+            mask: torch.Tensor | None,
+            past_k: torch.Tensor | None,
+            past_v: torch.Tensor | None,
+            is_causal: int,
+            scale: float | None,
+            q_num_heads: int | None,
+            kv_num_heads: int | None,
+            nonpad_kv_seqlen: torch.Tensor | None,
+        ) -> torch.Tensor:
+            is_3d = q.dim() == 3
+
+            if is_3d:
+                batch_size = q.shape[0]
+                q_seq_len = q.shape[1]
+                kv_seq_len = k.shape[1]
+                n_q_heads = q_num_heads if q_num_heads is not None else 1
+                n_kv_heads = kv_num_heads if kv_num_heads is not None else n_q_heads
+                q_head_size = q.shape[2] // n_q_heads
+                kv_head_size = k.shape[2] // n_kv_heads
+                v_head_size = v.shape[2] // n_kv_heads
+                q_4d = q.view(batch_size, q_seq_len, n_q_heads, q_head_size).transpose(
+                    1, 2
+                )
+                k_4d = k.view(
+                    batch_size, kv_seq_len, n_kv_heads, kv_head_size
+                ).transpose(1, 2)
+                v_4d = v.view(
+                    batch_size, kv_seq_len, n_kv_heads, v_head_size
+                ).transpose(1, 2)
+            else:
+                q_4d = q
+                k_4d = k
+                v_4d = v
+                batch_size = q.shape[0]
+                n_q_heads = q.shape[1]
+                n_kv_heads = k.shape[1]
+                q_seq_len = q.shape[2]
+
+            # Handle past key/value (KV cache)
+            if past_k is not None and past_v is not None:
+                k_4d = torch.cat([past_k, k_4d], dim=2)
+                v_4d = torch.cat([past_v, v_4d], dim=2)
+
+            # Handle GQA: expand KV heads to match Q heads
+            if n_kv_heads != n_q_heads:
+                n_rep = n_q_heads // n_kv_heads
+                k_4d = k_4d.repeat_interleave(n_rep, dim=1)
+                v_4d = v_4d.repeat_interleave(n_rep, dim=1)
+
+            # Handle mask padding if mask is shorter than KV sequence
+            # Per ONNX spec: "The last dimension can also be shorter than 
+            # total_sequence_length and will be padded with negative infinity"
+            kv_seq_len_actual = k_4d.shape[2]
+            
+            if mask is not None:
+                # Pad mask if shorter than KV sequence (BEFORE adding nonpad mask)
+                if mask.shape[-1] < kv_seq_len_actual:
+                    pad_size = kv_seq_len_actual - mask.shape[-1]
+                    # For bool masks, pad with False; for float, pad with -inf
+                    if mask.dtype == torch.bool:
+                        mask = torch.nn.functional.pad(mask, (0, pad_size), value=False)
+                    else:
+                        mask = torch.nn.functional.pad(
+                            mask, (0, pad_size), value=float("-inf")
+                        )
+                
+                # Expand mask for GQA if needed (mask might have n_kv_heads dimension)
+                if mask.dim() == 4 and mask.shape[1] == n_kv_heads and n_kv_heads != n_q_heads:
+                    n_rep = n_q_heads // n_kv_heads
+                    mask = mask.repeat_interleave(n_rep, dim=1)
+            
+            # Handle nonpad_kv_seqlen: create a padding mask for each batch
+            # that masks out positions >= nonpad_kv_seqlen[batch]
+            if nonpad_kv_seqlen is not None:
+                # Create a position index tensor: (1, 1, 1, kv_seq_len)
+                positions = torch.arange(
+                    kv_seq_len_actual, device=q.device
+                ).view(1, 1, 1, -1)
+                # Create mask: True where position < nonpad_kv_seqlen[batch]
+                # nonpad_kv_seqlen: (batch_size,) -> (batch_size, 1, 1, 1)
+                valid_mask = positions < nonpad_kv_seqlen.view(-1, 1, 1, 1)
+                # Convert to additive mask: 0 for valid, -inf for padding
+                pad_mask = torch.where(
+                    valid_mask, 0.0, float("-inf")
+                ).to(q.dtype)
+                # Combine with existing mask
+                if mask is not None:
+                    mask = mask + pad_mask
+                else:
+                    mask = pad_mask
+
+            # Call SDPA
+            if mask is not None:
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    q_4d, k_4d, v_4d, attn_mask=mask, is_causal=False, scale=scale
+                )
+            elif is_causal:
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    q_4d, k_4d, v_4d, is_causal=True, scale=scale
+                )
+            else:
+                output = torch.nn.functional.scaled_dot_product_attention(
+                    q_4d, k_4d, v_4d, scale=scale
+                )
+
+            if is_3d:
+                output = (
+                    output.transpose(1, 2).contiguous().view(batch_size, q_seq_len, -1)
+                )
+
+            return output
+
+        return builder.call_function(
+            _attention_standard,
+            args=(
+                query,
+                key,
+                value,
+                attn_mask,
+                past_key,
+                past_value,
+                is_causal,
+                scale,
+                q_num_heads,
+                kv_num_heads,
+                nonpad_kv_seqlen,
+            ),
+        )
 
 
 # =============================================================================
