@@ -255,3 +255,99 @@ def col2im(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(
         _col2im, args=(x, image_shape, block_shape, strides, pads, dilations)
     )
+
+
+# =============================================================================
+# CenterCropPad operator
+# =============================================================================
+
+
+@register("CenterCropPad", since_version=18)
+def center_crop_pad(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Center crop or pad an input to given dimensions.
+
+    The crop/pad dimensions can be specified for a subset of the axes.
+    Unspecified dimensions will remain unchanged.
+
+    For cropping (input > target): centered window, start position rounded down.
+    For padding (input < target): centered padding, extra pixel on right if odd.
+
+    Inputs:
+        input_data: Input tensor to crop/pad
+        shape: 1-D tensor of target dimensions for specified axes
+
+    Attributes:
+        axes: Subset of axes that shape refers to (default: all axes)
+
+    Output:
+        Output tensor with specified dimensions
+    """
+    x = builder.get_value(node.input[0])
+    shape = builder.get_value(node.input[1])
+
+    axes = get_attribute(node, "axes")
+
+    def _center_crop_pad(x, shape, axes):
+        # Convert shape to list if tensor
+        if isinstance(shape, torch.Tensor):
+            target_shape = shape.tolist()
+        else:
+            target_shape = list(shape)
+
+        ndim = x.dim()
+
+        # If axes is not provided, use all axes
+        if axes is None:
+            axes_list = list(range(ndim))
+        else:
+            axes_list = list(axes)
+
+        # Normalize negative axes
+        axes_list = [(a + ndim) if a < 0 else a for a in axes_list]
+
+        # Build slices for cropping and padding amounts
+        result = x
+        for i, axis in enumerate(axes_list):
+            current_size = result.shape[axis]
+            target_size = int(target_shape[i])
+
+            if current_size == target_size:
+                # No change needed for this axis
+                continue
+            elif current_size > target_size:
+                # Crop: extract centered window
+                # Start position is rounded down (floor division)
+                diff = current_size - target_size
+                start = diff // 2
+                end = start + target_size
+
+                # Build slice for this axis
+                slices = [slice(None)] * result.dim()
+                slices[axis] = slice(start, end)
+                result = result[tuple(slices)]
+            else:
+                # Pad: add zeros centered
+                # Extra pixel goes to the right side
+                diff = target_size - current_size
+                pad_before = diff // 2
+                pad_after = diff - pad_before
+
+                # torch.nn.functional.pad uses reverse order: last dim first
+                # and pairs are (before, after) for each dim from last to first
+                # We need to construct padding for just this one axis
+
+                # Number of dimensions from the end
+                dims_from_end = result.dim() - 1 - axis
+
+                # Build pad tuple: pairs for each dim from last to first
+                # We only pad the current axis
+                pad = [0] * (2 * result.dim())
+                # Index in pad list: dims_from_end * 2 for before, +1 for after
+                pad[dims_from_end * 2] = pad_before
+                pad[dims_from_end * 2 + 1] = pad_after
+
+                result = torch.nn.functional.pad(result, pad, mode="constant", value=0)
+
+        return result
+
+    return builder.call_function(_center_crop_pad, args=(x, shape, axes))
