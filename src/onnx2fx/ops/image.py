@@ -207,9 +207,7 @@ def col2im(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         input_reshaped = x.reshape(N, C, *block_shape, L)
 
         # Initialize output: [N, C, *image_shape]
-        output = torch.zeros(
-            N, C, *image_shape, dtype=x.dtype, device=x.device
-        )
+        output = torch.zeros(N, C, *image_shape, dtype=x.dtype, device=x.device)
 
         # Compute effective kernel size after dilation
         effective_block = [(b - 1) * d + 1 for b, d in zip(block_shape, dilations)]
@@ -242,9 +240,7 @@ def col2im(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
                 ]
 
                 # Check bounds
-                valid = all(
-                    0 <= output_pos[i] < image_shape[i] for i in range(n_dims)
-                )
+                valid = all(0 <= output_pos[i] < image_shape[i] for i in range(n_dims))
                 if valid:
                     # Get value from input_reshaped: [N, C, *block_shape, L]
                     idx = (slice(None), slice(None)) + tuple(block_pos) + (l_idx,)

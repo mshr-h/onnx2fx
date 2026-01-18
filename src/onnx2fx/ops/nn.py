@@ -1443,14 +1443,10 @@ def lstm(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
                 # Compute gates
                 # it = sigmoid(Xt*(Wi^T) + Ht-1*(Ri^T) + Pi (.) Ct-1 + Wbi + Rbi)
-                i_t = torch.sigmoid(
-                    x_t @ w_i.T + h_t @ r_i.T + p_i * c_t + wb_i + rb_i
-                )
+                i_t = torch.sigmoid(x_t @ w_i.T + h_t @ r_i.T + p_i * c_t + wb_i + rb_i)
 
                 # ft = sigmoid(Xt*(Wf^T) + Ht-1*(Rf^T) + Pf (.) Ct-1 + Wbf + Rbf)
-                f_t = torch.sigmoid(
-                    x_t @ w_f.T + h_t @ r_f.T + p_f * c_t + wb_f + rb_f
-                )
+                f_t = torch.sigmoid(x_t @ w_f.T + h_t @ r_f.T + p_f * c_t + wb_f + rb_f)
 
                 # Handle input_forget (coupled input-forget gate)
                 if input_forget:
@@ -1463,9 +1459,7 @@ def lstm(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
                 c_t = f_t * c_t + i_t * c_tilde
 
                 # ot = sigmoid(Xt*(Wo^T) + Ht-1*(Ro^T) + Po (.) Ct + Wbo + Rbo)
-                o_t = torch.sigmoid(
-                    x_t @ w_o.T + h_t @ r_o.T + p_o * c_t + wb_o + rb_o
-                )
+                o_t = torch.sigmoid(x_t @ w_o.T + h_t @ r_o.T + p_o * c_t + wb_o + rb_o)
 
                 # Ht = ot (.) tanh(Ct)
                 h_t = o_t * torch.tanh(c_t)

@@ -1010,7 +1010,7 @@ def rotary_embedding_onnx(
             assert num_heads != 0, "num_heads must be provided for 3D input"
             head_size = hidden_size // num_heads
             x = x.view(batch_size, seq_len, num_heads, head_size)
-            n_heads = num_heads
+            _n_heads = num_heads
 
         # Determine rotary_embedding_dim
         if rotary_dim == 0:
