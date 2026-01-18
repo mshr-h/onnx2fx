@@ -1160,3 +1160,221 @@ def dropout(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     # For inference, just return input
     # Note: ONNX Dropout can have 2 outputs (output, mask), we handle first
     return builder.call_function(lambda t: t, args=(x,))
+
+
+# =============================================================================
+# Recurrent neural network operators
+# =============================================================================
+
+
+@register("GRU")
+def gru(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """GRU (Gated Recurrent Unit) operator.
+
+    Computes an one-layer GRU.
+
+    ONNX GRU Inputs:
+    - X: input tensor [seq_length, batch_size, input_size] (layout=0)
+         or [batch_size, seq_length, input_size] (layout=1)
+    - W: weight tensor [num_directions, 3*hidden_size, input_size]
+    - R: recurrence weight [num_directions, 3*hidden_size, hidden_size]
+    - B (optional): bias [num_directions, 6*hidden_size]
+    - sequence_lens (optional): [batch_size]
+    - initial_h (optional): [num_directions, batch_size, hidden_size]
+
+    ONNX GRU Outputs:
+    - Y (optional): [seq_length, num_directions, batch_size, hidden_size]
+    - Y_h (optional): [num_directions, batch_size, hidden_size]
+
+    Equations (Default: f=Sigmoid, g=Tanh):
+    - zt = f(Xt*(Wz^T) + Ht-1*(Rz^T) + Wbz + Rbz)
+    - rt = f(Xt*(Wr^T) + Ht-1*(Rr^T) + Wbr + Rbr)
+    - ht = g(Xt*(Wh^T) + (rt (.) Ht-1)*(Rh^T) + Rbh + Wbh)  # linear_before_reset=0
+    - ht = g(Xt*(Wh^T) + (rt (.) (Ht-1*(Rh^T) + Rbh)) + Wbh)  # linear_before_reset!=0
+    - Ht = (1 - zt) (.) ht + zt (.) Ht-1
+    """
+    # Get inputs
+    x = builder.get_value(node.input[0])
+    w = builder.get_value(node.input[1])
+    r = builder.get_value(node.input[2])
+
+    # Optional inputs
+    b = None
+    if len(node.input) > 3 and node.input[3]:
+        b = builder.get_value(node.input[3])
+
+    sequence_lens = None
+    if len(node.input) > 4 and node.input[4]:
+        sequence_lens = builder.get_value(node.input[4])
+
+    initial_h = None
+    if len(node.input) > 5 and node.input[5]:
+        initial_h = builder.get_value(node.input[5])
+
+    # Get attributes
+    hidden_size = get_attribute(node, "hidden_size")
+    direction = get_attribute(node, "direction", "forward")
+    layout = get_attribute(node, "layout", 0)
+    linear_before_reset = get_attribute(node, "linear_before_reset", 0)
+    # activations = get_attribute(node, "activations", ["Sigmoid", "Tanh"])
+    # clip = get_attribute(node, "clip", None)
+
+    # Determine output requirements
+    output_y = len(node.output) > 0 and node.output[0] != ""
+    output_y_h = len(node.output) > 1 and node.output[1] != ""
+
+    def _gru_impl(
+        x,
+        w,
+        r,
+        b,
+        sequence_lens,
+        initial_h,
+        hidden_size,
+        direction,
+        layout,
+        linear_before_reset,
+        output_y,
+        output_y_h,
+    ):
+        # Handle layout: convert to seq_first format for processing
+        # layout=0: [seq_length, batch_size, input_size]
+        # layout=1: [batch_size, seq_length, input_size]
+        if layout == 1:
+            x = x.transpose(0, 1)
+
+        seq_length, batch_size, input_size = x.shape
+        num_directions = 2 if direction == "bidirectional" else 1
+
+        # Initialize hidden state if not provided
+        if initial_h is None:
+            initial_h = torch.zeros(
+                num_directions, batch_size, hidden_size, dtype=x.dtype, device=x.device
+            )
+
+        # Process each direction
+        all_y = []
+        all_y_h = []
+
+        for dir_idx in range(num_directions):
+            # Get weights for this direction
+            # W shape: [num_directions, 3*hidden_size, input_size]
+            # ONNX order: [Wz, Wr, Wh] concatenated
+            w_dir = w[dir_idx]  # [3*hidden_size, input_size]
+            w_z = w_dir[0:hidden_size, :]  # [hidden_size, input_size]
+            w_r = w_dir[hidden_size : 2 * hidden_size, :]
+            w_h = w_dir[2 * hidden_size : 3 * hidden_size, :]
+
+            # R shape: [num_directions, 3*hidden_size, hidden_size]
+            r_dir = r[dir_idx]  # [3*hidden_size, hidden_size]
+            r_z = r_dir[0:hidden_size, :]  # [hidden_size, hidden_size]
+            r_r = r_dir[hidden_size : 2 * hidden_size, :]
+            r_h = r_dir[2 * hidden_size : 3 * hidden_size, :]
+
+            # Biases (optional)
+            # B shape: [num_directions, 6*hidden_size] = [Wb_z, Wb_r, Wb_h, Rb_z, Rb_r, Rb_h]
+            if b is not None:
+                b_dir = b[dir_idx]  # [6*hidden_size]
+                wb_z = b_dir[0:hidden_size]
+                wb_r = b_dir[hidden_size : 2 * hidden_size]
+                wb_h = b_dir[2 * hidden_size : 3 * hidden_size]
+                rb_z = b_dir[3 * hidden_size : 4 * hidden_size]
+                rb_r = b_dir[4 * hidden_size : 5 * hidden_size]
+                rb_h = b_dir[5 * hidden_size : 6 * hidden_size]
+            else:
+                wb_z = wb_r = wb_h = rb_z = rb_r = rb_h = 0
+
+            # Initial hidden state for this direction
+            h_t = initial_h[dir_idx]  # [batch_size, hidden_size]
+
+            # Process sequence
+            outputs = []
+            if direction == "reverse" or (
+                direction == "bidirectional" and dir_idx == 1
+            ):
+                time_steps = range(seq_length - 1, -1, -1)
+            else:
+                time_steps = range(seq_length)
+
+            for t in time_steps:
+                x_t = x[t]  # [batch_size, input_size]
+
+                # Compute gates
+                # zt = sigmoid(Xt*(Wz^T) + Ht-1*(Rz^T) + Wbz + Rbz)
+                z_t = torch.sigmoid(
+                    x_t @ w_z.T + h_t @ r_z.T + wb_z + rb_z
+                )  # [batch_size, hidden_size]
+
+                # rt = sigmoid(Xt*(Wr^T) + Ht-1*(Rr^T) + Wbr + Rbr)
+                r_t = torch.sigmoid(x_t @ w_r.T + h_t @ r_r.T + wb_r + rb_r)
+
+                # ht = tanh(Xt*(Wh^T) + (rt (.) Ht-1)*(Rh^T) + Rbh + Wbh)  # linear_before_reset=0
+                # ht = tanh(Xt*(Wh^T) + (rt (.) (Ht-1*(Rh^T) + Rbh)) + Wbh)  # linear_before_reset!=0
+                if linear_before_reset:
+                    h_tilde = torch.tanh(
+                        x_t @ w_h.T + r_t * (h_t @ r_h.T + rb_h) + wb_h
+                    )
+                else:
+                    h_tilde = torch.tanh(
+                        x_t @ w_h.T + (r_t * h_t) @ r_h.T + rb_h + wb_h
+                    )
+
+                # Ht = (1 - zt) (.) ht + zt (.) Ht-1
+                h_t = (1 - z_t) * h_tilde + z_t * h_t
+
+                outputs.append(h_t)
+
+            # Stack outputs
+            if direction == "reverse" or (
+                direction == "bidirectional" and dir_idx == 1
+            ):
+                outputs = outputs[::-1]
+
+            # [seq_length, batch_size, hidden_size]
+            dir_y = torch.stack(outputs, dim=0)
+            all_y.append(dir_y)
+            all_y_h.append(h_t)
+
+        # Combine directions
+        # Y: [seq_length, num_directions, batch_size, hidden_size]
+        y = torch.stack(all_y, dim=1)
+
+        # Y_h: [num_directions, batch_size, hidden_size]
+        y_h = torch.stack(all_y_h, dim=0)
+
+        # Handle layout for output
+        if layout == 1:
+            # Convert Y from [seq_length, num_directions, batch_size, hidden_size]
+            # to [batch_size, seq_length, num_directions, hidden_size]
+            y = y.permute(2, 0, 1, 3)
+            # Convert Y_h from [num_directions, batch_size, hidden_size]
+            # to [batch_size, num_directions, hidden_size]
+            y_h = y_h.transpose(0, 1)
+
+        # Return based on required outputs
+        if output_y and output_y_h:
+            return (y, y_h)
+        elif output_y:
+            return y
+        elif output_y_h:
+            return y_h
+        else:
+            return y_h  # Default to returning Y_h
+
+    return builder.call_function(
+        _gru_impl,
+        args=(
+            x,
+            w,
+            r,
+            b,
+            sequence_lens,
+            initial_h,
+            hidden_size,
+            direction,
+            layout,
+            linear_before_reset,
+            output_y,
+            output_y_h,
+        ),
+    )
