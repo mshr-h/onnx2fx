@@ -1358,31 +1358,15 @@ def lp_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
                 x, kernel_shape, strides, dilations, pads, ceil_mode, p
             )
 
-        # Use PyTorch's native lp_pool for simple cases (no padding, no dilation)
-        kernel = tuple(kernel_shape)
-        stride = tuple(strides)
-
-        if ndim == 1:
-            return F.lp_pool1d(
-                x,
-                norm_type=float(p),
-                kernel_size=kernel[0],
-                stride=stride[0],
-                ceil_mode=bool(ceil_mode),
-            )
-        elif ndim == 2:
-            return F.lp_pool2d(
-                x,
-                norm_type=float(p),
-                kernel_size=kernel,
-                stride=stride,
-                ceil_mode=bool(ceil_mode),
-            )
-        else:
-            # For 3D+, always use manual implementation
-            return _lp_pool_dilated(
-                x, kernel_shape, strides, dilations, pads, ceil_mode, p
-            )
+        # PyTorch's lp_pool functions use sign(f(x)) * |f(x)|^(1/p) where f(x) = sum(x^p),
+        # but ONNX's LpPool uses (sum(|x|^p))^(1/p). The difference is that ONNX
+        # takes absolute value FIRST before raising to power p. This matters when
+        # x contains negative values and p is odd (like p=3), as PyTorch's version
+        # can produce NaN while ONNX's version is always well-defined.
+        # Therefore, we always use our manual implementation which correctly applies abs() first.
+        return _lp_pool_dilated(
+            x, kernel_shape, strides, dilations, pads, ceil_mode, p
+        )
 
     return builder.call_function(
         _lp_pool,
