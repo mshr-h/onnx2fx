@@ -981,6 +981,40 @@ def global_max_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.N
 # =============================================================================
 
 
+@register("LpNormalization")
+def lp_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Lp Normalization.
+
+    Normalizes input element-wise by dividing by the Lp norm along the specified axis.
+
+    Attributes:
+        axis: The axis on which to apply normalization (default: -1)
+        p: The order of the normalization, only 1 or 2 are supported (default: 2)
+    """
+    x = builder.get_value(node.input[0])
+
+    axis = get_attribute(node, "axis", -1)
+    p = get_attribute(node, "p", 2)
+
+    def _lp_normalize(x, axis, p):
+        if p == 1:
+            # L1 normalization: x / sum(|x|)
+            norm = torch.sum(torch.abs(x), dim=axis, keepdim=True)
+            # Avoid division by zero
+            norm = torch.clamp(norm, min=1e-12)
+            return x / norm
+        elif p == 2:
+            # L2 normalization: x / sqrt(sum(x^2))
+            # Note: We don't use F.normalize because it returns 0 for zero vectors,
+            # but ONNX expects NaN (0/0 behavior)
+            norm = torch.sqrt(torch.sum(x * x, dim=axis, keepdim=True))
+            return x / norm
+        else:
+            raise ValueError(f"LpNormalization only supports p=1 or p=2, got p={p}")
+
+    return builder.call_function(_lp_normalize, args=(x, axis, p))
+
+
 @register("BatchNormalization")
 def batch_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Batch normalization."""
