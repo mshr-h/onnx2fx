@@ -642,6 +642,28 @@ def scatter_elements(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.
     )
 
 
+@register("Scatter")
+def scatter(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Scatter (deprecated, replaced by ScatterElements in opset 11)."""
+    x = builder.get_value(node.input[0])
+    indices = builder.get_value(node.input[1])
+    updates = builder.get_value(node.input[2])
+    axis = get_attribute(node, "axis", 0)
+
+    def _scatter(data, axis, idx, upd):
+        # Handle negative axis
+        if axis < 0:
+            axis = data.ndim + axis
+
+        # Handle negative indices by converting to positive
+        dim_size = data.shape[axis]
+        idx = torch.where(idx < 0, idx + dim_size, idx)
+
+        return data.scatter(axis, idx, upd)
+
+    return builder.call_function(_scatter, args=(x, axis, indices, updates))
+
+
 # =============================================================================
 # Tiling and padding operators
 # =============================================================================
