@@ -557,11 +557,61 @@ def tile(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(_tile, args=(x, repeats))
 
 
-@register("Pad")
-def pad(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Pad tensor."""
+def _pad_impl(x, pads, mode, constant_value):
+    """Helper function for Pad operator.
+
+    Converts ONNX pad format to PyTorch format and applies padding.
+    ONNX: [x1_begin, x2_begin, ..., x1_end, x2_end, ...]
+    PyTorch: [xn_begin, xn_end, ..., x1_begin, x1_end]
+    """
+    import torch
     import torch.nn.functional as F
 
+    if isinstance(pads, torch.Tensor):
+        pads = pads.tolist()
+
+    n = len(pads) // 2
+    # Reverse and interleave
+    torch_pads = []
+    for i in range(n - 1, -1, -1):
+        torch_pads.extend([int(pads[i]), int(pads[i + n])])
+
+    mode_map = {"constant": "constant", "reflect": "reflect", "edge": "replicate"}
+    torch_mode = mode_map.get(mode, "constant")
+
+    if torch_mode == "constant":
+        return F.pad(x, torch_pads, mode=torch_mode, value=float(constant_value))
+
+    # For non-constant modes (reflect, replicate), PyTorch only supports padding
+    # the last N dimensions. Trim leading zero-padding pairs.
+    # torch_pads is ordered as [last_dim_begin, last_dim_end, ..., first_dim_begin, first_dim_end]
+    # We need to trim trailing zero pairs (which correspond to first dimensions).
+    while len(torch_pads) > 2 and torch_pads[-1] == 0 and torch_pads[-2] == 0:
+        torch_pads = torch_pads[:-2]
+
+    return F.pad(x, torch_pads, mode=torch_mode)
+
+
+@register("Pad", since_version=1)
+def pad_v1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Pad tensor (opset 1-10).
+
+    In opset < 11, pads and value are attributes.
+    """
+    x = builder.get_value(node.input[0])
+    pads = list(get_attribute(node, "pads"))
+    mode = get_attribute(node, "mode", "constant")
+    constant_value = get_attribute(node, "value", 0.0)
+
+    return builder.call_function(_pad_impl, args=(x, pads, mode, constant_value))
+
+
+@register("Pad", since_version=11)
+def pad_v11(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Pad tensor (opset 11+).
+
+    In opset 11+, pads, constant_value, and axes are inputs.
+    """
     x = builder.get_value(node.input[0])
     pads = builder.get_value(node.input[1])
     mode = get_attribute(node, "mode", "constant")
@@ -570,29 +620,10 @@ def pad(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     if len(node.input) > 2 and node.input[2]:
         constant_value = builder.get_value(node.input[2])
 
-    # Convert ONNX pad format to PyTorch format
-    # ONNX: [x1_begin, x2_begin, ..., x1_end, x2_end, ...]
-    # PyTorch: [xn_begin, xn_end, ..., x1_begin, x1_end]
-    def _convert_pads(x, pads, mode, constant_value):
-        import torch
+    # Note: axes input (opset 18+) is not yet supported
+    # If needed, would require reordering pads based on axes
 
-        if isinstance(pads, torch.Tensor):
-            pads = pads.tolist()
-
-        n = len(pads) // 2
-        # Reverse and interleave
-        torch_pads = []
-        for i in range(n - 1, -1, -1):
-            torch_pads.extend([int(pads[i]), int(pads[i + n])])
-
-        mode_map = {"constant": "constant", "reflect": "reflect", "edge": "replicate"}
-        torch_mode = mode_map.get(mode, "constant")
-
-        if torch_mode == "constant":
-            return F.pad(x, torch_pads, mode=torch_mode, value=float(constant_value))
-        return F.pad(x, torch_pads, mode=torch_mode)
-
-    return builder.call_function(_convert_pads, args=(x, pads, mode, constant_value))
+    return builder.call_function(_pad_impl, args=(x, pads, mode, constant_value))
 
 
 # =============================================================================
