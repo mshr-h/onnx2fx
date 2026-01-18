@@ -135,9 +135,7 @@ def embed_layer_normalization(
 
 
 @register("Attention", domain="com.microsoft")
-def microsoft_attention(
-    builder: "GraphBuilder", node: onnx.NodeProto
-) -> torch.fx.Node:
+def microsoft_attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Microsoft Attention operator (com.microsoft domain).
 
     Multi-Head Attention that can be either unidirectional (like GPT-2) or

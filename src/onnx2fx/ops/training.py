@@ -214,9 +214,7 @@ def _adagrad_update(
 
 
 @register("Adagrad", domain="ai.onnx.preview.training")
-def adagrad(
-    builder: "GraphBuilder", node: onnx.NodeProto
-) -> Tuple[torch.fx.Node, ...]:
+def adagrad(builder: "GraphBuilder", node: onnx.NodeProto) -> Tuple[torch.fx.Node, ...]:
     """Adagrad optimizer operator.
 
     Compute one iteration of ADAGRAD, a stochastic gradient based optimization

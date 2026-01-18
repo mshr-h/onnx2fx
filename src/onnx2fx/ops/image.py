@@ -433,9 +433,7 @@ def affine_grid(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
         return F.affine_grid(theta, size_tuple, align_corners=align_corners_bool)
 
-    return builder.call_function(
-        _affine_grid, args=(theta, size, align_corners)
-    )
+    return builder.call_function(_affine_grid, args=(theta, size, align_corners))
 
 
 # =============================================================================

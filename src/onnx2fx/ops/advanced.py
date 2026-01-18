@@ -207,7 +207,9 @@ def mel_weight_matrix(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
         frequency_bins = frequency_bins * mel_step + low_frequency_mel
 
         # Convert mel frequencies back to Hz
-        frequency_bins = 700.0 * (torch.pow(torch.tensor(10.0), frequency_bins / 2595.0) - 1.0)
+        frequency_bins = 700.0 * (
+            torch.pow(torch.tensor(10.0), frequency_bins / 2595.0) - 1.0
+        )
 
         # Convert Hz frequencies to FFT bin indices
         frequency_bins = ((n_fft + 1) * frequency_bins) // sr
@@ -226,12 +228,16 @@ def mel_weight_matrix(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
                 output[center_frequency_point, i] = 1.0
             else:
                 for j in range(lower_frequency_value, center_frequency_point + 1):
-                    output[j, i] = float(j - lower_frequency_value) / float(low_to_center)
+                    output[j, i] = float(j - lower_frequency_value) / float(
+                        low_to_center
+                    )
 
             center_to_high = higher_frequency_point - center_frequency_point
             if center_to_high > 0:
                 for j in range(center_frequency_point, higher_frequency_point):
-                    output[j, i] = float(higher_frequency_point - j) / float(center_to_high)
+                    output[j, i] = float(higher_frequency_point - j) / float(
+                        center_to_high
+                    )
 
         return output.to(dtype)
 

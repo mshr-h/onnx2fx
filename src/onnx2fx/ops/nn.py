@@ -1364,9 +1364,7 @@ def lp_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         # x contains negative values and p is odd (like p=3), as PyTorch's version
         # can produce NaN while ONNX's version is always well-defined.
         # Therefore, we always use our manual implementation which correctly applies abs() first.
-        return _lp_pool_dilated(
-            x, kernel_shape, strides, dilations, pads, ceil_mode, p
-        )
+        return _lp_pool_dilated(x, kernel_shape, strides, dilations, pads, ceil_mode, p)
 
     return builder.call_function(
         _lp_pool,
