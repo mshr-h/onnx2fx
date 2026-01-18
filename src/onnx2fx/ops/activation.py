@@ -49,10 +49,29 @@ def elu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 @register("Selu")
 def selu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Scaled Exponential Linear Unit activation."""
+    """Scaled Exponential Linear Unit activation.
+
+    ONNX SELU: y = gamma * (alpha * (exp(x) - 1) for x < 0, x for x >= 0)
+    PyTorch SELU uses fixed alpha=1.6732... and gamma=1.0507...
+    ONNX defaults: alpha=1.67326..., gamma=1.0507... but allows custom values.
+    """
     x = builder.get_value(node.input[0])
-    # SELU has fixed alpha and gamma values
-    return builder.call_function(F.selu, args=(x,))
+    alpha = get_attribute(node, "alpha", 1.67326319217681884765625)
+    gamma = get_attribute(node, "gamma", 1.05070102214813232421875)
+
+    # PyTorch's fixed SELU values
+    pytorch_alpha = 1.6732632423543772848170429916717
+    pytorch_gamma = 1.0507009873554804934193349852946
+
+    # If using PyTorch's fixed values (within tolerance), use F.selu for efficiency
+    if abs(alpha - pytorch_alpha) < 1e-5 and abs(gamma - pytorch_gamma) < 1e-5:
+        return builder.call_function(F.selu, args=(x,))
+
+    # Otherwise implement manually: gamma * (alpha * (exp(x) - 1) for x < 0, x for x >= 0)
+    def _custom_selu(x: torch.Tensor, alpha: float, gamma: float) -> torch.Tensor:
+        return gamma * torch.where(x > 0, x, alpha * (torch.exp(x) - 1))
+
+    return builder.call_function(_custom_selu, args=(x, alpha, gamma))
 
 
 @register("Celu")
@@ -74,12 +93,26 @@ def sigmoid(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 def hard_sigmoid(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Hard Sigmoid activation.
 
-    Note: ONNX allows custom alpha/beta, but PyTorch's hardsigmoid uses fixed
-    values (alpha=1/6, beta=0.5). The ONNX default (alpha=0.2, beta=0.5) differs
-    slightly, but we use PyTorch's implementation for efficiency.
+    ONNX HardSigmoid: max(0, min(1, alpha * x + beta))
+    ONNX defaults: alpha=0.2, beta=0.5
+    PyTorch hardsigmoid uses fixed alpha=1/6, beta=0.5
     """
     x = builder.get_value(node.input[0])
-    return builder.call_function(F.hardsigmoid, args=(x,))
+    alpha = get_attribute(node, "alpha", 0.2)
+    beta = get_attribute(node, "beta", 0.5)
+
+    # PyTorch hardsigmoid uses alpha=1/6 ≈ 0.16667, beta=0.5
+    pytorch_alpha = 1.0 / 6.0
+
+    # If using PyTorch's fixed values (within tolerance), use F.hardsigmoid
+    if abs(alpha - pytorch_alpha) < 1e-5 and abs(beta - 0.5) < 1e-5:
+        return builder.call_function(F.hardsigmoid, args=(x,))
+
+    # Otherwise implement manually: max(0, min(1, alpha * x + beta))
+    def _custom_hardsigmoid(x: torch.Tensor, alpha: float, beta: float) -> torch.Tensor:
+        return torch.clamp(alpha * x + beta, 0.0, 1.0)
+
+    return builder.call_function(_custom_hardsigmoid, args=(x, alpha, beta))
 
 
 @register("Tanh")

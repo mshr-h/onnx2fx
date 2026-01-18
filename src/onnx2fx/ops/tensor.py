@@ -428,7 +428,7 @@ def slice_v10(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 
 def _dynamic_slice(x, starts, ends, axes=None, steps=None):
-    """Helper function for dynamic slicing."""
+    """Helper function for dynamic slicing with support for negative steps."""
     import torch
 
     # Convert to lists if tensors
@@ -441,26 +441,80 @@ def _dynamic_slice(x, starts, ends, axes=None, steps=None):
     if steps is not None and isinstance(steps, torch.Tensor):
         steps = steps.tolist()
 
-    ndim = x.dim()
     if axes is None:
         axes = list(range(len(starts)))
     if steps is None:
         steps = [1] * len(starts)
 
-    # Build slice objects for each dimension
-    slices = [slice(None)] * ndim
+    # Handle negative steps by flipping, slicing with positive step, then flipping back
+    # We process each axis separately to handle this correctly
+    result = x
     for start, end, axis, step in zip(starts, ends, axes, steps):
-        # Handle negative indices
-        dim_size = x.size(axis)
-        if start < 0:
-            start = max(0, dim_size + start)
-        if end < 0:
-            end = max(0, dim_size + end)
-        # Clamp to valid range
-        end = min(end, dim_size)
-        slices[axis] = slice(int(start), int(end), int(step))
+        dim_size = result.size(axis)
 
-    return x[tuple(slices)]
+        if step < 0:
+            # For negative steps, ONNX semantics:
+            # start defaults to dim_size - 1, end defaults to -dim_size - 1
+            # We iterate from start down to end (exclusive) with abs(step)
+
+            # Handle special ONNX sentinel values and negative indices
+            if start >= dim_size:
+                start = dim_size - 1
+            elif start < 0:
+                start = max(-1, dim_size + start)
+
+            if end < -dim_size:
+                end = -1  # Sentinel for "before the beginning"
+            elif end < 0:
+                end = dim_size + end
+
+            # For negative step: we go from start down to end (exclusive)
+            # Example: start=20, end=0, step=-1 means indices [20, 19, ..., 1]
+            # Flip the axis, compute equivalent positive slice, then flip back
+
+            # Compute the actual range of elements we want
+            # start > end for negative step, so we want indices from end+1 to start (inclusive)
+            actual_start = end + 1 if end >= 0 else 0
+            actual_end = start + 1 if start >= 0 else dim_size
+
+            # Clamp to valid range
+            actual_start = max(0, min(actual_start, dim_size))
+            actual_end = max(0, min(actual_end, dim_size))
+
+            if actual_start >= actual_end:
+                # Empty slice
+                slices = [slice(None)] * result.dim()
+                slices[axis] = slice(0, 0)
+                result = result[tuple(slices)]
+            else:
+                # First slice to get the range
+                slices = [slice(None)] * result.dim()
+                slices[axis] = slice(int(actual_start), int(actual_end))
+                result = result[tuple(slices)]
+
+                # Then flip to reverse the order
+                result = torch.flip(result, dims=[axis])
+
+                # Apply striding if step < -1
+                if step < -1:
+                    abs_step = -step
+                    slices = [slice(None)] * result.dim()
+                    slices[axis] = slice(None, None, int(abs_step))
+                    result = result[tuple(slices)]
+        else:
+            # Positive step - original logic
+            if start < 0:
+                start = max(0, dim_size + start)
+            if end < 0:
+                end = max(0, dim_size + end)
+            # Clamp to valid range
+            start = min(start, dim_size)
+            end = min(end, dim_size)
+            slices = [slice(None)] * result.dim()
+            slices[axis] = slice(int(start), int(end), int(step))
+            result = result[tuple(slices)]
+
+    return result
 
 
 @register("Gather")
