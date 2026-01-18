@@ -208,7 +208,7 @@ def attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     has_qk_matmul_output = num_outputs > 3 and node.output[3]
 
     # Check if we need multiple outputs (even if some are empty)
-    needs_multiple_outputs = num_outputs > 1
+    _needs_multiple_outputs = num_outputs > 1
 
     # Use manual attention computation when:
     # 1. We need qk_matmul_output

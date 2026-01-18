@@ -724,7 +724,7 @@ def average_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
         if ndim == 1:
             # Use unfold for 1D
             # unfold(dimension, size, step)
-            k, d, s = kernel_shape[0], dilations[0], strides[0]
+            _, d, s = kernel_shape[0], dilations[0], strides[0]
             ek = effective_kernel[0]
 
             # Unfold with effective kernel size and stride
