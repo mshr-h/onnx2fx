@@ -127,3 +127,135 @@ def space_to_depth(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
         return x
 
     return builder.call_function(_space_to_depth, args=(x, blocksize))
+
+
+# =============================================================================
+# Col2Im operator
+# =============================================================================
+
+
+@register("Col2Im", since_version=18)
+def col2im(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Rearrange column blocks back into a multidimensional image.
+
+    ONNX Col2Im is the inverse of Im2Col. It combines sliding local blocks
+    (columns) back into a larger image tensor.
+
+    Inputs:
+        input: [N, C * prod(block_shape), L] - batched column data
+        image_shape: spatial dimensions of the output image
+        block_shape: shape of the sliding block
+
+    Attributes:
+        strides: stride along each spatial axis (default: 1)
+        pads: padding for each spatial axis in ONNX format (default: 0)
+        dilations: dilation for each spatial axis (default: 1)
+
+    Output:
+        [N, C, *image_shape] - reconstructed image
+    """
+    x = builder.get_value(node.input[0])
+    image_shape = builder.get_value(node.input[1])
+    block_shape = builder.get_value(node.input[2])
+
+    strides = get_attribute(node, "strides")
+    pads = get_attribute(node, "pads")
+    dilations = get_attribute(node, "dilations")
+
+    def _col2im(x, image_shape, block_shape, strides, pads, dilations):
+        import torch.nn.functional as F
+        from functools import reduce
+        from itertools import product
+        from operator import mul
+
+        # Convert to lists if tensors
+        if isinstance(image_shape, torch.Tensor):
+            image_shape = image_shape.tolist()
+        if isinstance(block_shape, torch.Tensor):
+            block_shape = block_shape.tolist()
+
+        n_dims = len(block_shape)
+
+        # Default values
+        if strides is None:
+            strides = [1] * n_dims
+        if pads is None:
+            pads = [0] * (2 * n_dims)
+        if dilations is None:
+            dilations = [1] * n_dims
+
+        # For 2D, use PyTorch's optimized fold
+        if n_dims == 2:
+            # PyTorch fold uses symmetric padding per dimension
+            padding = (pads[0], pads[1])
+            return F.fold(
+                x,
+                output_size=tuple(image_shape),
+                kernel_size=tuple(block_shape),
+                stride=tuple(strides),
+                padding=padding,
+                dilation=tuple(dilations),
+            )
+
+        # For N-D, implement manually
+        N = x.shape[0]
+        L = x.shape[2]
+        block_size = reduce(mul, block_shape, 1)
+        C = x.shape[1] // block_size
+
+        # Reshape input: [N, C * prod(block_shape), L] -> [N, C, *block_shape, L]
+        input_reshaped = x.reshape(N, C, *block_shape, L)
+
+        # Initialize output: [N, C, *image_shape]
+        output = torch.zeros(
+            N, C, *image_shape, dtype=x.dtype, device=x.device
+        )
+
+        # Compute effective kernel size after dilation
+        effective_block = [(b - 1) * d + 1 for b, d in zip(block_shape, dilations)]
+
+        # Compute number of blocks in each dimension
+        n_blocks = []
+        for i, (img_dim, eff_block, s) in enumerate(
+            zip(image_shape, effective_block, strides)
+        ):
+            p_begin = pads[i]
+            p_end = pads[n_dims + i]
+            n_block = (img_dim + p_begin + p_end - eff_block) // s + 1
+            n_blocks.append(n_block)
+
+        # Iterate over all block positions
+        block_indices = list(product(*[range(nb) for nb in n_blocks]))
+
+        for l_idx, block_idx in enumerate(block_indices):
+            # Compute starting position for this block
+            starts = [
+                bi * s - pads[i] for i, (bi, s) in enumerate(zip(block_idx, strides))
+            ]
+
+            # For each position in the block
+            block_positions = list(product(*[range(b) for b in block_shape]))
+            for block_pos in block_positions:
+                # Compute actual output position with dilation
+                output_pos = [
+                    starts[i] + block_pos[i] * dilations[i] for i in range(n_dims)
+                ]
+
+                # Check bounds
+                valid = all(
+                    0 <= output_pos[i] < image_shape[i] for i in range(n_dims)
+                )
+                if valid:
+                    # Get value from input_reshaped: [N, C, *block_shape, L]
+                    idx = (slice(None), slice(None)) + tuple(block_pos) + (l_idx,)
+                    value = input_reshaped[idx]
+
+                    # Add to output
+                    out_idx = (slice(None), slice(None)) + tuple(output_pos)
+                    output[out_idx] += value
+
+        return output
+
+    return builder.call_function(
+        _col2im, args=(x, image_shape, block_shape, strides, pads, dilations)
+    )
