@@ -261,25 +261,50 @@ def max_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     x = builder.get_value(node.input[0])
 
     kernel_shape = get_attribute(node, "kernel_shape")
-    strides = get_attribute(node, "strides") or kernel_shape
+    # ONNX spec: strides defaults to 1 along each spatial axis (not kernel_shape)
+    strides = get_attribute(node, "strides") or [1] * len(kernel_shape)
     pads = get_attribute(node, "pads")
     dilations = get_attribute(node, "dilations") or [1] * len(kernel_shape)
     ceil_mode = get_attribute(node, "ceil_mode", 0)
     auto_pad = get_attribute(node, "auto_pad", "NOTSET")
+    storage_order = get_attribute(node, "storage_order", 0)
 
-    def _max_pool(x, kernel_shape, strides, pads, dilations, ceil_mode, auto_pad):
+    # Check if we need to return indices (second output requested)
+    return_indices = len(node.output) > 1 and node.output[1] != ""
+
+    def _max_pool(
+        x,
+        kernel_shape,
+        strides,
+        pads,
+        dilations,
+        ceil_mode,
+        auto_pad,
+        return_indices,
+        storage_order,
+    ):
         ndim = len(kernel_shape)
+        input_dtype = x.dtype
+        input_shape = x.shape  # (N, C, D1, D2, ...)
+
+        # PyTorch max_pool doesn't support int8/uint8, need to convert
+        needs_cast = input_dtype in (torch.int8, torch.uint8)
+        if needs_cast:
+            x = x.float()
 
         padding = 0
         # Handle auto_pad first (before explicit pads)
         if auto_pad in ("SAME_UPPER", "SAME_LOWER"):
-            # Compute padding for SAME
-            input_shape = x.shape[2:]
-            output_shape = [(s + st - 1) // st for s, st in zip(input_shape, strides)]
+            # ONNX spec for SAME padding (ceil_mode disabled):
+            # output_spatial_shape[i] = floor((input_spatial_shape[i] - 1) / strides[i]) + 1
+            spatial_shape = x.shape[2:]
+            output_shape = [(s - 1) // st + 1 for s, st in zip(spatial_shape, strides)]
+            # pad_shape[i] = (output_shape[i] - 1) * strides[i]
+            #                + ((kernel[i] - 1) * dilations[i] + 1) - input_shape[i]
             pad_total = [
                 max(0, (o - 1) * st + (k - 1) * d + 1 - i)
                 for i, o, k, st, d in zip(
-                    input_shape,
+                    spatial_shape,
                     output_shape,
                     kernel_shape,
                     strides,
@@ -299,9 +324,23 @@ def max_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         elif pads is not None:
             n = len(pads) // 2
             symmetric = all(pads[i] == pads[i + n] for i in range(n))
-            if symmetric:
+
+            # Check if padding exceeds PyTorch's limit
+            # PyTorch: pad should be at most half of effective kernel size
+            # effective_kernel = (kernel_size - 1) * dilation + 1
+            # max_pad = effective_kernel // 2
+            max_allowed_pad = [
+                ((k - 1) * d + 1) // 2 for k, d in zip(kernel_shape, dilations)
+            ]
+            exceeds_limit = any(
+                pads[i] > max_allowed_pad[i] or pads[i + n] > max_allowed_pad[i]
+                for i in range(n)
+            )
+
+            if symmetric and not exceeds_limit:
                 padding = tuple(pads[:n])
             else:
+                # Use explicit F.pad for asymmetric or large padding
                 pad_list = []
                 for i in range(n - 1, -1, -1):
                     pad_list.extend([pads[i], pads[i + n]])
@@ -313,37 +352,104 @@ def max_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         dilation = tuple(dilations)
 
         if ndim == 1:
-            return F.max_pool1d(
+            result = F.max_pool1d(
                 x,
                 kernel[0],
                 stride=stride[0],
-                padding=padding,
+                padding=padding if isinstance(padding, int) else padding[0],
                 dilation=dilation[0],
                 ceil_mode=bool(ceil_mode),
+                return_indices=return_indices,
             )
         elif ndim == 2:
-            return F.max_pool2d(
+            result = F.max_pool2d(
                 x,
                 kernel,
                 stride=stride,
                 padding=padding,
                 dilation=dilation,
                 ceil_mode=bool(ceil_mode),
+                return_indices=return_indices,
             )
         elif ndim == 3:
-            return F.max_pool3d(
+            result = F.max_pool3d(
                 x,
                 kernel,
                 stride=stride,
                 padding=padding,
                 dilation=dilation,
                 ceil_mode=bool(ceil_mode),
+                return_indices=return_indices,
             )
         else:
             raise NotImplementedError(f"MaxPool{ndim}D not supported")
 
+        if return_indices:
+            values, indices = result
+            if needs_cast:
+                values = values.to(input_dtype)
+
+            # Handle storage_order for indices
+            # PyTorch returns row-major indices (last dim varies fastest)
+            # ONNX storage_order=0 means row-major (default)
+            # ONNX storage_order=1 means column-major (first spatial dim varies fastest)
+            if storage_order == 1:
+                # Convert row-major indices to column-major
+                # For input shape (N, C, D1, D2, ...), we need to convert indices
+                # Row-major: idx = n*C*D1*D2*... + c*D1*D2*... + d1*D2*... + d2*... + ...
+                # Column-major: idx = n + c*N + d1*N*C + d2*N*C*D1 + ...
+                # Compute the multi-index from row-major flat index
+                flat_indices = indices
+                # Spatial dims of original input (before any padding)
+                spatial_dims = list(input_shape[2:])
+                n_batch = input_shape[0]
+                n_channel = input_shape[1]
+
+                # Decompose row-major index to (n, c, d1, d2, ...)
+                remaining = flat_indices
+                coords = []
+                # First extract spatial coords in reverse order (last dim first)
+                for dim_size in reversed(spatial_dims):
+                    coords.append(remaining % dim_size)
+                    remaining = remaining // dim_size
+                # Now remaining = n * C + c
+                c_coord = remaining % n_channel
+                n_coord = remaining // n_channel
+
+                # Reverse coords to get (d1, d2, ...) order
+                spatial_coords = list(reversed(coords))
+
+                # Compute column-major index
+                # col_idx = n + c*N + d1*N*C + d2*N*C*D1 + ...
+                col_idx = n_coord
+                stride_factor = n_batch
+                col_idx = col_idx + c_coord * stride_factor
+                stride_factor = stride_factor * n_channel
+                for i, d_coord in enumerate(spatial_coords):
+                    col_idx = col_idx + d_coord * stride_factor
+                    stride_factor = stride_factor * spatial_dims[i]
+
+                indices = col_idx
+
+            return values, indices
+        else:
+            if needs_cast:
+                result = result.to(input_dtype)
+            return result
+
     return builder.call_function(
-        _max_pool, args=(x, kernel_shape, strides, pads, dilations, ceil_mode, auto_pad)
+        _max_pool,
+        args=(
+            x,
+            kernel_shape,
+            strides,
+            pads,
+            dilations,
+            ceil_mode,
+            auto_pad,
+            return_indices,
+            storage_order,
+        ),
     )
 
 
@@ -359,7 +465,9 @@ def average_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
     count_include_pad = get_attribute(node, "count_include_pad", 0)
     auto_pad = get_attribute(node, "auto_pad", "NOTSET")
 
-    def _avg_pool(x, kernel_shape, strides, pads, ceil_mode, count_include_pad, auto_pad):
+    def _avg_pool(
+        x, kernel_shape, strides, pads, ceil_mode, count_include_pad, auto_pad
+    ):
         ndim = len(kernel_shape)
 
         padding = 0
