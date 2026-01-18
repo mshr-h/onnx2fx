@@ -25,7 +25,9 @@ The following models have been tested and verified to work with onnx2fx:
   - PP-OCRv5_mobile_det, PP-OCRv5_mobile_rec
   - PP-OCRv5_server_det, PP-OCRv5_server_rec
 - **TorchVision Models**: ResNet, VGG, MobileNet, etc. (via ONNX export)
-- **LFM2**: Language Foundation Model (LFM2-350M-ENJP-MT)
+- **LFM2**: Liquid Foundation Model (LFM2-350M-ENJP-MT)
+- **LFM2.5**: Liquid Foundation Model 2.5
+- **TinyLlama**: TinyLlama-1.1B-Chat
 
 ## Installation
 
@@ -34,6 +36,7 @@ The following models have been tested and verified to work with onnx2fx:
 - Python >= 3.11
 - PyTorch >= 2.9.0
 - ONNX >= 1.19.1
+- onnxscript >= 0.3.0
 
 ### From Source
 
@@ -196,7 +199,7 @@ result = analyze_model("model.onnx")
 # Check results
 print(f"Supported operators: {result.supported_ops}")
 print(f"Unsupported operators: {result.unsupported_ops}")
-print(f"Is fully supported: {result.is_fully_supported}")
+print(f"Is fully supported: {result.is_fully_supported()}")
 
 # Get detailed summary
 print(result.summary())
@@ -272,7 +275,7 @@ except Onnx2FxError as e:
 - Constant, ConstantOfShape
 
 #### Control Flow
-- Loop, If
+- If
 
 #### Neural Network Layers
 - Conv, ConvTranspose, ConvInteger
@@ -379,13 +382,15 @@ Analyze an ONNX model for operator support.
 Dataclass containing model analysis results.
 
 **Attributes:**
-- `supported_ops` (`set[str]`): Set of supported operator names.
-- `unsupported_ops` (`set[str]`): Set of unsupported operator names.
-- `total_ops` (`int`): Total number of operators in the model.
-- `supported_count` (`int`): Number of supported operators.
-- `is_fully_supported` (`bool`): True if all operators are supported.
+- `total_nodes` (`int`): Total number of nodes in the model graph.
+- `unique_ops` (`Set[Tuple[str, str]]`): Set of unique (op_type, domain) tuples.
+- `supported_ops` (`List[Tuple[str, str]]`): List of supported (op_type, domain) tuples.
+- `unsupported_ops` (`List[Tuple[str, str, int]]`): List of unsupported (op_type, domain, opset_version) tuples.
+- `opset_versions` (`Dict[str, int]`): Mapping of domain to opset version.
+- `op_counts` (`Dict[Tuple[str, str], int]`): Count of each (op_type, domain) in the model.
 
 **Methods:**
+- `is_fully_supported()`: Returns `True` if all operators are supported.
 - `summary()`: Returns a human-readable summary string.
 
 ### Exceptions

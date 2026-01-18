@@ -41,17 +41,21 @@ onnx2fx/
 ## Development Setup
 
 ```bash
-# Clone and install in development mode
+# Clone and install in development mode (using uv for faster dependency resolution)
 git clone https://github.com/mshr-h/onnx2fx.git
 cd onnx2fx
 uv sync --dev
 ```
 
-Requirements:
+Core Requirements:
 - Python >= 3.11
 - PyTorch >= 2.9.0
 - ONNX >= 1.19.1
-- uv
+- onnxscript >= 0.3.0
+
+Development Tools:
+- uv (recommended for development)
+- See `pyproject.toml` for full list of development dependencies
 
 ## Running Tests
 
@@ -88,12 +92,15 @@ uv run ruff format .
 2. **Register the operator** using the `@register` decorator:
 
 ```python
+import torch
 from ..op_registry import register
+from ..utils.attributes import get_attribute
 
 @register("NewOp")  # Standard ONNX domain
 def new_op(builder, node):
     x = builder.get_value(node.input[0])
-    return builder.call_function(torch.some_func, args=(x,))
+    alpha = get_attribute(node, "alpha", default=1.0)  # Get ONNX attribute
+    return builder.call_function(torch.some_func, args=(x, alpha))
 ```
 
 3. **For version-specific behavior**, use `since_version`:
@@ -128,10 +135,16 @@ def bias_gelu(builder, node):
 - `builder.has_value(name)` - Check if value exists in environment
 - `builder.call_function(func, args, kwargs)` - Create function call node
 - `builder.call_module(module_name, args, kwargs)` - Create module call node
-- `builder.add_submodule(name, module)` - Register a submodule
-- `builder.get_attribute(node, name, default)` - Get ONNX node attribute
+- `builder.add_submodule(name, module)` - Register a submodule (returns safe name)
 - `builder.opset_version` - Get current opset version for default domain
 - `builder.get_opset_version(domain)` - Get opset version for specific domain
+
+### Attribute Utilities
+
+For parsing ONNX node attributes, use functions from `onnx2fx.utils.attributes`:
+
+- `get_attribute(node, name, default)` - Get a single attribute from an ONNX node
+- `get_attributes(node)` - Get all attributes as a dictionary
 
 ### Public API
 
@@ -163,6 +176,24 @@ def bias_gelu(builder, node):
 - Test across multiple opset versions using `conftest.py` fixtures
 - Compare outputs with ONNX Runtime for numerical correctness
 - Mark slow tests (e.g., large models) with `@pytest.mark.slow`
+
+### Test Fixtures (from `conftest.py`)
+
+- `OPSET_MODULES` - List of opset modules (opset 11-23) for parametrized tests
+- `EINSUM_OPSET_MODULES` - Opset modules supporting Einsum (opset 12+)
+- `DEFAULT_OPSET` - Default opset module (opset23)
+- `opset_id(opset)` - Helper function for parametrize ids
+
+Example parametrized test:
+```python
+import pytest
+from conftest import OPSET_MODULES, opset_id
+
+@pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
+def test_my_op(opset):
+    # Test with each opset version
+    ...
+```
 
 ## License
 
