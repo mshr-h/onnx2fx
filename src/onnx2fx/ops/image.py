@@ -85,6 +85,58 @@ def resize(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 
 # =============================================================================
+# Upsample operator (deprecated in opset 10, replaced by Resize)
+# =============================================================================
+
+
+@register("Upsample", since_version=7)
+def upsample(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Upsample tensor using interpolation.
+
+    Deprecated: This operator is deprecated since opset 10.
+    Use Resize operator instead.
+
+    Opset 7-8: scales is an attribute
+    Opset 9: scales is an input
+    """
+    x = builder.get_value(node.input[0])
+
+    # In opset 9, scales is an input; in opset 7-8, it's an attribute
+    opset = builder.opset_version
+    if opset >= 9 and len(node.input) > 1 and node.input[1]:
+        scales = builder.get_value(node.input[1])
+    else:
+        scales = get_attribute(node, "scales")
+
+    mode = get_attribute(node, "mode", "nearest")
+
+    def _upsample(x, scales, mode):
+        import torch.nn.functional as F
+
+        # Map ONNX mode to PyTorch mode
+        mode_map = {
+            "nearest": "nearest",
+            "linear": "bilinear" if x.dim() == 4 else "linear",
+            "cubic": "bicubic",
+        }
+        torch_mode = mode_map.get(mode, "nearest")
+
+        # Use scales to compute output size
+        scale_list = scales.tolist() if isinstance(scales, torch.Tensor) else scales
+        input_shape = x.shape[2:]
+        output_size = [int(s * sc) for s, sc in zip(input_shape, scale_list[2:])]
+
+        kwargs = {"size": output_size, "mode": torch_mode}
+        # align_corners is not used for nearest mode
+        if torch_mode not in ["nearest", "area"]:
+            kwargs["align_corners"] = False
+
+        return F.interpolate(x, **kwargs)
+
+    return builder.call_function(_upsample, args=(x, scales, mode))
+
+
+# =============================================================================
 # Depth/Space rearrangement operators
 # =============================================================================
 
