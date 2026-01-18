@@ -435,6 +435,385 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return result
 
 
+class ScanModule(nn.Module):
+    """Module that executes an ONNX Scan operation."""
+
+    def __init__(
+        self,
+        body_module: torch.fx.GraphModule,
+        n_state_vars: int,
+        n_scan_inputs: int,
+        n_scan_outputs: int,
+        n_outer_vars: int,
+        scan_input_axes: List[int],
+        scan_output_axes: List[int],
+        scan_input_directions: List[int],
+        scan_output_directions: List[int],
+    ):
+        super().__init__()
+        self.body = body_module
+        self.n_state_vars = n_state_vars
+        self.n_scan_inputs = n_scan_inputs
+        self.n_scan_outputs = n_scan_outputs
+        self.n_outer_vars = n_outer_vars
+        self.scan_input_axes = scan_input_axes
+        self.scan_output_axes = scan_output_axes
+        self.scan_input_directions = scan_input_directions
+        self.scan_output_directions = scan_output_directions
+
+    def forward(self, *args) -> Tuple[torch.Tensor, ...]:
+        """Execute the scan.
+
+        Args are: state_vars..., scan_inputs..., outer_vals...
+        Returns final state variables followed by scan outputs.
+        """
+        # Split args
+        state_vars = list(args[: self.n_state_vars])
+        scan_inputs = list(
+            args[self.n_state_vars : self.n_state_vars + self.n_scan_inputs]
+        )
+        outer_vals = list(args[self.n_state_vars + self.n_scan_inputs :])
+
+        # Determine sequence length from first scan input
+        if self.n_scan_inputs > 0:
+            first_input = scan_inputs[0]
+            axis = self.scan_input_axes[0] if self.scan_input_axes else 0
+            sequence_length = first_input.shape[axis]
+        else:
+            sequence_length = 0
+
+        # Initialize scan output accumulators
+        scan_outputs: List[List[torch.Tensor]] = [
+            [] for _ in range(self.n_scan_outputs)
+        ]
+
+        # Current state
+        current_state = list(state_vars)
+
+        # Execute loop
+        for t in range(sequence_length):
+            # Extract scan input elements for this iteration
+            scan_input_elts = []
+            for i, scan_input in enumerate(scan_inputs):
+                axis = self.scan_input_axes[i] if i < len(self.scan_input_axes) else 0
+                direction = (
+                    self.scan_input_directions[i]
+                    if i < len(self.scan_input_directions)
+                    else 0
+                )
+                # Reverse direction: 0 = forward, 1 = reverse
+                idx = sequence_length - 1 - t if direction == 1 else t
+                # Select along the axis
+                elt = torch.select(scan_input, axis, idx)
+                scan_input_elts.append(elt)
+
+            # Call body: inputs are state_vars..., scan_input_elts..., outer_vals...
+            body_inputs = current_state + scan_input_elts + outer_vals
+            outputs = self.body(*body_inputs)
+
+            # Handle single vs multiple outputs
+            if not isinstance(outputs, tuple):
+                outputs = (outputs,)
+
+            # First n_state_vars outputs are updated state
+            current_state = list(outputs[: self.n_state_vars])
+
+            # Remaining outputs are scan output elements
+            for j in range(self.n_scan_outputs):
+                scan_outputs[j].append(outputs[self.n_state_vars + j])
+
+        # Prepare final outputs: state variables, then stacked scan outputs
+        final_outputs = list(current_state)
+        for j, scan_list in enumerate(scan_outputs):
+            if scan_list:
+                axis = self.scan_output_axes[j] if j < len(self.scan_output_axes) else 0
+                direction = (
+                    self.scan_output_directions[j]
+                    if j < len(self.scan_output_directions)
+                    else 0
+                )
+                # Stack along the specified axis
+                stacked = torch.stack(scan_list, dim=axis)
+                # Reverse if direction is 1 (prepending = reverse order)
+                if direction == 1:
+                    stacked = torch.flip(stacked, dims=[axis])
+                final_outputs.append(stacked)
+            else:
+                # Empty scan output
+                final_outputs.append(torch.tensor([]))
+
+        return tuple(final_outputs)
+
+
+@register("Scan", since_version=9)
+def scan_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """ONNX Scan operator (version 9+).
+
+    Scan iterates over one or more scan_input tensors, constructing scan_output tensors.
+    It combines ideas from general recurrences, functional programming constructs
+    such as scan, fold, map, and zip.
+
+    Inputs: initial_state_and_scan_inputs (variadic) - N state vars followed by M scan inputs
+    Outputs: final_state_and_scan_outputs (variadic) - N final states followed by K scan outputs
+
+    Attributes:
+    - body: The graph run each iteration
+    - num_scan_inputs: Number of scan inputs M
+    - scan_input_axes: Axis to scan for each scan input (default: 0)
+    - scan_input_directions: Direction for each scan input (0=forward, 1=reverse)
+    - scan_output_axes: Axis for each scan output (default: 0)
+    - scan_output_directions: Direction for each scan output (0=append, 1=prepend)
+    """
+    # Get body subgraph
+    body_graph = get_attribute(node, "body")
+    if body_graph is None:
+        raise ValueError("Scan operator requires 'body' attribute")
+
+    # Get num_scan_inputs attribute (required)
+    num_scan_inputs = get_attribute(node, "num_scan_inputs")
+    if num_scan_inputs is None:
+        raise ValueError("Scan operator requires 'num_scan_inputs' attribute")
+
+    # Get optional attributes
+    scan_input_axes = get_attribute(node, "scan_input_axes") or []
+    scan_input_directions = get_attribute(node, "scan_input_directions") or []
+    scan_output_axes = get_attribute(node, "scan_output_axes") or []
+    scan_output_directions = get_attribute(node, "scan_output_directions") or []
+
+    # Parse inputs: first (len(node.input) - num_scan_inputs) are state variables
+    n_state_vars = len(node.input) - num_scan_inputs
+
+    state_inputs = [builder.get_value(node.input[i]) for i in range(n_state_vars)]
+    scan_inputs = [
+        builder.get_value(node.input[i]) for i in range(n_state_vars, len(node.input))
+    ]
+
+    # Build subgraph module
+    body_module, body_input_names, body_output_names, outer_refs = (
+        _build_subgraph_module(body_graph, builder.env, builder._opset_versions)
+    )
+
+    # Get outer scope values that the body references
+    outer_values = [builder.get_value(name) for name in outer_refs]
+
+    # Number of scan outputs
+    n_scan_outputs = len(body_output_names) - n_state_vars
+
+    # Create the scan module
+    scan_module = ScanModule(
+        body_module,
+        n_state_vars,
+        num_scan_inputs,
+        n_scan_outputs,
+        len(outer_values),
+        list(scan_input_axes),
+        list(scan_output_axes),
+        list(scan_input_directions),
+        list(scan_output_directions),
+    )
+
+    # Register the scan module
+    module_name = builder.register_submodule(f"scan_{node.name or 'op'}", scan_module)
+
+    # Build args: state_vars..., scan_inputs..., outer_vals...
+    args = state_inputs + scan_inputs + outer_values
+
+    result = builder.call_module(module_name, args=tuple(args))
+
+    return result
+
+
+@register("Scan", since_version=8)
+def scan_op_v8(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """ONNX Scan operator (version 8).
+
+    Version 8 has batching support and different input format:
+    - First input is optional sequence_lens
+    - Requires batch dimension (axis 0) and sequence dimension (axis 1)
+
+    For simplicity, this implementation handles the common case where
+    sequence_lens is empty (all sequences have same length).
+    """
+    # Get body subgraph
+    body_graph = get_attribute(node, "body")
+    if body_graph is None:
+        raise ValueError("Scan operator requires 'body' attribute")
+
+    # Get num_scan_inputs attribute (required)
+    num_scan_inputs = get_attribute(node, "num_scan_inputs")
+    if num_scan_inputs is None:
+        raise ValueError("Scan operator requires 'num_scan_inputs' attribute")
+
+    # Get optional directions attribute (v8 uses 'directions' instead of scan_input_directions)
+    directions = get_attribute(node, "directions") or []
+
+    # In v8, first input is optional sequence_lens, rest are state vars + scan inputs
+    # Check if first input is empty (sequence_lens is optional)
+    has_sequence_lens = node.input[0] != ""
+
+    if has_sequence_lens:
+        # sequence_lens provided - we ignore it for now (assume fixed length)
+        start_idx = 1
+    else:
+        start_idx = 1  # Skip the empty sequence_lens input
+
+    # Parse remaining inputs: state variables followed by scan inputs
+    remaining_inputs = list(node.input[start_idx:])
+    n_state_vars = len(remaining_inputs) - num_scan_inputs
+
+    state_inputs = [builder.get_value(remaining_inputs[i]) for i in range(n_state_vars)]
+    scan_inputs = [
+        builder.get_value(remaining_inputs[i])
+        for i in range(n_state_vars, len(remaining_inputs))
+    ]
+
+    # Build subgraph module
+    body_module, body_input_names, body_output_names, outer_refs = (
+        _build_subgraph_module(body_graph, builder.env, builder._opset_versions)
+    )
+
+    # Get outer scope values that the body references
+    outer_values = [builder.get_value(name) for name in outer_refs]
+
+    # Number of scan outputs
+    n_scan_outputs = len(body_output_names) - n_state_vars
+
+    # Create the scan module for v8 (handles batching)
+    # Note: In v8, batch axis is 0 and sequence axis is 1 (handled in ScanModuleV8)
+    scan_module = ScanModuleV8(
+        body_module,
+        n_state_vars,
+        num_scan_inputs,
+        n_scan_outputs,
+        len(outer_values),
+        list(directions),
+    )
+
+    # Register the scan module
+    module_name = builder.register_submodule(
+        f"scan_v8_{node.name or 'op'}", scan_module
+    )
+
+    # Build args: state_vars..., scan_inputs..., outer_vals...
+    args = state_inputs + scan_inputs + outer_values
+
+    result = builder.call_module(module_name, args=tuple(args))
+
+    return result
+
+
+class ScanModuleV8(nn.Module):
+    """Module that executes an ONNX Scan operation (version 8 with batching)."""
+
+    def __init__(
+        self,
+        body_module: torch.fx.GraphModule,
+        n_state_vars: int,
+        n_scan_inputs: int,
+        n_scan_outputs: int,
+        n_outer_vars: int,
+        directions: List[int],
+    ):
+        super().__init__()
+        self.body = body_module
+        self.n_state_vars = n_state_vars
+        self.n_scan_inputs = n_scan_inputs
+        self.n_scan_outputs = n_scan_outputs
+        self.n_outer_vars = n_outer_vars
+        self.directions = directions
+
+    def forward(self, *args) -> Tuple[torch.Tensor, ...]:
+        """Execute the scan with batching.
+
+        In v8, tensors have shape [batch, sequence, ...].
+        State variables have shape [batch, ...].
+
+        Args are: state_vars..., scan_inputs..., outer_vals...
+        Returns final state variables followed by scan outputs.
+        """
+        # Split args
+        state_vars = list(args[: self.n_state_vars])
+        scan_inputs = list(
+            args[self.n_state_vars : self.n_state_vars + self.n_scan_inputs]
+        )
+        outer_vals = list(args[self.n_state_vars + self.n_scan_inputs :])
+
+        # Get batch size and sequence length from first scan input
+        if self.n_scan_inputs > 0:
+            first_input = scan_inputs[0]
+            batch_size = first_input.shape[0]
+            sequence_length = first_input.shape[1]
+        else:
+            batch_size = state_vars[0].shape[0] if state_vars else 1
+            sequence_length = 0
+
+        # Process each batch
+        batch_final_states: List[List[torch.Tensor]] = [
+            [] for _ in range(self.n_state_vars)
+        ]
+        batch_scan_outputs: List[List[torch.Tensor]] = [
+            [] for _ in range(self.n_scan_outputs)
+        ]
+
+        for batch in range(batch_size):
+            # Get batch slice of state variables
+            current_state = [sv[batch] for sv in state_vars]
+
+            # Initialize scan output accumulators for this batch
+            scan_outputs: List[List[torch.Tensor]] = [
+                [] for _ in range(self.n_scan_outputs)
+            ]
+
+            # Execute loop over sequence
+            for t in range(sequence_length):
+                # Extract scan input elements for this batch and time step
+                scan_input_elts = []
+                for i, scan_input in enumerate(scan_inputs):
+                    direction = self.directions[i] if i < len(self.directions) else 0
+                    idx = sequence_length - 1 - t if direction == 1 else t
+                    # scan_input has shape [batch, sequence, ...]
+                    elt = scan_input[batch, idx]
+                    scan_input_elts.append(elt)
+
+                # Call body
+                body_inputs = current_state + scan_input_elts + outer_vals
+                outputs = self.body(*body_inputs)
+
+                if not isinstance(outputs, tuple):
+                    outputs = (outputs,)
+
+                # Update state
+                current_state = list(outputs[: self.n_state_vars])
+
+                # Collect scan outputs
+                for j in range(self.n_scan_outputs):
+                    scan_outputs[j].append(outputs[self.n_state_vars + j])
+
+            # Store final state for this batch
+            for i, state in enumerate(current_state):
+                batch_final_states[i].append(state)
+
+            # Stack scan outputs for this batch
+            for j, scan_list in enumerate(scan_outputs):
+                if scan_list:
+                    stacked = torch.stack(scan_list, dim=0)
+                    batch_scan_outputs[j].append(stacked)
+
+        # Stack across batches
+        final_outputs: List[torch.Tensor] = []
+
+        # Final state variables: stack across batch
+        for states in batch_final_states:
+            final_outputs.append(torch.stack(states, dim=0))
+
+        # Scan outputs: stack across batch
+        for outputs in batch_scan_outputs:
+            if outputs:
+                final_outputs.append(torch.stack(outputs, dim=0))
+
+        return tuple(final_outputs)
+
+
 @register("If")
 def if_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """ONNX If operator.
