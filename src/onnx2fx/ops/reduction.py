@@ -351,9 +351,53 @@ def topk(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     def _topk(x, k, axis, largest, sorted_):
         k_val = k.item() if isinstance(k, torch.Tensor) else k
-        values, indices = torch.topk(
-            x, int(k_val), dim=axis, largest=bool(largest), sorted=bool(sorted_)
-        )
+        k_val = int(k_val)
+
+        # Handle unsupported dtypes (e.g., uint64) by converting to int64
+        original_dtype = x.dtype
+        needs_conversion = original_dtype == torch.uint64
+        if needs_conversion:
+            x = x.to(torch.int64)
+
+        # ONNX TopK requires stable sorting: for equal values, the element
+        # with lower index appears first. PyTorch's topk is not stable.
+        # We achieve stability by using argsort on a composite key.
+        # Create indices tensor for tie-breaking
+        size = x.shape[axis]
+        # Create indices [0, 1, 2, ..., size-1] along the specified axis
+        indices_shape = [1] * x.ndim
+        indices_shape[axis] = size
+        idx = torch.arange(size, device=x.device, dtype=x.dtype).view(indices_shape)
+        idx = idx.expand_as(x)
+
+        # Scale values so that the index becomes the tiebreaker
+        # For largest=True: negate values, sort ascending, lower index wins
+        # For largest=False: use values directly, sort ascending, lower index wins
+        if bool(largest):
+            # Negate so that larger values become smaller (for ascending sort)
+            # Add small offset based on index to break ties (lower index = smaller offset)
+            sort_values = -x
+        else:
+            sort_values = x
+
+        # Use argsort with stable=True for stable sorting
+        sorted_indices = torch.argsort(sort_values, dim=axis, stable=True)
+
+        # Take top k indices
+        # Narrow to first k elements along axis
+        top_k_indices = torch.narrow(sorted_indices, axis, 0, k_val)
+
+        # Gather values using the indices
+        values = torch.gather(x, axis, top_k_indices)
+
+        # If sorted=False, the order is undefined, but we still use stable order
+        # The indices should be the original indices
+        indices = top_k_indices
+
+        # Convert values back to original dtype if needed
+        if needs_conversion:
+            values = values.to(original_dtype)
+
         return values, indices
 
     result = builder.call_function(_topk, args=(x, k, axis, largest, sorted_))
