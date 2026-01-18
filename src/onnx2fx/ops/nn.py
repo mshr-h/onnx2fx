@@ -1670,6 +1670,29 @@ def lrn(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     )
 
 
+@register("MeanVarianceNormalization")
+def mean_variance_normalization(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
+    """Mean Variance Normalization.
+
+    Performs normalization using formula: (X - E[X]) / sqrt(E[(X - E[X])^2])
+    Default axes are [0, 2, 3] for NCHW format (normalize across N, H, W).
+    """
+    x = builder.get_value(node.input[0])
+    axes = get_attribute(node, "axes", [0, 2, 3])
+
+    def _mvn(x, axes):
+        axes = tuple(axes)
+        eps = 1e-9
+        mean = x.mean(dim=axes, keepdim=True)
+        variance = ((x - mean) ** 2).mean(dim=axes, keepdim=True)
+        std = torch.sqrt(variance + eps)
+        return (x - mean) / std
+
+    return builder.call_function(_mvn, args=(x, axes))
+
+
 # =============================================================================
 # Dropout and regularization
 # =============================================================================
