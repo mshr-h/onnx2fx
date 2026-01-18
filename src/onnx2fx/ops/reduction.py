@@ -55,17 +55,34 @@ def reduce_sum(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     x = builder.get_value(node.input[0])
     axes = _get_reduction_axes(node, builder)
     keepdims = get_attribute(node, "keepdims", 1)
+    noop_with_empty_axes = get_attribute(node, "noop_with_empty_axes", 0)
 
-    def _reduce_sum(t, axes, keepdims):
+    def _reduce_sum(t, axes, keepdims, noop_with_empty_axes):
+        # Handle empty axes list
+        if isinstance(axes, (list, tuple)) and len(axes) == 0:
+            if noop_with_empty_axes:
+                return t
+            # Empty axes with noop=False means reduce all dimensions
+            axes = None
+        if isinstance(axes, torch.Tensor) and axes.numel() == 0:
+            if noop_with_empty_axes:
+                return t
+            axes = None
         if axes is None:
-            return torch.sum(t)
+            result = torch.sum(t)
+            if keepdims:
+                # Reshape to have all dimensions as 1
+                result = result.reshape([1] * t.ndim)
+            return result
         if isinstance(axes, torch.Tensor):
             axes = tuple(axes.tolist())
         elif isinstance(axes, (list, tuple)):
             axes = tuple(axes)
         return torch.sum(t, dim=axes, keepdim=keepdims)
 
-    return builder.call_function(_reduce_sum, args=(x, axes, bool(keepdims)))
+    return builder.call_function(
+        _reduce_sum, args=(x, axes, bool(keepdims), bool(noop_with_empty_axes))
+    )
 
 
 @register("ReduceMean")
@@ -74,17 +91,32 @@ def reduce_mean(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     x = builder.get_value(node.input[0])
     axes = _get_reduction_axes(node, builder)
     keepdims = get_attribute(node, "keepdims", 1)
+    noop_with_empty_axes = get_attribute(node, "noop_with_empty_axes", 0)
 
-    def _reduce_mean(t, axes, keepdims):
+    def _reduce_mean(t, axes, keepdims, noop_with_empty_axes):
+        # Handle empty axes list
+        if isinstance(axes, (list, tuple)) and len(axes) == 0:
+            if noop_with_empty_axes:
+                return t
+            axes = None
+        if isinstance(axes, torch.Tensor) and axes.numel() == 0:
+            if noop_with_empty_axes:
+                return t
+            axes = None
         if axes is None:
-            return torch.mean(t)
+            result = torch.mean(t)
+            if keepdims:
+                result = result.reshape([1] * t.ndim)
+            return result
         if isinstance(axes, torch.Tensor):
             axes = tuple(axes.tolist())
         elif isinstance(axes, (list, tuple)):
             axes = tuple(axes)
         return torch.mean(t, dim=axes, keepdim=keepdims)
 
-    return builder.call_function(_reduce_mean, args=(x, axes, bool(keepdims)))
+    return builder.call_function(
+        _reduce_mean, args=(x, axes, bool(keepdims), bool(noop_with_empty_axes))
+    )
 
 
 @register("ReduceMax")
@@ -93,21 +125,68 @@ def reduce_max(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     x = builder.get_value(node.input[0])
     axes = _get_reduction_axes(node, builder)
     keepdims = get_attribute(node, "keepdims", 1)
+    noop_with_empty_axes = get_attribute(node, "noop_with_empty_axes", 0)
 
-    def _reduce_max(t, axes, keepdims):
+    def _reduce_max(t, axes, keepdims, noop_with_empty_axes):
+        # Handle empty axes list
+        if isinstance(axes, (list, tuple)) and len(axes) == 0:
+            if noop_with_empty_axes:
+                return t
+            axes = None
+        if isinstance(axes, torch.Tensor) and axes.numel() == 0:
+            if noop_with_empty_axes:
+                return t
+            axes = None
+
         if axes is None:
-            return t.max()
+            # Reduce over all dimensions
+            if t.numel() == 0:
+                # Empty tensor: return -inf with proper shape
+                if keepdims:
+                    return torch.full(
+                        [1] * t.ndim, float("-inf"), dtype=t.dtype, device=t.device
+                    )
+                return torch.tensor(float("-inf"), dtype=t.dtype, device=t.device)
+            result = t.max()
+            if keepdims:
+                result = result.reshape([1] * t.ndim)
+            return result
+
+        if isinstance(axes, torch.Tensor):
+            axes = axes.tolist()
         if isinstance(axes, list) and len(axes) == 1:
             axes = axes[0]
         if isinstance(axes, int):
+            # Check for empty dimension
+            if t.shape[axes] == 0:
+                new_shape = list(t.shape)
+                if keepdims:
+                    new_shape[axes] = 1
+                else:
+                    new_shape.pop(axes)
+                return torch.full(
+                    new_shape, float("-inf"), dtype=t.dtype, device=t.device
+                )
             return t.max(dim=axes, keepdim=keepdims).values
         # Multiple axes: reduce sequentially
         result = t
         for axis in sorted(axes, reverse=True):
-            result = result.max(dim=axis, keepdim=keepdims).values
+            if result.shape[axis] == 0:
+                new_shape = list(result.shape)
+                if keepdims:
+                    new_shape[axis] = 1
+                else:
+                    new_shape.pop(axis)
+                result = torch.full(
+                    new_shape, float("-inf"), dtype=result.dtype, device=result.device
+                )
+            else:
+                result = result.max(dim=axis, keepdim=keepdims).values
         return result
 
-    return builder.call_function(_reduce_max, args=(x, axes, bool(keepdims)))
+    return builder.call_function(
+        _reduce_max, args=(x, axes, bool(keepdims), bool(noop_with_empty_axes))
+    )
 
 
 @register("ReduceMin")
@@ -116,21 +195,68 @@ def reduce_min(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     x = builder.get_value(node.input[0])
     axes = _get_reduction_axes(node, builder)
     keepdims = get_attribute(node, "keepdims", 1)
+    noop_with_empty_axes = get_attribute(node, "noop_with_empty_axes", 0)
 
-    def _reduce_min(t, axes, keepdims):
+    def _reduce_min(t, axes, keepdims, noop_with_empty_axes):
+        # Handle empty axes list
+        if isinstance(axes, (list, tuple)) and len(axes) == 0:
+            if noop_with_empty_axes:
+                return t
+            axes = None
+        if isinstance(axes, torch.Tensor) and axes.numel() == 0:
+            if noop_with_empty_axes:
+                return t
+            axes = None
+
         if axes is None:
-            return t.min()
+            # Reduce over all dimensions
+            if t.numel() == 0:
+                # Empty tensor: return inf with proper shape
+                if keepdims:
+                    return torch.full(
+                        [1] * t.ndim, float("inf"), dtype=t.dtype, device=t.device
+                    )
+                return torch.tensor(float("inf"), dtype=t.dtype, device=t.device)
+            result = t.min()
+            if keepdims:
+                result = result.reshape([1] * t.ndim)
+            return result
+
+        if isinstance(axes, torch.Tensor):
+            axes = axes.tolist()
         if isinstance(axes, list) and len(axes) == 1:
             axes = axes[0]
         if isinstance(axes, int):
+            # Check for empty dimension
+            if t.shape[axes] == 0:
+                new_shape = list(t.shape)
+                if keepdims:
+                    new_shape[axes] = 1
+                else:
+                    new_shape.pop(axes)
+                return torch.full(
+                    new_shape, float("inf"), dtype=t.dtype, device=t.device
+                )
             return t.min(dim=axes, keepdim=keepdims).values
         # Multiple axes: reduce sequentially
         result = t
         for axis in sorted(axes, reverse=True):
-            result = result.min(dim=axis, keepdim=keepdims).values
+            if result.shape[axis] == 0:
+                new_shape = list(result.shape)
+                if keepdims:
+                    new_shape[axis] = 1
+                else:
+                    new_shape.pop(axis)
+                result = torch.full(
+                    new_shape, float("inf"), dtype=result.dtype, device=result.device
+                )
+            else:
+                result = result.min(dim=axis, keepdim=keepdims).values
         return result
 
-    return builder.call_function(_reduce_min, args=(x, axes, bool(keepdims)))
+    return builder.call_function(
+        _reduce_min, args=(x, axes, bool(keepdims), bool(noop_with_empty_axes))
+    )
 
 
 @register("ReduceProd")
@@ -139,11 +265,27 @@ def reduce_prod(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     x = builder.get_value(node.input[0])
     axes = _get_reduction_axes(node, builder)
     keepdims = get_attribute(node, "keepdims", 1)
+    noop_with_empty_axes = get_attribute(node, "noop_with_empty_axes", 0)
 
-    if axes is None:
-        return builder.call_function(torch.prod, args=(x,))
+    def _reduce_prod(t, axes, keepdims, noop_with_empty_axes):
+        # Handle empty axes list
+        if isinstance(axes, (list, tuple)) and len(axes) == 0:
+            if noop_with_empty_axes:
+                return t
+            axes = None
+        if isinstance(axes, torch.Tensor) and axes.numel() == 0:
+            if noop_with_empty_axes:
+                return t
+            axes = None
 
-    def _reduce_prod(t, axes, keepdims):
+        if axes is None:
+            result = torch.prod(t)
+            if keepdims:
+                result = result.reshape([1] * t.ndim)
+            return result
+
+        if isinstance(axes, torch.Tensor):
+            axes = axes.tolist()
         if isinstance(axes, list) and len(axes) == 1:
             axes = axes[0]
         if isinstance(axes, int):
@@ -154,7 +296,9 @@ def reduce_prod(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             result = torch.prod(result, dim=axis, keepdim=keepdims)
         return result
 
-    return builder.call_function(_reduce_prod, args=(x, axes, bool(keepdims)))
+    return builder.call_function(
+        _reduce_prod, args=(x, axes, bool(keepdims), bool(noop_with_empty_axes))
+    )
 
 
 @register("ReduceL1")
