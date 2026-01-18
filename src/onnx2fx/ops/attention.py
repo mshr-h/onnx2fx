@@ -316,12 +316,17 @@ def attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             # This creates a strictly lower triangular mask where q_pos + past_len >= k_pos is allowed
             if is_causal:
                 # Create causal mask: (q_pos + past_seq_len) < k_pos means masked
-                row = torch.arange(q_seq_len, device=q.device).view(-1, 1) + past_seq_len
+                row = (
+                    torch.arange(q_seq_len, device=q.device).view(-1, 1) + past_seq_len
+                )
                 col = torch.arange(kv_seq, device=q.device).view(1, -1)
                 causal_bool = row < col  # True where masked
-                causal_mask = torch.where(
-                    causal_bool, float("-inf"), 0.0
-                ).to(q.dtype).unsqueeze(0).unsqueeze(0)
+                causal_mask = (
+                    torch.where(causal_bool, float("-inf"), 0.0)
+                    .to(q.dtype)
+                    .unsqueeze(0)
+                    .unsqueeze(0)
+                )
                 combined_mask = causal_mask
 
             # Add attention mask to causal mask (or use just attn_mask if no causal)
@@ -560,10 +565,10 @@ def attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
                 v_4d = v_4d.repeat_interleave(n_rep, dim=1)
 
             # Handle mask padding if mask is shorter than KV sequence
-            # Per ONNX spec: "The last dimension can also be shorter than 
+            # Per ONNX spec: "The last dimension can also be shorter than
             # total_sequence_length and will be padded with negative infinity"
             kv_seq_len_actual = k_4d.shape[2]
-            
+
             if mask is not None:
                 # Pad mask if shorter than KV sequence (BEFORE adding nonpad mask)
                 if mask.shape[-1] < kv_seq_len_actual:
@@ -575,26 +580,28 @@ def attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
                         mask = torch.nn.functional.pad(
                             mask, (0, pad_size), value=float("-inf")
                         )
-                
+
                 # Expand mask for GQA if needed (mask might have n_kv_heads dimension)
-                if mask.dim() == 4 and mask.shape[1] == n_kv_heads and n_kv_heads != n_q_heads:
+                if (
+                    mask.dim() == 4
+                    and mask.shape[1] == n_kv_heads
+                    and n_kv_heads != n_q_heads
+                ):
                     n_rep = n_q_heads // n_kv_heads
                     mask = mask.repeat_interleave(n_rep, dim=1)
-            
+
             # Handle nonpad_kv_seqlen: create a padding mask for each batch
             # that masks out positions >= nonpad_kv_seqlen[batch]
             if nonpad_kv_seqlen is not None:
                 # Create a position index tensor: (1, 1, 1, kv_seq_len)
-                positions = torch.arange(
-                    kv_seq_len_actual, device=q.device
-                ).view(1, 1, 1, -1)
+                positions = torch.arange(kv_seq_len_actual, device=q.device).view(
+                    1, 1, 1, -1
+                )
                 # Create mask: True where position < nonpad_kv_seqlen[batch]
                 # nonpad_kv_seqlen: (batch_size,) -> (batch_size, 1, 1, 1)
                 valid_mask = positions < nonpad_kv_seqlen.view(-1, 1, 1, 1)
                 # Convert to additive mask: 0 for valid, -inf for padding
-                pad_mask = torch.where(
-                    valid_mask, 0.0, float("-inf")
-                ).to(q.dtype)
+                pad_mask = torch.where(valid_mask, 0.0, float("-inf")).to(q.dtype)
                 # Combine with existing mask
                 if mask is not None:
                     mask = mask + pad_mask

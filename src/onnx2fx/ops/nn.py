@@ -784,18 +784,22 @@ def average_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
             indices0 = torch.arange(0, ek0, d0, device=x.device)
             indices1 = torch.arange(0, ek1, d1, device=x.device)
             indices2 = torch.arange(0, ek2, d2, device=x.device)
-            patches = patches.index_select(-3, indices0).index_select(
-                -2, indices1
-            ).index_select(-1, indices2)
+            patches = (
+                patches.index_select(-3, indices0)
+                .index_select(-2, indices1)
+                .index_select(-1, indices2)
+            )
             # patches shape: (N, C, out_D, out_H, out_W, k0, k1, k2)
 
             if mask is not None:
-                mask_patches = mask.unfold(2, ek0, s0).unfold(3, ek1, s1).unfold(
-                    4, ek2, s2
+                mask_patches = (
+                    mask.unfold(2, ek0, s0).unfold(3, ek1, s1).unfold(4, ek2, s2)
                 )
-                mask_patches = mask_patches.index_select(-3, indices0).index_select(
-                    -2, indices1
-                ).index_select(-1, indices2)
+                mask_patches = (
+                    mask_patches.index_select(-3, indices0)
+                    .index_select(-2, indices1)
+                    .index_select(-1, indices2)
+                )
                 count = mask_patches.sum(dim=(-3, -2, -1))
                 sum_val = patches.sum(dim=(-3, -2, -1))
                 return sum_val / count.clamp(min=1)
@@ -806,7 +810,14 @@ def average_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
             raise NotImplementedError(f"AveragePool{ndim}D not supported")
 
     def _avg_pool(
-        x, kernel_shape, strides, pads, dilations, ceil_mode, count_include_pad, auto_pad
+        x,
+        kernel_shape,
+        strides,
+        pads,
+        dilations,
+        ceil_mode,
+        count_include_pad,
+        auto_pad,
     ):
         ndim = len(kernel_shape)
 
