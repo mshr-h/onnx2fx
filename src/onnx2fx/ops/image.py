@@ -262,6 +262,82 @@ def col2im(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 # =============================================================================
 
 
+# =============================================================================
+# GridSample operator
+# =============================================================================
+
+
+@register("GridSample", since_version=16)
+def grid_sample(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Sample input using grid of sampling locations.
+
+    Given an input X and a flow-field grid, computes the output Y using X values
+    and pixel locations from the grid. This is equivalent to PyTorch's
+    torch.nn.functional.grid_sample.
+
+    Inputs:
+        X: Input tensor of shape (N, C, H, W) for 4D or (N, C, D, H, W) for 5D
+        grid: Grid tensor of shape (N, H_out, W_out, 2) for 4D or
+              (N, D_out, H_out, W_out, 3) for 5D
+
+    Attributes:
+        align_corners: If 1, extrema (-1 and 1) refer to center of corner pixels.
+                      If 0, they refer to corner points. Default: 0
+        mode: Interpolation mode - 'linear'/'bilinear' (default), 'nearest',
+              'cubic'/'bicubic'. Opset 16 uses bilinear/bicubic, opset 20+ uses
+              linear/cubic.
+        padding_mode: Padding mode for outside grid values - 'zeros' (default),
+                     'border', 'reflection'
+
+    Output:
+        Y: Output tensor of shape (N, C, H_out, W_out) or (N, C, D_out, H_out, W_out)
+    """
+    x = builder.get_value(node.input[0])
+    grid = builder.get_value(node.input[1])
+
+    align_corners = get_attribute(node, "align_corners", 0)
+    # Handle different mode names across opset versions
+    # Opset 16: bilinear (default), nearest, bicubic
+    # Opset 20+: linear (default), nearest, cubic
+    mode = get_attribute(node, "mode", "linear")
+    padding_mode = get_attribute(node, "padding_mode", "zeros")
+
+    def _grid_sample(x, grid, mode, padding_mode, align_corners):
+        import torch.nn.functional as F
+
+        # Map ONNX mode names to PyTorch mode names
+        # PyTorch expects: 'bilinear', 'nearest', 'bicubic' for 4D input
+        # PyTorch expects: 'bilinear', 'nearest' for 5D input (no bicubic)
+        mode_map = {
+            "linear": "bilinear",
+            "bilinear": "bilinear",
+            "nearest": "nearest",
+            "cubic": "bicubic",
+            "bicubic": "bicubic",
+        }
+        torch_mode = mode_map.get(mode, "bilinear")
+
+        # Convert align_corners from int to bool
+        align_corners_bool = bool(align_corners)
+
+        return F.grid_sample(
+            x,
+            grid,
+            mode=torch_mode,
+            padding_mode=padding_mode,
+            align_corners=align_corners_bool,
+        )
+
+    return builder.call_function(
+        _grid_sample, args=(x, grid, mode, padding_mode, align_corners)
+    )
+
+
+# =============================================================================
+# CenterCropPad operator
+# =============================================================================
+
+
 @register("CenterCropPad", since_version=18)
 def center_crop_pad(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Center crop or pad an input to given dimensions.
