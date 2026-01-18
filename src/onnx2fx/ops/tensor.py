@@ -612,7 +612,34 @@ def scatter_elements(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.
     indices = builder.get_value(node.input[1])
     updates = builder.get_value(node.input[2])
     axis = get_attribute(node, "axis", 0)
-    return builder.call_function(torch.scatter, args=(x, axis, indices, updates))
+    reduction = get_attribute(node, "reduction", "none")
+
+    def _scatter_elements(data, axis, idx, upd, reduction):
+        # Handle negative axis
+        if axis < 0:
+            axis = data.ndim + axis
+
+        # Handle negative indices by converting to positive
+        dim_size = data.shape[axis]
+        idx = torch.where(idx < 0, idx + dim_size, idx)
+
+        # Map ONNX reduction to PyTorch reduce argument
+        if reduction == "none":
+            return data.scatter(axis, idx, upd)
+        elif reduction == "add":
+            return data.scatter_add(axis, idx, upd)
+        elif reduction == "mul":
+            return data.scatter_reduce(axis, idx, upd, reduce="prod")
+        elif reduction == "max":
+            return data.scatter_reduce(axis, idx, upd, reduce="amax")
+        elif reduction == "min":
+            return data.scatter_reduce(axis, idx, upd, reduce="amin")
+        else:
+            raise ValueError(f"Unsupported reduction: {reduction}")
+
+    return builder.call_function(
+        _scatter_elements, args=(x, axis, indices, updates, reduction)
+    )
 
 
 # =============================================================================
