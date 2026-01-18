@@ -1070,3 +1070,77 @@ def compress_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             return d.flatten()[c.flatten().bool()]
 
         return builder.call_function(_compress_flat, args=(data, condition))
+
+
+# =============================================================================
+# TensorScatter operator (for KV cache updates in LLMs)
+# =============================================================================
+
+
+@register("TensorScatter", since_version=24)
+def tensor_scatter(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """TensorScatter for KV cache updates.
+
+    Updates a cache tensor at specified indices along a given axis.
+    Commonly used for key/value cache updates in LLM attention.
+
+    Inputs:
+        past_cache: Cache tensor (batch_size, D1, ..., max_sequence_length, ..., Dn)
+        update: Update tensor (batch_size, D1, ..., sequence_length, ..., Dn)
+        write_indices (optional): Start indices per batch sample (batch_size,)
+
+    Attributes:
+        axis: Sequence dimension (default -2)
+        mode: 'linear' or 'circular' (default 'linear')
+    """
+    past_cache = builder.get_value(node.input[0])
+    update = builder.get_value(node.input[1])
+    write_indices = builder.get_value(node.input[2]) if len(node.input) > 2 else None
+
+    axis = get_attribute(node, "axis", -2)
+    mode = get_attribute(node, "mode", "linear")
+
+    def _tensor_scatter(
+        cache: torch.Tensor,
+        upd: torch.Tensor,
+        write_idx: torch.Tensor | None,
+        ax: int,
+        scatter_mode: str,
+    ) -> torch.Tensor:
+        output = cache.clone()
+
+        # Handle negative axis
+        if ax < 0:
+            ax = cache.ndim + ax
+
+        batch_size = cache.shape[0]
+        max_seq_len = cache.shape[ax]
+        seq_len = upd.shape[ax]
+
+        # Default write_indices to zeros if not provided
+        if write_idx is None:
+            write_idx = torch.zeros(batch_size, dtype=torch.int64, device=cache.device)
+
+        # For each batch element, copy the update into the cache at the specified position
+        for b in range(batch_size):
+            start_idx = int(write_idx[b].item())
+
+            for s in range(seq_len):
+                if scatter_mode == "circular":
+                    cache_idx = (start_idx + s) % max_seq_len
+                else:
+                    cache_idx = start_idx + s
+
+                # Build the index tuple for the cache and update tensors
+                # For cache: (b, D1, ..., cache_idx, ..., Dn)
+                # For update: (b, D1, ..., s, ..., Dn)
+                cache_slices = [b] + [slice(None)] * (ax - 1) + [cache_idx]
+                update_slices = [b] + [slice(None)] * (ax - 1) + [s]
+
+                output[tuple(cache_slices)] = upd[tuple(update_slices)]
+
+        return output
+
+    return builder.call_function(
+        _tensor_scatter, args=(past_cache, update, write_indices, axis, mode)
+    )
