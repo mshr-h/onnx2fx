@@ -231,3 +231,26 @@ def hardmax(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         ).to(t.dtype)
 
     return builder.call_function(_hardmax, args=(x, axis))
+
+
+@register("Shrink")
+def shrink(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Shrink activation.
+
+    If x < -lambd: y = x + bias
+    If x > lambd: y = x - bias
+    Otherwise: y = 0
+    """
+    x = builder.get_value(node.input[0])
+    bias = get_attribute(node, "bias", 0.0)
+    lambd = get_attribute(node, "lambd", 0.5)
+
+    def _shrink(t: torch.Tensor, bias: float, lambd: float) -> torch.Tensor:
+        result = torch.zeros_like(t)
+        mask_neg = t < -lambd
+        mask_pos = t > lambd
+        result = torch.where(mask_neg, t + bias, result)
+        result = torch.where(mask_pos, t - bias, result)
+        return result
+
+    return builder.call_function(_shrink, args=(x, bias, lambd))

@@ -124,20 +124,34 @@ def split_to_sequence(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
     split = builder.get_value(node.input[1]) if len(node.input) > 1 else None
 
     axis = get_attribute(node, "axis", 0)
+    keepdims = get_attribute(node, "keepdims", 1)
 
     if split is not None:
 
-        def _split_seq(t: torch.Tensor, s: torch.Tensor, ax: int) -> list:
+        def _split_seq(t: torch.Tensor, s: torch.Tensor, ax: int, keep: int) -> list:
             sizes = s.tolist() if hasattr(s, "tolist") else [s]
-            return list(torch.split(t, sizes, dim=ax))
+            # Handle scalar split value (equal splits of size s)
+            if isinstance(sizes, (int, float)):
+                sizes = int(sizes)
+            splits = list(torch.split(t, sizes, dim=ax))
+            if not keep:
+                # Squeeze only if split size is 1 for each chunk
+                splits = [
+                    chunk.squeeze(ax) if chunk.shape[ax] == 1 else chunk
+                    for chunk in splits
+                ]
+            return splits
 
-        return builder.call_function(_split_seq, args=(x, split, axis))
+        return builder.call_function(_split_seq, args=(x, split, axis, keepdims))
     else:
 
-        def _split_ones(t: torch.Tensor, ax: int) -> list:
-            return list(torch.split(t, 1, dim=ax))
+        def _split_ones(t: torch.Tensor, ax: int, keep: int) -> list:
+            splits = list(torch.split(t, 1, dim=ax))
+            if not keep:
+                splits = [chunk.squeeze(ax) for chunk in splits]
+            return splits
 
-        return builder.call_function(_split_ones, args=(x, axis))
+        return builder.call_function(_split_ones, args=(x, axis, keepdims))
 
 
 @register("ReverseSequence")
