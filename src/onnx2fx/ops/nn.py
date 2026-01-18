@@ -1892,3 +1892,178 @@ def gru(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             output_y_h,
         ),
     )
+
+
+@register("RNN")
+def rnn(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """RNN (Simple Recurrent Neural Network) operator.
+
+    Computes an one-layer simple RNN.
+
+    ONNX RNN Inputs:
+    - X: input tensor [seq_length, batch_size, input_size] (layout=0)
+         or [batch_size, seq_length, input_size] (layout=1)
+    - W: weight tensor [num_directions, hidden_size, input_size]
+    - R: recurrence weight [num_directions, hidden_size, hidden_size]
+    - B (optional): bias [num_directions, 2*hidden_size] = [Wbi, Rbi]
+    - sequence_lens (optional): [batch_size]
+    - initial_h (optional): [num_directions, batch_size, hidden_size]
+
+    ONNX RNN Outputs:
+    - Y (optional): [seq_length, num_directions, batch_size, hidden_size]
+    - Y_h (optional): [num_directions, batch_size, hidden_size]
+
+    Equations (Default: f=Tanh):
+    - Ht = f(Xt*(Wi^T) + Ht-1*(Ri^T) + Wbi + Rbi)
+    """
+    # Get inputs
+    x = builder.get_value(node.input[0])
+    w = builder.get_value(node.input[1])
+    r = builder.get_value(node.input[2])
+
+    # Optional inputs
+    b = None
+    if len(node.input) > 3 and node.input[3]:
+        b = builder.get_value(node.input[3])
+
+    sequence_lens = None
+    if len(node.input) > 4 and node.input[4]:
+        sequence_lens = builder.get_value(node.input[4])
+
+    initial_h = None
+    if len(node.input) > 5 and node.input[5]:
+        initial_h = builder.get_value(node.input[5])
+
+    # Get attributes
+    hidden_size = get_attribute(node, "hidden_size")
+    direction = get_attribute(node, "direction", "forward")
+    layout = get_attribute(node, "layout", 0)
+    # activations = get_attribute(node, "activations", ["Tanh"])
+    # clip = get_attribute(node, "clip", None)
+
+    # Determine output requirements
+    output_y = len(node.output) > 0 and node.output[0] != ""
+    output_y_h = len(node.output) > 1 and node.output[1] != ""
+
+    def _rnn_impl(
+        x,
+        w,
+        r,
+        b,
+        sequence_lens,
+        initial_h,
+        hidden_size,
+        direction,
+        layout,
+        output_y,
+        output_y_h,
+    ):
+        # Handle layout: convert to seq_first format for processing
+        # layout=0: [seq_length, batch_size, input_size]
+        # layout=1: [batch_size, seq_length, input_size]
+        if layout == 1:
+            x = x.transpose(0, 1)
+
+        seq_length, batch_size, input_size = x.shape
+        num_directions = 2 if direction == "bidirectional" else 1
+
+        # Initialize hidden state if not provided
+        if initial_h is None:
+            initial_h = torch.zeros(
+                num_directions, batch_size, hidden_size, dtype=x.dtype, device=x.device
+            )
+
+        # Process each direction
+        all_y = []
+        all_y_h = []
+
+        for dir_idx in range(num_directions):
+            # Get weights for this direction
+            # W shape: [num_directions, hidden_size, input_size]
+            w_dir = w[dir_idx]  # [hidden_size, input_size]
+
+            # R shape: [num_directions, hidden_size, hidden_size]
+            r_dir = r[dir_idx]  # [hidden_size, hidden_size]
+
+            # Biases (optional)
+            # B shape: [num_directions, 2*hidden_size] = [Wbi, Rbi]
+            if b is not None:
+                b_dir = b[dir_idx]  # [2*hidden_size]
+                wb_i = b_dir[0:hidden_size]
+                rb_i = b_dir[hidden_size : 2 * hidden_size]
+            else:
+                wb_i = rb_i = 0
+
+            # Initial hidden state for this direction
+            h_t = initial_h[dir_idx]  # [batch_size, hidden_size]
+
+            # Process sequence
+            outputs = []
+            if direction == "reverse" or (
+                direction == "bidirectional" and dir_idx == 1
+            ):
+                time_steps = range(seq_length - 1, -1, -1)
+            else:
+                time_steps = range(seq_length)
+
+            for t in time_steps:
+                x_t = x[t]  # [batch_size, input_size]
+
+                # Compute: Ht = tanh(Xt*(Wi^T) + Ht-1*(Ri^T) + Wbi + Rbi)
+                h_t = torch.tanh(x_t @ w_dir.T + h_t @ r_dir.T + wb_i + rb_i)
+
+                outputs.append(h_t)
+
+            # Stack outputs
+            if direction == "reverse" or (
+                direction == "bidirectional" and dir_idx == 1
+            ):
+                outputs = outputs[::-1]
+
+            # [seq_length, batch_size, hidden_size]
+            dir_y = torch.stack(outputs, dim=0)
+            all_y.append(dir_y)
+            all_y_h.append(h_t)
+
+        # Combine directions
+        # Y: [seq_length, num_directions, batch_size, hidden_size]
+        y = torch.stack(all_y, dim=1)
+
+        # Y_h: [num_directions, batch_size, hidden_size]
+        y_h = torch.stack(all_y_h, dim=0)
+
+        # Handle layout for output
+        if layout == 1:
+            # Convert Y from [seq_length, num_directions, batch_size, hidden_size]
+            # to [batch_size, seq_length, num_directions, hidden_size]
+            y = y.permute(2, 0, 1, 3)
+            # Convert Y_h from [num_directions, batch_size, hidden_size]
+            # to [batch_size, num_directions, hidden_size]
+            y_h = y_h.transpose(0, 1)
+
+        # Return based on required outputs
+        if output_y and output_y_h:
+            return (y, y_h)
+        elif output_y:
+            return y
+        elif output_y_h:
+            return y_h
+        else:
+            return y_h  # Default to returning Y_h
+
+    return builder.call_function(
+        _rnn_impl,
+        args=(
+            x,
+            w,
+            r,
+            b,
+            sequence_lens,
+            initial_h,
+            hidden_size,
+            direction,
+            layout,
+            output_y,
+            output_y_h,
+        ),
+    )
