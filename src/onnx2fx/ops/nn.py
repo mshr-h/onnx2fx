@@ -92,6 +92,12 @@ def conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     def _conv(x, weight, bias, strides, dilations, group, pads, auto_pad, kernel_shape):
         ndim = len(weight.shape) - 2  # Exclude batch and channel dims
 
+        # Expand strides and dilations to match ndim
+        if len(strides) == 1:
+            strides = strides * ndim
+        if len(dilations) == 1:
+            dilations = dilations * ndim
+
         # Handle padding
         padding = 0
         if pads is not None:
@@ -191,21 +197,159 @@ def conv_transpose(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
     group = get_attribute(node, "group", 1)
     pads = get_attribute(node, "pads")
     output_padding = get_attribute(node, "output_padding") or [0]
+    auto_pad = get_attribute(node, "auto_pad", "NOTSET")
+    output_shape = get_attribute(node, "output_shape")
+    kernel_shape = get_attribute(node, "kernel_shape")
 
     def _conv_transpose(
-        x, weight, bias, strides, dilations, group, pads, output_padding
+        x,
+        weight,
+        bias,
+        strides,
+        dilations,
+        group,
+        pads,
+        output_padding,
+        auto_pad,
+        output_shape,
+        kernel_shape,
     ):
         ndim = len(weight.shape) - 2
 
-        padding = 0
-        if pads is not None:
+        # Expand strides, dilations, and output_padding to match ndim
+        if len(strides) == 1:
+            strides = strides * ndim
+        if len(dilations) == 1:
+            dilations = dilations * ndim
+        if len(output_padding) == 1:
+            output_padding = output_padding * ndim
+
+        # Get kernel shape from weight if not provided
+        k_shape = kernel_shape if kernel_shape else list(weight.shape[2:])
+
+        # Handle auto_pad and output_shape
+        # For ConvTranspose, the output shape formula is:
+        # output_shape = (input_shape - 1) * stride + (kernel_shape - 1) * dilation + 1 - pad_begin - pad_end + output_padding
+        padding = [0] * ndim
+        adj_output_padding = list(output_padding)
+
+        if output_shape is not None:
+            # Compute pads from output_shape
+            # output_shape[i] = (input_shape[i] - 1) * stride[i] + (k - 1) * dilation[i] + 1 - total_pad[i] + output_pad[i]
+            # total_pad[i] = (input_shape[i] - 1) * stride[i] + (k - 1) * dilation[i] + 1 - output_shape[i] + output_pad[i]
+            input_shape = x.shape[2:]
+            for i in range(ndim):
+                default_output = (
+                    (input_shape[i] - 1) * strides[i]
+                    + (k_shape[i] - 1) * dilations[i]
+                    + 1
+                )
+                total_pad = default_output - output_shape[i]
+                if total_pad >= 0:
+                    padding[i] = total_pad // 2
+                    # Adjust output_padding to match the exact output_shape
+                    adj_output_padding[i] = total_pad - 2 * padding[i]
+                else:
+                    # Need additional output_padding
+                    padding[i] = 0
+                    adj_output_padding[i] = -total_pad
+        elif auto_pad in ("SAME_UPPER", "SAME_LOWER"):
+            # For SAME auto_pad in ConvTranspose:
+            # target output_shape = input_shape * stride
+            # We do full conv_transpose without padding and then slice the output
+            input_shape = x.shape[2:]
+            target_shape = [input_shape[i] * strides[i] for i in range(ndim)]
+
+            # Default output without padding
+            default_output = [
+                (input_shape[i] - 1) * strides[i] + (k_shape[i] - 1) * dilations[i] + 1
+                for i in range(ndim)
+            ]
+
+            # Calculate how much to trim from each dimension
+            trim_total = [default_output[i] - target_shape[i] for i in range(ndim)]
+
+            # For SAME_UPPER: extra pad at end means trim from end
+            # For SAME_LOWER: extra pad at begin means trim from begin
+            if auto_pad == "SAME_UPPER":
+                trim_begin = [t // 2 for t in trim_total]
+                trim_end = [t - t // 2 for t in trim_total]
+            else:  # SAME_LOWER
+                trim_end = [t // 2 for t in trim_total]
+                trim_begin = [t - t // 2 for t in trim_total]
+
+            # Do full conv_transpose without padding
+            strides_tuple = tuple(strides) if len(strides) > 1 else strides[0]
+            dilations_tuple = tuple(dilations) if len(dilations) > 1 else dilations[0]
+
+            if ndim == 1:
+                result = F.conv_transpose1d(
+                    x,
+                    weight,
+                    bias,
+                    stride=strides_tuple,
+                    padding=0,
+                    output_padding=0,
+                    groups=group,
+                    dilation=dilations_tuple,
+                )
+                # Slice to get target shape
+                end0 = result.shape[2] - trim_end[0] if trim_end[0] > 0 else None
+                return result[:, :, trim_begin[0] : end0]
+            elif ndim == 2:
+                result = F.conv_transpose2d(
+                    x,
+                    weight,
+                    bias,
+                    stride=strides_tuple,
+                    padding=0,
+                    output_padding=0,
+                    groups=group,
+                    dilation=dilations_tuple,
+                )
+                # Slice to get target shape
+                end0 = result.shape[2] - trim_end[0] if trim_end[0] > 0 else None
+                end1 = result.shape[3] - trim_end[1] if trim_end[1] > 0 else None
+                return result[:, :, trim_begin[0] : end0, trim_begin[1] : end1]
+            elif ndim == 3:
+                result = F.conv_transpose3d(
+                    x,
+                    weight,
+                    bias,
+                    stride=strides_tuple,
+                    padding=0,
+                    output_padding=0,
+                    groups=group,
+                    dilation=dilations_tuple,
+                )
+                # Slice to get target shape
+                end0 = result.shape[2] - trim_end[0] if trim_end[0] > 0 else None
+                end1 = result.shape[3] - trim_end[1] if trim_end[1] > 0 else None
+                end2 = result.shape[4] - trim_end[2] if trim_end[2] > 0 else None
+                return result[
+                    :,
+                    :,
+                    trim_begin[0] : end0,
+                    trim_begin[1] : end1,
+                    trim_begin[2] : end2,
+                ]
+            else:
+                raise NotImplementedError(f"ConvTranspose{ndim}D not supported")
+        elif pads is not None:
             n = len(pads) // 2
-            padding = tuple(pads[:n])
+            padding = list(pads[:n])
+            # Handle asymmetric pads via output_padding
+            for i in range(n):
+                if pads[i] != pads[i + n]:
+                    adj_output_padding[i] = pads[i + n] - pads[i]
 
         strides_tuple = tuple(strides) if len(strides) > 1 else strides[0]
         dilations_tuple = tuple(dilations) if len(dilations) > 1 else dilations[0]
+        padding_tuple = tuple(padding) if len(padding) > 1 else padding[0]
         output_padding_tuple = (
-            tuple(output_padding) if len(output_padding) > 1 else output_padding[0]
+            tuple(adj_output_padding)
+            if len(adj_output_padding) > 1
+            else adj_output_padding[0]
         )
 
         if ndim == 1:
@@ -214,7 +358,7 @@ def conv_transpose(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
                 weight,
                 bias,
                 stride=strides_tuple,
-                padding=padding,
+                padding=padding_tuple,
                 output_padding=output_padding_tuple,
                 groups=group,
                 dilation=dilations_tuple,
@@ -225,7 +369,7 @@ def conv_transpose(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
                 weight,
                 bias,
                 stride=strides_tuple,
-                padding=padding,
+                padding=padding_tuple,
                 output_padding=output_padding_tuple,
                 groups=group,
                 dilation=dilations_tuple,
@@ -236,7 +380,7 @@ def conv_transpose(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
                 weight,
                 bias,
                 stride=strides_tuple,
-                padding=padding,
+                padding=padding_tuple,
                 output_padding=output_padding_tuple,
                 groups=group,
                 dilation=dilations_tuple,
@@ -246,7 +390,19 @@ def conv_transpose(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
 
     return builder.call_function(
         _conv_transpose,
-        args=(x, weight, bias, strides, dilations, group, pads, output_padding),
+        args=(
+            x,
+            weight,
+            bias,
+            strides,
+            dilations,
+            group,
+            pads,
+            output_padding,
+            auto_pad,
+            output_shape,
+            kernel_shape,
+        ),
     )
 
 
