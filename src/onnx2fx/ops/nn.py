@@ -1091,6 +1091,75 @@ def layer_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.
         )
 
 
+@register("RMSNormalization", since_version=23)
+def rms_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """RMS Normalization (Root Mean Square Layer Normalization).
+
+    This is LayerNormalization without mean subtraction, also known as RMSNorm.
+    Formula: Y = X / sqrt(mean(X^2) + epsilon) * scale
+
+    Inputs:
+        X: Input tensor
+        scale: Scale tensor (broadcastable to normalized shape)
+
+    Attributes:
+        axis: First normalization dimension (default: -1)
+        epsilon: Small constant for numerical stability (default: 1e-5)
+        stash_type: Floating-point precision for computation (default: 1 = float32)
+    """
+    x = builder.get_value(node.input[0])
+    scale = builder.get_value(node.input[1])
+
+    axis = get_attribute(node, "axis", -1)
+    epsilon = get_attribute(node, "epsilon", 1e-5)
+    stash_type = get_attribute(node, "stash_type", 1)
+
+    def _rms_norm(x, scale, axis, epsilon, stash_type):
+        # Determine stash dtype for computation
+        if stash_type == 1:
+            stash_dtype = torch.float32
+        elif stash_type == 11:
+            stash_dtype = torch.float64
+        elif stash_type == 10:
+            stash_dtype = torch.float16
+        elif stash_type == 16:
+            stash_dtype = torch.bfloat16
+        else:
+            stash_dtype = torch.float32
+
+        # Normalize axis
+        if axis < 0:
+            axis_pos = x.dim() + axis
+        else:
+            axis_pos = axis
+
+        # Save original dtype for casting back
+        original_dtype = x.dtype
+
+        # Cast to stash dtype for computation
+        x_stash = x.to(stash_dtype)
+
+        # Compute dimensions to reduce over (from axis to end)
+        dims = list(range(axis_pos, x.dim()))
+
+        # Compute RMS: sqrt(mean(x^2) + epsilon)
+        x_squared = x_stash.pow(2)
+        mean_squared = x_squared.mean(dim=dims, keepdim=True)
+        rms = torch.sqrt(mean_squared + epsilon)
+
+        # Normalize
+        x_normalized = x_stash / rms
+
+        # Apply scale
+        scale_stash = scale.to(stash_dtype)
+        y = x_normalized * scale_stash
+
+        # Cast back to original dtype
+        return y.to(original_dtype)
+
+    return builder.call_function(_rms_norm, args=(x, scale, axis, epsilon, stash_type))
+
+
 @register("InstanceNormalization")
 def instance_normalization(
     builder: "GraphBuilder", node: onnx.NodeProto
