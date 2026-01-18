@@ -609,6 +609,147 @@ def max_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     )
 
 
+@register("MaxUnpool")
+def max_unpool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """MaxUnpool - partial inverse of MaxPool.
+
+    Unpools the input tensor using indices from MaxPool.
+    """
+    x = builder.get_value(node.input[0])
+    indices = builder.get_value(node.input[1])
+
+    # Optional output_shape input
+    output_shape = None
+    if len(node.input) > 2 and node.input[2]:
+        output_shape = builder.get_value(node.input[2])
+
+    kernel_shape = get_attribute(node, "kernel_shape")
+    strides = get_attribute(node, "strides") or [1] * len(kernel_shape)
+    pads = get_attribute(node, "pads") or [0] * (2 * len(kernel_shape))
+
+    def _max_unpool(x, indices, kernel_shape, strides, pads, output_shape):
+        ndim = len(kernel_shape)
+
+        # Convert ONNX pads format to PyTorch padding
+        # ONNX: [x1_begin, x2_begin, ..., x1_end, x2_end, ...]
+        # PyTorch: symmetric padding per dimension
+        n = len(pads) // 2
+        padding = tuple(pads[:n])
+
+        kernel = tuple(kernel_shape)
+        stride = tuple(strides)
+
+        # Calculate default output size (without explicit output_shape)
+        # Default output: out_i = (in_i - 1) * stride_i + kernel_i - 2 * pad_i
+        input_spatial_shape = x.shape[2:]
+        default_spatial = []
+        for i in range(ndim):
+            out_dim = (
+                (input_spatial_shape[i] - 1) * stride[i]
+                + kernel[i]
+                - pads[i]
+                - pads[i + n]
+            )
+            default_spatial.append(out_dim)
+
+        # Determine output size
+        out_size = None
+        if output_shape is not None:
+            # output_shape is the full shape including batch and channel dims
+            if isinstance(output_shape, torch.Tensor):
+                out_size = tuple(int(s) for s in output_shape.tolist())
+            else:
+                out_size = tuple(int(s) for s in output_shape)
+
+            # Get spatial dimensions from output_shape
+            target_spatial = out_size[2:]
+
+            # Check if we need to convert indices
+            # ONNX indices are computed for the original (default) tensor size
+            # PyTorch expects indices relative to the output_size
+            if list(target_spatial) != list(default_spatial):
+                # Convert indices from default spatial shape to target spatial shape
+                # Indices are flattened over (N, C, D1, D2, ...) dimensions
+                # We need to extract (d1, d2, ...) coords from default shape
+                # and recompute indices for target shape
+
+                # For efficiency, work with the spatial dimensions only
+                # The batch and channel dimensions affect the flat index calculation
+                channels = x.shape[1]
+
+                # Compute the total size for default spatial dimensions
+                default_spatial_size = 1
+                for d in default_spatial:
+                    default_spatial_size *= d
+
+                # Decompose flat indices to (n, c, spatial_coords) in default shape
+                remaining = indices
+
+                # Extract spatial coordinates in reverse order (last spatial dim first)
+                spatial_coords = []
+                for dim_size in reversed(default_spatial):
+                    spatial_coords.append(remaining % dim_size)
+                    remaining = remaining // dim_size
+                spatial_coords = list(reversed(spatial_coords))
+
+                # remaining now contains (n * channels + c)
+                c_coord = remaining % channels
+                n_coord = remaining // channels
+
+                # Recompute flat indices for target spatial shape
+                # new_idx = n * (C * prod(target_spatial)) + c * prod(target_spatial) + spatial_flat
+                target_spatial_size = 1
+                for d in target_spatial:
+                    target_spatial_size *= d
+
+                # Compute spatial flat index for target shape
+                spatial_flat = spatial_coords[0]
+                for i in range(1, ndim):
+                    spatial_flat = spatial_flat * target_spatial[i] + spatial_coords[i]
+
+                # Compute full flat index
+                indices = (
+                    n_coord * (channels * target_spatial_size)
+                    + c_coord * target_spatial_size
+                    + spatial_flat
+                )
+
+        if ndim == 1:
+            return F.max_unpool1d(
+                x,
+                indices,
+                kernel[0],
+                stride=stride[0],
+                padding=padding[0],
+                output_size=out_size,
+            )
+        elif ndim == 2:
+            return F.max_unpool2d(
+                x,
+                indices,
+                kernel,
+                stride=stride,
+                padding=padding,
+                output_size=out_size,
+            )
+        elif ndim == 3:
+            return F.max_unpool3d(
+                x,
+                indices,
+                kernel,
+                stride=stride,
+                padding=padding,
+                output_size=out_size,
+            )
+        else:
+            raise NotImplementedError(f"MaxUnpool{ndim}D not supported")
+
+    return builder.call_function(
+        _max_unpool,
+        args=(x, indices, kernel_shape, strides, pads, output_shape),
+    )
+
+
 @register("AveragePool")
 def average_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Average pooling."""
