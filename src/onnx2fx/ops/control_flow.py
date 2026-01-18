@@ -12,6 +12,7 @@ import torch.nn as nn
 import torch.fx
 from onnx import numpy_helper
 
+from ..utils.names import sanitize_name
 from ..op_registry import register
 from ..utils.attributes import get_attribute
 
@@ -58,7 +59,7 @@ def _build_subgraph_module(
 
     # Register initializers as constants
     for name, tensor in initializer_map.items():
-        safe_name = name.replace(".", "_").replace("/", "_")
+        safe_name = sanitize_name(name)
         constants[safe_name] = tensor
         fx_node = graph.get_attr(safe_name)
         env[name] = fx_node
@@ -67,7 +68,7 @@ def _build_subgraph_module(
     for inp in body_graph.input:
         if inp.name in env:
             continue  # Skip if already loaded as initializer
-        safe_name = inp.name.replace(".", "_").replace("/", "_").replace("-", "_")
+        safe_name = sanitize_name(inp.name)
         placeholder = graph.placeholder(safe_name)
         env[inp.name] = placeholder
 
@@ -79,9 +80,7 @@ def _build_subgraph_module(
             if inp_name and inp_name not in env and inp_name in parent_env:
                 if inp_name not in outer_refs:  # Avoid duplicates
                     outer_refs.append(inp_name)
-                    safe_name = (
-                        inp_name.replace(".", "_").replace("/", "_").replace("-", "_")
-                    )
+                    safe_name = sanitize_name(inp_name)
                     placeholder = graph.placeholder(f"outer_{safe_name}")
                     env[inp_name] = placeholder
 

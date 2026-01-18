@@ -10,6 +10,7 @@ from onnx import numpy_helper
 from .exceptions import UnsupportedOpError, ValueNotFoundError
 from .op_registry import get_handler
 from .utils.dtype import DTYPE_MAP
+from .utils.names import sanitize_name
 
 # Import ops module to register all operators
 from . import ops  # noqa: F401
@@ -357,7 +358,7 @@ class GraphBuilder:
         """Load ONNX initializers as constant nodes in the FX graph."""
         for name, tensor in self.initializer_map.items():
             # Store in constants dict for later registration as buffers
-            safe_name = name.replace(".", "_").replace("/", "_")
+            safe_name = sanitize_name(name)
             self._constants[safe_name] = tensor
 
             # Create a get_attr node to access the buffer
@@ -379,7 +380,7 @@ class GraphBuilder:
                 continue
 
             # Sanitize name for valid Python identifier
-            safe_name = value.name.replace(".", "_").replace("/", "_").replace("-", "_")
+            safe_name = sanitize_name(value.name)
             placeholder = self.graph.placeholder(safe_name)
             info = self.value_info_map.get(value.name)
             placeholder.meta["onnx_shape"] = info[0] if info else None
