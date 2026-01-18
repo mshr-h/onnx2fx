@@ -126,6 +126,4 @@ def hann_window(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         length = int(window_length.item())
         return torch.hann_window(length, periodic=periodic, dtype=dtype)
 
-    return builder.call_function(
-        _hann_window, args=(size, bool(periodic), dtype)
-    )
+    return builder.call_function(_hann_window, args=(size, bool(periodic), dtype))
