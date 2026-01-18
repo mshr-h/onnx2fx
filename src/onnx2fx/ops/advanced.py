@@ -124,6 +124,131 @@ def stft(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 
 # =============================================================================
+# MelWeightMatrix operator
+# =============================================================================
+
+
+@register("MelWeightMatrix", since_version=17)
+def mel_weight_matrix(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Generate a MelWeightMatrix for mel spectrogram computation.
+
+    This operator generates a weight matrix that can be used to convert a linearly
+    sampled frequency spectra (from DFT or STFT) into mel-scaled frequency bins.
+
+    The mel scale is defined as: mel(f) = 2595 * log10(1 + f/700)
+
+    Inputs:
+        num_mel_bins: The number of bands in the mel spectrum (scalar, int32/int64)
+        dft_length: The size of the original DFT (scalar, int32/int64)
+        sample_rate: Samples per second of the input signal (scalar, int32/int64)
+        lower_edge_hertz: Lower bound frequency for mel spectrum (scalar, float)
+        upper_edge_hertz: Upper bound frequency for mel spectrum (scalar, float)
+
+    Attributes:
+        output_datatype: The data type of the output tensor (default: 1 = FLOAT)
+
+    Output:
+        The Mel Weight Matrix with shape [floor(dft_length/2) + 1, num_mel_bins]
+    """
+    from ..utils.dtype import onnx_dtype_to_torch
+
+    num_mel_bins = builder.get_value(node.input[0])
+    dft_length = builder.get_value(node.input[1])
+    sample_rate = builder.get_value(node.input[2])
+    lower_edge_hertz = builder.get_value(node.input[3])
+    upper_edge_hertz = builder.get_value(node.input[4])
+
+    # Get output data type (default is 1 = FLOAT)
+    output_datatype = get_attribute(node, "output_datatype", 1)
+    output_dtype = onnx_dtype_to_torch(output_datatype)
+    if output_dtype is None:
+        output_dtype = torch.float32
+
+    def _mel_weight_matrix(
+        num_mel_bins, dft_length, sample_rate, lower_edge_hertz, upper_edge_hertz, dtype
+    ):
+        # Convert inputs to Python scalars
+        n_mels = int(
+            num_mel_bins.item()
+            if isinstance(num_mel_bins, torch.Tensor)
+            else num_mel_bins
+        )
+        n_fft = int(
+            dft_length.item() if isinstance(dft_length, torch.Tensor) else dft_length
+        )
+        sr = int(
+            sample_rate.item() if isinstance(sample_rate, torch.Tensor) else sample_rate
+        )
+        f_min = float(
+            lower_edge_hertz.item()
+            if isinstance(lower_edge_hertz, torch.Tensor)
+            else lower_edge_hertz
+        )
+        f_max = float(
+            upper_edge_hertz.item()
+            if isinstance(upper_edge_hertz, torch.Tensor)
+            else upper_edge_hertz
+        )
+
+        # Number of spectrogram bins (one-sided DFT)
+        num_spectrogram_bins = n_fft // 2 + 1
+
+        # Create frequency bin indices (n_mels + 2 points for n_mels triangular filters)
+        frequency_bins = torch.arange(0, n_mels + 2, dtype=torch.float32)
+
+        # Convert edge frequencies to mel scale
+        low_frequency_mel = 2595.0 * torch.log10(torch.tensor(1.0 + f_min / 700.0))
+        high_frequency_mel = 2595.0 * torch.log10(torch.tensor(1.0 + f_max / 700.0))
+
+        # Calculate mel step
+        mel_step = (high_frequency_mel - low_frequency_mel) / (frequency_bins.shape[0])
+
+        # Convert to mel frequencies
+        frequency_bins = frequency_bins * mel_step + low_frequency_mel
+
+        # Convert mel frequencies back to Hz
+        frequency_bins = 700.0 * (torch.pow(torch.tensor(10.0), frequency_bins / 2595.0) - 1.0)
+
+        # Convert Hz frequencies to FFT bin indices
+        frequency_bins = ((n_fft + 1) * frequency_bins) // sr
+        frequency_bins = frequency_bins.to(torch.int64)
+
+        # Create the filterbank matrix
+        output = torch.zeros(num_spectrogram_bins, n_mels, dtype=torch.float32)
+
+        for i in range(n_mels):
+            lower_frequency_value = frequency_bins[i].item()  # left
+            center_frequency_point = frequency_bins[i + 1].item()  # center
+            higher_frequency_point = frequency_bins[i + 2].item()  # right
+
+            low_to_center = center_frequency_point - lower_frequency_value
+            if low_to_center == 0:
+                output[center_frequency_point, i] = 1.0
+            else:
+                for j in range(lower_frequency_value, center_frequency_point + 1):
+                    output[j, i] = float(j - lower_frequency_value) / float(low_to_center)
+
+            center_to_high = higher_frequency_point - center_frequency_point
+            if center_to_high > 0:
+                for j in range(center_frequency_point, higher_frequency_point):
+                    output[j, i] = float(higher_frequency_point - j) / float(center_to_high)
+
+        return output.to(dtype)
+
+    return builder.call_function(
+        _mel_weight_matrix,
+        args=(
+            num_mel_bins,
+            dft_length,
+            sample_rate,
+            lower_edge_hertz,
+            upper_edge_hertz,
+            output_dtype,
+        ),
+    )
+
+
+# =============================================================================
 # Einsum operator
 # =============================================================================
 
