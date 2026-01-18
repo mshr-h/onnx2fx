@@ -130,6 +130,118 @@ def embed_layer_normalization(
 
 
 # =============================================================================
+# Microsoft Attention operator (com.microsoft domain)
+# =============================================================================
+
+
+@register("Attention", domain="com.microsoft")
+def microsoft_attention(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
+    """Microsoft Attention operator (com.microsoft domain).
+
+    Multi-Head Attention that can be either unidirectional (like GPT-2) or
+    bidirectional (like BERT). The weights for input projection of Q, K and V
+    are merged.
+
+    Inputs:
+        input: Input tensor with shape (batch_size, sequence_length, input_hidden_size)
+        weights: Merged Q/K/V weights with shape (input_hidden_size, hidden_size + hidden_size + v_hidden_size)
+        bias (optional): Bias tensor with shape (hidden_size + hidden_size + v_hidden_size)
+        mask_index (optional): Attention mask
+        past (optional): Past state for key and value
+        attention_bias (optional): Additional bias to add to QK
+        past_sequence_length (optional): Past sequence length
+
+    Attributes:
+        num_heads (required): Number of attention heads
+        unidirectional: Whether every token can only attend to previous tokens (default 0)
+        scale: Custom scale factor (default 1/sqrt(head_size))
+        mask_filter_value: Value to fill in attention mask (default -10000.0)
+
+    Outputs:
+        output: 3D output tensor with shape (batch_size, sequence_length, v_hidden_size)
+        present (optional): Past state for key and value
+    """
+    # Get inputs
+    input_tensor = builder.get_value(node.input[0])
+    weights = builder.get_value(node.input[1])
+    bias = (
+        builder.get_value(node.input[2])
+        if len(node.input) > 2 and node.input[2]
+        else None
+    )
+    mask_index = (
+        builder.get_value(node.input[3])
+        if len(node.input) > 3 and node.input[3]
+        else None
+    )
+    past = (
+        builder.get_value(node.input[4])
+        if len(node.input) > 4 and node.input[4]
+        else None
+    )
+    attention_bias = (
+        builder.get_value(node.input[5])
+        if len(node.input) > 5 and node.input[5]
+        else None
+    )
+
+    # Get attributes
+    num_heads = get_attribute(node, "num_heads", None)
+    if num_heads is None:
+        raise ValueError("num_heads attribute is required for Microsoft Attention")
+    unidirectional = get_attribute(node, "unidirectional", 0)
+    scale = get_attribute(node, "scale", None)
+
+    def _microsoft_attention(
+        inp: torch.Tensor,
+        w: torch.Tensor,
+        b: torch.Tensor | None,
+        mask: torch.Tensor | None,
+        past_kv: torch.Tensor | None,
+        attn_bias: torch.Tensor | None,
+        n_heads: int,
+        is_causal: bool,
+        attn_scale: float | None,
+    ) -> torch.Tensor:
+        batch_size, seq_len, hidden_size = inp.shape
+
+        # Project input to Q, K, V using merged weights
+        # weights shape: (input_hidden_size, 3 * hidden_size)
+        qkv = torch.matmul(inp, w)
+        if b is not None:
+            qkv = qkv + b
+
+        # Split into Q, K, V
+        q, k, v = qkv.chunk(3, dim=-1)
+
+        # Use scaled_dot_product_attention
+        output = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, attn_mask=mask, is_causal=is_causal, scale=attn_scale
+        )
+
+        return output
+
+    is_causal = unidirectional == 1
+
+    return builder.call_function(
+        _microsoft_attention,
+        args=(
+            input_tensor,
+            weights,
+            bias,
+            mask_index,
+            past,
+            attention_bias,
+            num_heads,
+            is_causal,
+            scale,
+        ),
+    )
+
+
+# =============================================================================
 # Attention operator (ONNX standard domain, since opset 24)
 # =============================================================================
 

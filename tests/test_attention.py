@@ -293,6 +293,7 @@ class TestAttentionOp:
             ["input", "weight", "bias"],
             ["output"],
             name="attention",
+            domain="com.microsoft",
             num_heads=2,
         )
 
@@ -302,7 +303,13 @@ class TestAttentionOp:
             [input_info, weight_info, bias_info],
             [output_info],
         )
-        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
 
         fx_module = convert(model)
 
@@ -345,6 +352,7 @@ class TestAttentionOp:
             ["input", "weight", ""],
             ["output"],
             name="attention_no_bias",
+            domain="com.microsoft",
             num_heads=2,
         )
 
@@ -354,7 +362,13 @@ class TestAttentionOp:
             [input_info, weight_info],
             [output_info],
         )
-        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
 
         fx_module = convert(model)
 
@@ -393,6 +407,7 @@ class TestAttentionOp:
             ["input", "weight", ""],
             ["output"],
             name="causal_attention",
+            domain="com.microsoft",
             num_heads=1,
             unidirectional=1,
         )
@@ -403,7 +418,13 @@ class TestAttentionOp:
             [input_info, weight_info],
             [output_info],
         )
-        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
 
         fx_module = convert(model)
 
