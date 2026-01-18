@@ -479,3 +479,225 @@ def center_crop_pad(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.N
         return result
 
     return builder.call_function(_center_crop_pad, args=(x, shape, axes))
+
+
+# =============================================================================
+# RoiAlign operator
+# =============================================================================
+
+
+@register("RoiAlign")
+def roi_align(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Region of Interest (RoI) Align operator.
+
+    Performs RoI pooling with bilinear interpolation for sub-pixel accuracy.
+    """
+    x = builder.get_value(node.input[0])
+    rois = builder.get_value(node.input[1])
+    batch_indices = builder.get_value(node.input[2])
+
+    # Get attributes with defaults
+    mode = get_attribute(node, "mode", "avg")
+    output_height = get_attribute(node, "output_height", 1)
+    output_width = get_attribute(node, "output_width", 1)
+    sampling_ratio = get_attribute(node, "sampling_ratio", 0)
+    spatial_scale = get_attribute(node, "spatial_scale", 1.0)
+    coordinate_transformation_mode = get_attribute(
+        node, "coordinate_transformation_mode", "half_pixel"
+    )
+
+    # ONNX coordinate_transformation_mode:
+    # - "half_pixel": pixel shift by -0.5, corresponds to aligned=True in PyTorch
+    # - "output_half_pixel": no pixel shift (legacy), corresponds to aligned=False
+    aligned = coordinate_transformation_mode == "half_pixel"
+
+    def _roi_align(
+        x,
+        rois,
+        batch_indices,
+        mode,
+        output_height,
+        output_width,
+        sampling_ratio,
+        spatial_scale,
+        aligned,
+    ):
+        from torchvision.ops import roi_align as tv_roi_align
+
+        # PyTorch expects boxes in format [batch_idx, x1, y1, x2, y2]
+        boxes = torch.cat([batch_indices.unsqueeze(1).float(), rois.float()], dim=1)
+        output_size = (output_height, output_width)
+
+        if mode == "avg":
+            # Use torchvision's roi_align directly for average mode
+            # sampling_ratio: ONNX uses 0 for adaptive, PyTorch uses -1
+            torch_sampling = sampling_ratio if sampling_ratio > 0 else -1
+            return tv_roi_align(
+                x,
+                boxes,
+                output_size,
+                spatial_scale=spatial_scale,
+                sampling_ratio=torch_sampling,
+                aligned=aligned,
+            )
+        else:
+            # Max mode: ONNX defines max pooling differently from standard
+            # bilinear interpolation. For each sample point, it takes the
+            # max of the 4 weighted corner values (not the sum).
+            return _roi_align_max_mode(
+                x,
+                rois,
+                batch_indices,
+                output_height,
+                output_width,
+                sampling_ratio,
+                spatial_scale,
+                aligned,
+            )
+
+    return builder.call_function(
+        _roi_align,
+        args=(
+            x,
+            rois,
+            batch_indices,
+            mode,
+            output_height,
+            output_width,
+            sampling_ratio,
+            spatial_scale,
+            aligned,
+        ),
+    )
+
+
+def _roi_align_max_mode(
+    x,
+    rois,
+    batch_indices,
+    output_height,
+    output_width,
+    sampling_ratio,
+    spatial_scale,
+    half_pixel,
+):
+    """ONNX RoiAlign with max pooling mode.
+
+    For each output bin, samples at grid points and takes the MAX of the
+    weighted corner values at each sampling point, then MAX across all
+    sampling points in the bin.
+    """
+    num_rois = rois.shape[0]
+    channels = x.shape[1]
+    height = x.shape[2]
+    width = x.shape[3]
+
+    output = torch.zeros(
+        num_rois, channels, output_height, output_width, dtype=x.dtype, device=x.device
+    )
+
+    for n in range(num_rois):
+        roi_batch_ind = int(batch_indices[n].item())
+        roi = rois[n]
+
+        # Apply spatial scale and offset
+        offset = 0.5 if half_pixel else 0.0
+        roi_start_w = float(roi[0]) * spatial_scale - offset
+        roi_start_h = float(roi[1]) * spatial_scale - offset
+        roi_end_w = float(roi[2]) * spatial_scale - offset
+        roi_end_h = float(roi[3]) * spatial_scale - offset
+
+        roi_width = roi_end_w - roi_start_w
+        roi_height = roi_end_h - roi_start_h
+
+        if not half_pixel:
+            # Force malformed ROIs to be 1x1
+            roi_width = max(roi_width, 1.0)
+            roi_height = max(roi_height, 1.0)
+
+        bin_size_h = roi_height / output_height
+        bin_size_w = roi_width / output_width
+
+        # Determine sampling grid size
+        if sampling_ratio > 0:
+            roi_bin_grid_h = sampling_ratio
+            roi_bin_grid_w = sampling_ratio
+        else:
+            roi_bin_grid_h = int(
+                torch.ceil(torch.tensor(roi_height / output_height)).item()
+            )
+            roi_bin_grid_w = int(
+                torch.ceil(torch.tensor(roi_width / output_width)).item()
+            )
+            roi_bin_grid_h = max(1, roi_bin_grid_h)
+            roi_bin_grid_w = max(1, roi_bin_grid_w)
+
+        for c in range(channels):
+            for ph in range(output_height):
+                for pw in range(output_width):
+                    output_val = None
+
+                    for iy in range(roi_bin_grid_h):
+                        yy = (
+                            roi_start_h
+                            + ph * bin_size_h
+                            + (iy + 0.5) * bin_size_h / roi_bin_grid_h
+                        )
+                        for ix in range(roi_bin_grid_w):
+                            xx = (
+                                roi_start_w
+                                + pw * bin_size_w
+                                + (ix + 0.5) * bin_size_w / roi_bin_grid_w
+                            )
+
+                            # Check bounds
+                            if yy < -1.0 or yy > height or xx < -1.0 or xx > width:
+                                continue
+
+                            y = max(yy, 0.0)
+                            xc = max(xx, 0.0)
+
+                            y_low = int(y)
+                            x_low = int(xc)
+
+                            if y_low >= height - 1:
+                                y_high = y_low = height - 1
+                                y = float(y_low)
+                            else:
+                                y_high = y_low + 1
+
+                            if x_low >= width - 1:
+                                x_high = x_low = width - 1
+                                xc = float(x_low)
+                            else:
+                                x_high = x_low + 1
+
+                            ly = y - y_low
+                            lx = xc - x_low
+                            hy = 1.0 - ly
+                            hx = 1.0 - lx
+
+                            # Weights
+                            w1 = hy * hx
+                            w2 = hy * lx
+                            w3 = ly * hx
+                            w4 = ly * lx
+
+                            # Get corner values
+                            v1 = x[roi_batch_ind, c, y_low, x_low].item()
+                            v2 = x[roi_batch_ind, c, y_low, x_high].item()
+                            v3 = x[roi_batch_ind, c, y_high, x_low].item()
+                            v4 = x[roi_batch_ind, c, y_high, x_high].item()
+
+                            # ONNX max mode: max of weighted corners
+                            val = max(w1 * v1, w2 * v2, w3 * v3, w4 * v4)
+
+                            if output_val is None:
+                                output_val = val
+                            else:
+                                output_val = max(output_val, val)
+
+                    if output_val is not None:
+                        output[n, c, ph, pw] = output_val
+
+    return output
