@@ -849,9 +849,9 @@ def scatter_nd(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     indices = builder.get_value(node.input[1])
     updates = builder.get_value(node.input[2])
 
-    _reduction = get_attribute(node, "reduction", "none")
+    reduction = get_attribute(node, "reduction", "none")
 
-    def _scatter_nd(
+    def _scatter_nd_none(
         d: torch.Tensor, idx: torch.Tensor, upd: torch.Tensor
     ) -> torch.Tensor:
         output = d.clone()
@@ -869,7 +869,88 @@ def scatter_nd(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
         return output
 
-    return builder.call_function(_scatter_nd, args=(data, indices, updates))
+    def _scatter_nd_add(
+        d: torch.Tensor, idx: torch.Tensor, upd: torch.Tensor
+    ) -> torch.Tensor:
+        output = d.clone()
+        idx = idx.long()
+
+        idx_shape = idx.shape[:-1]
+        last_dim = idx.shape[-1]
+
+        flat_idx = idx.reshape(-1, last_dim)
+        flat_upd = upd.reshape(-1, *upd.shape[len(idx_shape) :])
+
+        for i in range(flat_idx.shape[0]):
+            data_idx = tuple(flat_idx[i].tolist())
+            output[data_idx] = output[data_idx] + flat_upd[i]
+
+        return output
+
+    def _scatter_nd_mul(
+        d: torch.Tensor, idx: torch.Tensor, upd: torch.Tensor
+    ) -> torch.Tensor:
+        output = d.clone()
+        idx = idx.long()
+
+        idx_shape = idx.shape[:-1]
+        last_dim = idx.shape[-1]
+
+        flat_idx = idx.reshape(-1, last_dim)
+        flat_upd = upd.reshape(-1, *upd.shape[len(idx_shape) :])
+
+        for i in range(flat_idx.shape[0]):
+            data_idx = tuple(flat_idx[i].tolist())
+            output[data_idx] = output[data_idx] * flat_upd[i]
+
+        return output
+
+    def _scatter_nd_max(
+        d: torch.Tensor, idx: torch.Tensor, upd: torch.Tensor
+    ) -> torch.Tensor:
+        output = d.clone()
+        idx = idx.long()
+
+        idx_shape = idx.shape[:-1]
+        last_dim = idx.shape[-1]
+
+        flat_idx = idx.reshape(-1, last_dim)
+        flat_upd = upd.reshape(-1, *upd.shape[len(idx_shape) :])
+
+        for i in range(flat_idx.shape[0]):
+            data_idx = tuple(flat_idx[i].tolist())
+            output[data_idx] = torch.maximum(output[data_idx], flat_upd[i])
+
+        return output
+
+    def _scatter_nd_min(
+        d: torch.Tensor, idx: torch.Tensor, upd: torch.Tensor
+    ) -> torch.Tensor:
+        output = d.clone()
+        idx = idx.long()
+
+        idx_shape = idx.shape[:-1]
+        last_dim = idx.shape[-1]
+
+        flat_idx = idx.reshape(-1, last_dim)
+        flat_upd = upd.reshape(-1, *upd.shape[len(idx_shape) :])
+
+        for i in range(flat_idx.shape[0]):
+            data_idx = tuple(flat_idx[i].tolist())
+            output[data_idx] = torch.minimum(output[data_idx], flat_upd[i])
+
+        return output
+
+    if reduction == "add":
+        return builder.call_function(_scatter_nd_add, args=(data, indices, updates))
+    elif reduction == "mul":
+        return builder.call_function(_scatter_nd_mul, args=(data, indices, updates))
+    elif reduction == "max":
+        return builder.call_function(_scatter_nd_max, args=(data, indices, updates))
+    elif reduction == "min":
+        return builder.call_function(_scatter_nd_min, args=(data, indices, updates))
+    else:
+        return builder.call_function(_scatter_nd_none, args=(data, indices, updates))
 
 
 # =============================================================================
