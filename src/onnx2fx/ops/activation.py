@@ -14,11 +14,28 @@ if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
 
 
+# =============================================================================
+# Helper functions for simple activations
+# =============================================================================
+
+
+def _simple_activation(
+    builder: "GraphBuilder", node: onnx.NodeProto, activation_fn
+) -> torch.fx.Node:
+    """Helper for simple activation functions with one input."""
+    x = builder.get_value(node.input[0])
+    return builder.call_function(activation_fn, args=(x,))
+
+
+# =============================================================================
+# Basic activation functions
+# =============================================================================
+
+
 @register("Relu")
 def relu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """ReLU activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.relu, args=(x,))
+    return _simple_activation(builder, node, F.relu)
 
 
 @register("LeakyRelu")
@@ -103,8 +120,7 @@ def celu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 @register("Sigmoid")
 def sigmoid(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Sigmoid activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.sigmoid, args=(x,))
+    return _simple_activation(builder, node, torch.sigmoid)
 
 
 @register("HardSigmoid")
@@ -136,8 +152,7 @@ def hard_sigmoid(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
 @register("Tanh")
 def tanh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Tanh activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.tanh, args=(x,))
+    return _simple_activation(builder, node, torch.tanh)
 
 
 @register("Softmax", since_version=1)
@@ -220,15 +235,13 @@ def log_softmax_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.N
 @register("Softplus")
 def softplus(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Softplus activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.softplus, args=(x,))
+    return _simple_activation(builder, node, F.softplus)
 
 
 @register("Softsign")
 def softsign(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Softsign activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.softsign, args=(x,))
+    return _simple_activation(builder, node, F.softsign)
 
 
 @register("Gelu")
@@ -244,8 +257,7 @@ def gelu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 @register("Silu")
 def silu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Sigmoid Linear Unit (SiLU/Swish) activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.silu, args=(x,))
+    return _simple_activation(builder, node, F.silu)
 
 
 @register("Swish")
@@ -254,15 +266,13 @@ def swish(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     Swish(x) = x * sigmoid(x)
     """
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.silu, args=(x,))
+    return _simple_activation(builder, node, F.silu)
 
 
 @register("Mish")
 def mish(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Mish activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.mish, args=(x,))
+    return _simple_activation(builder, node, F.mish)
 
 
 @register("ThresholdedRelu")
@@ -276,8 +286,7 @@ def thresholded_relu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.
 @register("HardSwish")
 def hard_swish(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Hard Swish activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.hardswish, args=(x,))
+    return _simple_activation(builder, node, F.hardswish)
 
 
 @register("Hardmax")
