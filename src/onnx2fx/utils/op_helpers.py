@@ -11,6 +11,8 @@ import onnx
 import torch
 import torch.nn.functional as F
 
+from ..exceptions import ConversionError
+
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
 
@@ -39,6 +41,85 @@ def get_optional_input(
     if len(node.input) > index and node.input[index]:
         return builder.get_value(node.input[index])
     return default
+
+
+def get_attribute_or_input(
+    builder: "GraphBuilder",
+    node: onnx.NodeProto,
+    *,
+    attr_name: str,
+    input_index: int,
+    opset_version: int,
+    attr_allowed_until: Optional[int] = None,
+    input_allowed_since: Optional[int] = None,
+    default: Any = None,
+    as_python: bool = True,
+) -> Any:
+    """Resolve a value from attribute or input with opset checks.
+
+    Args:
+        builder: The graph builder instance.
+        node: The ONNX node.
+        attr_name: Attribute name to read.
+        input_index: Input index to read.
+        opset_version: Active opset version.
+        attr_allowed_until: Highest opset version that allows the attribute.
+        input_allowed_since: Lowest opset version that allows the input.
+        default: Value to return when neither attribute nor input is provided.
+        as_python: Convert constant tensors to Python scalars/lists.
+
+    Returns:
+        The resolved value, or default.
+    """
+    from .attributes import get_attribute
+
+    input_present = len(node.input) > input_index and node.input[input_index]
+    if input_present and input_allowed_since is not None:
+        if opset_version < input_allowed_since:
+            raise ConversionError(
+                (
+                    f"Input[{input_index}] for '{attr_name}' is not valid before "
+                    f"opset {input_allowed_since}"
+                ),
+                node_name=node.name,
+                op_type=node.op_type,
+            )
+
+    attr_value = get_attribute(node, attr_name)
+    if attr_value is not None:
+        if attr_allowed_until is not None and opset_version > attr_allowed_until:
+            raise ConversionError(
+                (
+                    f"Attribute '{attr_name}' is not valid after opset "
+                    f"{attr_allowed_until}"
+                ),
+                node_name=node.name,
+                op_type=node.op_type,
+            )
+        return attr_value
+
+    if input_present:
+        value = _resolve_input_value(builder, node.input[input_index])
+        if as_python:
+            return _as_python_value(value)
+        return value
+
+    return default
+
+
+def _resolve_input_value(builder: "GraphBuilder", name: str) -> Any:
+    if name in builder.initializer_map:
+        return builder.initializer_map[name]
+    return builder.get_value(name)
+
+
+def _as_python_value(value: Any) -> Any:
+    if isinstance(value, torch.Tensor):
+        result = value.tolist()
+        if isinstance(result, int):
+            return [result]
+        return result
+    return value
 
 
 def unary_op(

@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import onnx
+import pytest
+import torch
 
-from onnx2fx.utils import get_attribute, get_attributes
+from onnx2fx.exceptions import ConversionError
+from onnx2fx.utils import get_attribute, get_attributes, get_attribute_or_input
 
 
 class TestAttributeParser:
@@ -40,3 +43,69 @@ class TestAttributeParser:
         attrs = get_attributes(node)
         assert attrs["axis"] == 1
         assert attrs["keepdims"] == 0
+
+
+class DummyBuilder:
+    def __init__(self, initializer_map=None):
+        self.initializer_map = initializer_map or {}
+
+    def get_value(self, name):
+        return name
+
+
+class TestAttributeOrInput:
+    def test_attribute_allowed(self):
+        node = onnx.helper.make_node("Test", ["x"], ["y"], axes=[1, 2])
+        builder = DummyBuilder()
+        result = get_attribute_or_input(
+            builder,
+            node,
+            attr_name="axes",
+            input_index=1,
+            opset_version=12,
+            attr_allowed_until=17,
+            input_allowed_since=13,
+        )
+        assert result == [1, 2]
+
+    def test_attribute_not_allowed(self):
+        node = onnx.helper.make_node("Test", ["x"], ["y"], axes=[1])
+        builder = DummyBuilder()
+        with pytest.raises(ConversionError):
+            get_attribute_or_input(
+                builder,
+                node,
+                attr_name="axes",
+                input_index=1,
+                opset_version=18,
+                attr_allowed_until=17,
+                input_allowed_since=13,
+            )
+
+    def test_input_not_allowed(self):
+        node = onnx.helper.make_node("Test", ["x", "axes"], ["y"])
+        builder = DummyBuilder({"axes": torch.tensor([1, 2])})
+        with pytest.raises(ConversionError):
+            get_attribute_or_input(
+                builder,
+                node,
+                attr_name="axes",
+                input_index=1,
+                opset_version=12,
+                attr_allowed_until=17,
+                input_allowed_since=13,
+            )
+
+    def test_input_allowed(self):
+        node = onnx.helper.make_node("Test", ["x", "axes"], ["y"])
+        builder = DummyBuilder({"axes": torch.tensor([1, 2])})
+        result = get_attribute_or_input(
+            builder,
+            node,
+            attr_name="axes",
+            input_index=1,
+            opset_version=13,
+            attr_allowed_until=17,
+            input_allowed_since=13,
+        )
+        assert result == [1, 2]

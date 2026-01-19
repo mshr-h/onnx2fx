@@ -16,6 +16,7 @@ from .training import make_trainable
 from .names import sanitize_name
 from .op_helpers import (
     get_optional_input,
+    get_attribute_or_input,
     unary_op,
     binary_op,
     compute_same_padding,
@@ -33,6 +34,7 @@ __all__ = [
     "make_trainable",
     "sanitize_name",
     "get_optional_input",
+    "get_attribute_or_input",
     "unary_op",
     "binary_op",
     "compute_same_padding",
