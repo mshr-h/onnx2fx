@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
-from ..utils.op_helpers import unary_op
+from ..utils.op_helpers import unary_op, unary_op_with_kwargs
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -18,14 +18,13 @@ if TYPE_CHECKING:
 register("Relu")(unary_op(F.relu, "ReLU activation."))
 
 
-@register("LeakyRelu")
-def leaky_relu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Leaky ReLU activation."""
-    x = builder.get_value(node.input[0])
-    alpha = get_attribute(node, "alpha", 0.01)
-    return builder.call_function(
-        F.leaky_relu, args=(x,), kwargs={"negative_slope": alpha}
+register("LeakyRelu")(
+    unary_op_with_kwargs(
+        F.leaky_relu,
+        attr_map={"negative_slope": ("alpha", 0.01)},
+        doc="Leaky ReLU activation.",
     )
+)
 
 
 @register("PRelu")
@@ -54,12 +53,13 @@ def prelu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(_prelu, args=(x, slope))
 
 
-@register("Elu")
-def elu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Exponential Linear Unit activation."""
-    x = builder.get_value(node.input[0])
-    alpha = get_attribute(node, "alpha", 1.0)
-    return builder.call_function(F.elu, args=(x,), kwargs={"alpha": alpha})
+register("Elu")(
+    unary_op_with_kwargs(
+        F.elu,
+        attr_map={"alpha": ("alpha", 1.0)},
+        doc="Exponential Linear Unit activation.",
+    )
+)
 
 
 @register("Selu")
@@ -89,12 +89,13 @@ def selu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(_custom_selu, args=(x, alpha, gamma))
 
 
-@register("Celu")
-def celu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Continuously Differentiable Exponential Linear Unit activation."""
-    x = builder.get_value(node.input[0])
-    alpha = get_attribute(node, "alpha", 1.0)
-    return builder.call_function(F.celu, args=(x,), kwargs={"alpha": alpha})
+register("Celu")(
+    unary_op_with_kwargs(
+        F.celu,
+        attr_map={"alpha": ("alpha", 1.0)},
+        doc="Continuously Differentiable Exponential Linear Unit activation.",
+    )
+)
 
 
 register("Sigmoid")(unary_op(torch.sigmoid, "Sigmoid activation."))

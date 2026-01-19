@@ -186,6 +186,40 @@ def binary_op(
     return handler
 
 
+def unary_op_with_kwargs(
+    torch_fn: Callable[..., torch.Tensor],
+    *,
+    attr_map: dict[str, tuple[str, Any]],
+    doc: Optional[str] = None,
+) -> Callable[["GraphBuilder", onnx.NodeProto], torch.fx.Node]:
+    """Create a handler for unary operators with attribute-based kwargs.
+
+    Args:
+        torch_fn: The PyTorch function to call.
+        attr_map: Mapping of kwarg name to (attribute name, default).
+        doc: Optional docstring for the handler.
+
+    Returns:
+        A handler function for the operator.
+    """
+
+    def handler(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+        from .attributes import get_attribute
+
+        x = builder.get_value(node.input[0])
+        kwargs = {
+            kwarg: get_attribute(node, attr_name, default)
+            for kwarg, (attr_name, default) in attr_map.items()
+        }
+        return builder.call_function(torch_fn, args=(x,), kwargs=kwargs)
+
+    if doc:
+        handler.__doc__ = doc
+    else:
+        handler.__doc__ = f"Element-wise {torch_fn.__name__} with attributes."
+    return handler
+
+
 def compute_same_padding(
     input_shape: tuple[int, ...],
     kernel_shape: tuple[int, ...],
