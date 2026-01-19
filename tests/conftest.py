@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from onnx2fx import convert
+from onnx2fx.op_registry import registry_context as _registry_context
 from onnxscript import (
     opset11,
     opset12,
@@ -77,6 +78,13 @@ def einsum_opset_modules():
 def default_opset():
     """Fixture providing the default opset module."""
     return DEFAULT_OPSET
+
+
+@pytest.fixture
+def registry_context():
+    """Isolate registry mutations within a test."""
+    with _registry_context():
+        yield
 
 
 def opset_id(opset):

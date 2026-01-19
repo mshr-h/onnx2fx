@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for custom operator support."""
 
+import pytest
 from onnx import helper, TensorProto
 import torch
 
@@ -13,6 +14,8 @@ from onnx2fx import (
     get_registered_domains,
     is_supported,
 )
+
+pytestmark = pytest.mark.usefixtures("registry_context")
 
 
 def make_simple_onnx_model(

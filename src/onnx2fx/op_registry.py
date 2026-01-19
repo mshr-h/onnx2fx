@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """ONNX operator registry with custom operator and opset version support."""
 
+import copy
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Dict, Callable, Optional, Union, List, Tuple
 
 import onnx
@@ -20,6 +22,17 @@ OpHandler = Callable[
 # Handlers are stored in descending version order for efficient lookup.
 # Empty string "" represents the default ONNX domain.
 _VERSIONED_REGISTRY: Dict[str, Dict[str, List[Tuple[int, OpHandler]]]] = {"": {}}
+
+
+@contextmanager
+def registry_context():
+    """Temporarily isolate registry mutations (intended for tests)."""
+    snapshot = copy.deepcopy(_VERSIONED_REGISTRY)
+    try:
+        yield
+    finally:
+        _VERSIONED_REGISTRY.clear()
+        _VERSIONED_REGISTRY.update(snapshot)
 
 
 def register(
