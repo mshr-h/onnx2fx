@@ -9,7 +9,7 @@ from onnxscript import FLOAT, script
 from onnxscript import opset23 as op
 
 from onnx2fx import convert
-from conftest import OPSET_MODULES
+from conftest import OPSET_MODULES, opset_id
 
 
 class TestConstantOp:
@@ -47,7 +47,7 @@ class TestConstantOp:
 class TestConstantOpMultiOpset:
     """Test Constant operator across multiple opset versions."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_constant_all_opsets(self, opset):
         """Constant should work across all opsets."""
         const_value = onnx.numpy_helper.from_array(

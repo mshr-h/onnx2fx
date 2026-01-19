@@ -8,7 +8,7 @@ from onnxscript import FLOAT, script
 from onnxscript import opset23 as op
 
 from onnx2fx import convert
-from conftest import OPSET_MODULES
+from conftest import OPSET_MODULES, opset_id
 
 
 class TestActivationOps:
@@ -95,7 +95,7 @@ class TestActivationOps:
 class TestActivationOpsMultiOpset:
     """Test activation operators across multiple opset versions."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_relu_all_opsets(self, opset):
         """Relu should work identically across all opsets."""
 
@@ -110,7 +110,7 @@ class TestActivationOpsMultiOpset:
         expected = torch.relu(x)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_sigmoid_all_opsets(self, opset):
         """Sigmoid should work identically across all opsets."""
 
@@ -125,7 +125,7 @@ class TestActivationOpsMultiOpset:
         expected = torch.sigmoid(x)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_tanh_all_opsets(self, opset):
         """Tanh should work identically across all opsets."""
 
@@ -140,7 +140,7 @@ class TestActivationOpsMultiOpset:
         expected = torch.tanh(x)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_leaky_relu_all_opsets(self, opset):
         """LeakyRelu should work identically across all opsets."""
 
@@ -155,7 +155,7 @@ class TestActivationOpsMultiOpset:
         expected = F.leaky_relu(x, 0.1)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_elu_all_opsets(self, opset):
         """Elu should work identically across all opsets."""
 
@@ -170,7 +170,7 @@ class TestActivationOpsMultiOpset:
         expected = F.elu(x, 1.0)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_softplus_all_opsets(self, opset):
         """Softplus should work identically across all opsets."""
 
@@ -185,7 +185,7 @@ class TestActivationOpsMultiOpset:
         expected = F.softplus(x)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_softmax_with_axis_all_opsets(self, opset):
         """Softmax with explicit axis should work across all opsets."""
 

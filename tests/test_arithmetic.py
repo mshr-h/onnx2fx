@@ -8,7 +8,7 @@ from onnxscript import FLOAT, script
 from onnxscript import opset23 as op
 
 from onnx2fx import convert
-from conftest import OPSET_MODULES
+from conftest import OPSET_MODULES, opset_id
 
 
 class TestBinaryArithmetic:
@@ -211,7 +211,7 @@ class TestComparisonOps:
 class TestArithmeticOpsMultiOpset:
     """Test arithmetic operators across multiple opset versions."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_add_all_opsets(self, opset):
         """Add should work identically across all opsets."""
 
@@ -227,7 +227,7 @@ class TestArithmeticOpsMultiOpset:
         expected = x + y
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_sub_all_opsets(self, opset):
         """Sub should work identically across all opsets."""
 
@@ -243,7 +243,7 @@ class TestArithmeticOpsMultiOpset:
         expected = x - y
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_mul_all_opsets(self, opset):
         """Mul should work identically across all opsets."""
 
@@ -259,7 +259,7 @@ class TestArithmeticOpsMultiOpset:
         expected = x * y
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_div_all_opsets(self, opset):
         """Div should work identically across all opsets."""
 
@@ -275,7 +275,7 @@ class TestArithmeticOpsMultiOpset:
         expected = x / y
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_neg_all_opsets(self, opset):
         """Neg should work identically across all opsets."""
 
@@ -290,7 +290,7 @@ class TestArithmeticOpsMultiOpset:
         expected = -x
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_abs_all_opsets(self, opset):
         """Abs should work identically across all opsets."""
 
@@ -305,7 +305,7 @@ class TestArithmeticOpsMultiOpset:
         expected = torch.abs(x)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_sqrt_all_opsets(self, opset):
         """Sqrt should work identically across all opsets."""
 
@@ -320,7 +320,7 @@ class TestArithmeticOpsMultiOpset:
         expected = torch.sqrt(x)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_exp_all_opsets(self, opset):
         """Exp should work identically across all opsets."""
 
@@ -335,7 +335,7 @@ class TestArithmeticOpsMultiOpset:
         expected = torch.exp(x)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_log_all_opsets(self, opset):
         """Log should work identically across all opsets."""
 
@@ -350,7 +350,7 @@ class TestArithmeticOpsMultiOpset:
         expected = torch.log(x)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_matmul_all_opsets(self, opset):
         """MatMul should work identically across all opsets."""
 
@@ -428,7 +428,7 @@ class TestBitShiftOp:
 
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_bitshift_left_all_opsets(self, opset):
         """BitShift LEFT should work across all opsets (11+)."""
         x_input = helper.make_tensor_value_info("x", TensorProto.INT32, [3])

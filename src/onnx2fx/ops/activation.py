@@ -9,16 +9,13 @@ import torch.nn.functional as F
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import unary_op
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
 
 
-@register("Relu")
-def relu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """ReLU activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.relu, args=(x,))
+register("Relu")(unary_op(F.relu, "ReLU activation."))
 
 
 @register("LeakyRelu")
@@ -100,11 +97,7 @@ def celu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(F.celu, args=(x,), kwargs={"alpha": alpha})
 
 
-@register("Sigmoid")
-def sigmoid(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Sigmoid activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.sigmoid, args=(x,))
+register("Sigmoid")(unary_op(torch.sigmoid, "Sigmoid activation."))
 
 
 @register("HardSigmoid")
@@ -133,11 +126,7 @@ def hard_sigmoid(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
     return builder.call_function(_custom_hardsigmoid, args=(x, alpha, beta))
 
 
-@register("Tanh")
-def tanh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Tanh activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.tanh, args=(x,))
+register("Tanh")(unary_op(torch.tanh, "Tanh activation."))
 
 
 @register("Softmax", since_version=1)
@@ -217,18 +206,8 @@ def log_softmax_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.N
     return builder.call_function(F.log_softmax, args=(x,), kwargs={"dim": axis})
 
 
-@register("Softplus")
-def softplus(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Softplus activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.softplus, args=(x,))
-
-
-@register("Softsign")
-def softsign(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Softsign activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.softsign, args=(x,))
+register("Softplus")(unary_op(F.softplus, "Softplus activation."))
+register("Softsign")(unary_op(F.softsign, "Softsign activation."))
 
 
 @register("Gelu")
@@ -241,28 +220,9 @@ def gelu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(F.gelu, args=(x,))
 
 
-@register("Silu")
-def silu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Sigmoid Linear Unit (SiLU/Swish) activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.silu, args=(x,))
-
-
-@register("Swish")
-def swish(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Swish activation (alias for SiLU).
-
-    Swish(x) = x * sigmoid(x)
-    """
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.silu, args=(x,))
-
-
-@register("Mish")
-def mish(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Mish activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.mish, args=(x,))
+register("Silu")(unary_op(F.silu, "Sigmoid Linear Unit (SiLU/Swish) activation."))
+register("Swish")(unary_op(F.silu, "Swish activation (alias for SiLU)."))
+register("Mish")(unary_op(F.mish, "Mish activation."))
 
 
 @register("ThresholdedRelu")
@@ -273,11 +233,7 @@ def thresholded_relu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.
     return builder.call_function(F.threshold, args=(x, alpha, 0.0))
 
 
-@register("HardSwish")
-def hard_swish(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Hard Swish activation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(F.hardswish, args=(x,))
+register("HardSwish")(unary_op(F.hardswish, "Hard Swish activation."))
 
 
 @register("Hardmax")

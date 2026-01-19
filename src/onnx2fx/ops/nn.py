@@ -16,6 +16,7 @@ import torch
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -55,9 +56,7 @@ def gemm(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             result = result + beta * c
         return result
 
-    c = None
-    if len(node.input) > 2 and node.input[2]:
-        c = builder.get_value(node.input[2])
+    c = get_optional_input(builder, node, 2)
 
     return builder.call_function(_gemm, args=(a, b, c, alpha, beta, trans_a, trans_b))
 

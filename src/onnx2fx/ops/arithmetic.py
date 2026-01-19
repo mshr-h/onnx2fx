@@ -8,6 +8,7 @@ import torch
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import binary_op, get_optional_input, unary_op
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -18,44 +19,11 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
-@register("Add")
-def add(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise addition."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.add, args=(lhs, rhs))
-
-
-@register("Sub")
-def sub(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise subtraction."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.sub, args=(lhs, rhs))
-
-
-@register("Mul")
-def mul(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise multiplication."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.mul, args=(lhs, rhs))
-
-
-@register("Div")
-def div(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise division."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.div, args=(lhs, rhs))
-
-
-@register("Pow")
-def pow_(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise power."""
-    base = builder.get_value(node.input[0])
-    exponent = builder.get_value(node.input[1])
-    return builder.call_function(torch.pow, args=(base, exponent))
+register("Add")(binary_op(torch.add, "Element-wise addition."))
+register("Sub")(binary_op(torch.sub, "Element-wise subtraction."))
+register("Mul")(binary_op(torch.mul, "Element-wise multiplication."))
+register("Div")(binary_op(torch.div, "Element-wise division."))
+register("Pow")(binary_op(torch.pow, "Element-wise power."))
 
 
 @register("Mod")
@@ -113,74 +81,16 @@ def sum_(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 # =============================================================================
 
 
-@register("Neg")
-def neg(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise negation."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.neg, args=(x,))
-
-
-@register("Abs")
-def abs_(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise absolute value."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.abs, args=(x,))
-
-
-@register("Sign")
-def sign(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise sign."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.sign, args=(x,))
-
-
-@register("Ceil")
-def ceil(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise ceiling."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.ceil, args=(x,))
-
-
-@register("Floor")
-def floor(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise floor."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.floor, args=(x,))
-
-
-@register("Round")
-def round_(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise rounding."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.round, args=(x,))
-
-
-@register("Reciprocal")
-def reciprocal(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise reciprocal."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.reciprocal, args=(x,))
-
-
-@register("Sqrt")
-def sqrt(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise square root."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.sqrt, args=(x,))
-
-
-@register("Exp")
-def exp(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise exponential."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.exp, args=(x,))
-
-
-@register("Log")
-def log(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise natural logarithm."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.log, args=(x,))
+register("Neg")(unary_op(torch.neg, "Element-wise negation."))
+register("Abs")(unary_op(torch.abs, "Element-wise absolute value."))
+register("Sign")(unary_op(torch.sign, "Element-wise sign."))
+register("Ceil")(unary_op(torch.ceil, "Element-wise ceiling."))
+register("Floor")(unary_op(torch.floor, "Element-wise floor."))
+register("Round")(unary_op(torch.round, "Element-wise rounding."))
+register("Reciprocal")(unary_op(torch.reciprocal, "Element-wise reciprocal."))
+register("Sqrt")(unary_op(torch.sqrt, "Element-wise square root."))
+register("Exp")(unary_op(torch.exp, "Element-wise exponential."))
+register("Log")(unary_op(torch.log, "Element-wise natural logarithm."))
 
 
 # =============================================================================
@@ -188,75 +98,15 @@ def log(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 # =============================================================================
 
 
-@register("Equal")
-def equal(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise equality comparison."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.eq, args=(lhs, rhs))
-
-
-@register("Greater")
-def greater(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise greater-than comparison."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.gt, args=(lhs, rhs))
-
-
-@register("GreaterOrEqual")
-def greater_or_equal(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise greater-than-or-equal comparison."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.ge, args=(lhs, rhs))
-
-
-@register("Less")
-def less(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise less-than comparison."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.lt, args=(lhs, rhs))
-
-
-@register("LessOrEqual")
-def less_or_equal(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise less-than-or-equal comparison."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.le, args=(lhs, rhs))
-
-
-@register("And")
-def and_(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise logical AND."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.logical_and, args=(lhs, rhs))
-
-
-@register("Or")
-def or_(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise logical OR."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.logical_or, args=(lhs, rhs))
-
-
-@register("Xor")
-def xor(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise logical XOR."""
-    lhs = builder.get_value(node.input[0])
-    rhs = builder.get_value(node.input[1])
-    return builder.call_function(torch.logical_xor, args=(lhs, rhs))
-
-
-@register("Not")
-def not_(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Element-wise logical NOT."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.logical_not, args=(x,))
+register("Equal")(binary_op(torch.eq, "Element-wise equality comparison."))
+register("Greater")(binary_op(torch.gt, "Element-wise greater-than comparison."))
+register("GreaterOrEqual")(binary_op(torch.ge, "Element-wise greater-than-or-equal comparison."))
+register("Less")(binary_op(torch.lt, "Element-wise less-than comparison."))
+register("LessOrEqual")(binary_op(torch.le, "Element-wise less-than-or-equal comparison."))
+register("And")(binary_op(torch.logical_and, "Element-wise logical AND."))
+register("Or")(binary_op(torch.logical_or, "Element-wise logical OR."))
+register("Xor")(binary_op(torch.logical_xor, "Element-wise logical XOR."))
+register("Not")(unary_op(torch.logical_not, "Element-wise logical NOT."))
 
 
 @register("Where")
@@ -297,13 +147,8 @@ def clip_v11(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """
     x = builder.get_value(node.input[0])
 
-    min_val = None
-    max_val = None
-
-    if len(node.input) > 1 and node.input[1]:
-        min_val = builder.get_value(node.input[1])
-    if len(node.input) > 2 and node.input[2]:
-        max_val = builder.get_value(node.input[2])
+    min_val = get_optional_input(builder, node, 1)
+    max_val = get_optional_input(builder, node, 2)
 
     return builder.call_function(
         torch.clamp, args=(x,), kwargs={"min": min_val, "max": max_val}
@@ -315,46 +160,12 @@ def clip_v11(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 # =============================================================================
 
 
-@register("Sin")
-def sin(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Sine."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.sin, args=(x,))
-
-
-@register("Cos")
-def cos(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Cosine."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.cos, args=(x,))
-
-
-@register("Tan")
-def tan(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Tangent."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.tan, args=(x,))
-
-
-@register("Asin")
-def asin(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Arc sine."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.asin, args=(x,))
-
-
-@register("Acos")
-def acos(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Arc cosine."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.acos, args=(x,))
-
-
-@register("Atan")
-def atan(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Arc tangent."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.atan, args=(x,))
+register("Sin")(unary_op(torch.sin, "Sine."))
+register("Cos")(unary_op(torch.cos, "Cosine."))
+register("Tan")(unary_op(torch.tan, "Tangent."))
+register("Asin")(unary_op(torch.asin, "Arc sine."))
+register("Acos")(unary_op(torch.acos, "Arc cosine."))
+register("Atan")(unary_op(torch.atan, "Arc tangent."))
 
 
 # =============================================================================
@@ -362,39 +173,11 @@ def atan(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 # =============================================================================
 
 
-@register("Sinh")
-def sinh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Hyperbolic sine."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.sinh, args=(x,))
-
-
-@register("Cosh")
-def cosh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Hyperbolic cosine."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.cosh, args=(x,))
-
-
-@register("Asinh")
-def asinh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Inverse hyperbolic sine."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.asinh, args=(x,))
-
-
-@register("Acosh")
-def acosh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Inverse hyperbolic cosine."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.acosh, args=(x,))
-
-
-@register("Atanh")
-def atanh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Inverse hyperbolic tangent."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.atanh, args=(x,))
+register("Sinh")(unary_op(torch.sinh, "Hyperbolic sine."))
+register("Cosh")(unary_op(torch.cosh, "Hyperbolic cosine."))
+register("Asinh")(unary_op(torch.asinh, "Inverse hyperbolic sine."))
+register("Acosh")(unary_op(torch.acosh, "Inverse hyperbolic cosine."))
+register("Atanh")(unary_op(torch.atanh, "Inverse hyperbolic tangent."))
 
 
 # =============================================================================
@@ -402,18 +185,8 @@ def atanh(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 # =============================================================================
 
 
-@register("Erf")
-def erf(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Error function."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.erf, args=(x,))
-
-
-@register("IsNaN")
-def isnan(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Check for NaN."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.isnan, args=(x,))
+register("Erf")(unary_op(torch.erf, "Error function."))
+register("IsNaN")(unary_op(torch.isnan, "Check for NaN."))
 
 
 @register("IsInf")
@@ -441,28 +214,9 @@ def isinf(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 # =============================================================================
 
 
-@register("BitwiseAnd")
-def bitwise_and(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Bitwise AND."""
-    a = builder.get_value(node.input[0])
-    b = builder.get_value(node.input[1])
-    return builder.call_function(torch.bitwise_and, args=(a, b))
-
-
-@register("BitwiseOr")
-def bitwise_or(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Bitwise OR."""
-    a = builder.get_value(node.input[0])
-    b = builder.get_value(node.input[1])
-    return builder.call_function(torch.bitwise_or, args=(a, b))
-
-
-@register("BitwiseXor")
-def bitwise_xor(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Bitwise XOR."""
-    a = builder.get_value(node.input[0])
-    b = builder.get_value(node.input[1])
-    return builder.call_function(torch.bitwise_xor, args=(a, b))
+register("BitwiseAnd")(binary_op(torch.bitwise_and, "Bitwise AND."))
+register("BitwiseOr")(binary_op(torch.bitwise_or, "Bitwise OR."))
+register("BitwiseXor")(binary_op(torch.bitwise_xor, "Bitwise XOR."))
 
 
 @register("BitwiseNot")

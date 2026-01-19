@@ -4,29 +4,10 @@ import pytest
 import torch
 from onnx import helper, TensorProto
 from onnxscript import FLOAT, script
-from onnxscript import opset11, opset12, opset13, opset14, opset15
-from onnxscript import opset16, opset17, opset18, opset19, opset20
-from onnxscript import opset21, opset22, opset23
 from onnxscript import opset22 as op
 
 from onnx2fx.converter import convert
-
-# Available opset modules for parametrized tests
-OPSET_MODULES = [
-    opset11,
-    opset12,
-    opset13,
-    opset14,
-    opset15,
-    opset16,
-    opset17,
-    opset18,
-    opset19,
-    opset20,
-    opset21,
-    opset22,
-    opset23,
-]
+from conftest import OPSET_MODULES, opset_id
 
 
 class TestAddOps:
@@ -54,7 +35,7 @@ class TestAddOps:
 class TestAddOpsMultiOpset:
     """Test Add operation across multiple opset versions."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_add_all_opsets(self, opset):
         """Add should work across all opsets."""
         x_info = helper.make_tensor_value_info("X", TensorProto.FLOAT, [2, 4])

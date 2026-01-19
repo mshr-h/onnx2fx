@@ -9,7 +9,7 @@ from onnxscript import opset13, opset14, opset15, opset16, opset17
 from onnxscript import opset18, opset19, opset20, opset21, opset22, opset23
 
 from onnx2fx import convert
-from conftest import OPSET_MODULES
+from conftest import OPSET_MODULES, opset_id
 
 
 class TestQuantizeLinear:
@@ -522,7 +522,7 @@ class TestQuantizationMultiOpset:
             opset22,
             opset23,
         ],
-        ids=lambda x: f"opset{x.version}",
+        ids=opset_id,
     )
     def test_quantize_linear_all_opsets(self, opset):
         """QuantizeLinear should work across opsets (13+, with int output)."""
@@ -551,7 +551,7 @@ class TestQuantizationMultiOpset:
         expected = torch.clamp(torch.round(test_input / 0.1), -128, 127).to(torch.int8)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_dequantize_linear_all_opsets(self, opset):
         """DequantizeLinear should work across all opsets (10+)."""
         x = helper.make_tensor_value_info("x", TensorProto.INT8, [2, 3])

@@ -8,6 +8,7 @@ import torch
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -20,11 +21,7 @@ def softmax_cross_entropy_loss(
     """Softmax cross entropy loss."""
     scores = builder.get_value(node.input[0])
     labels = builder.get_value(node.input[1])
-    weights = (
-        builder.get_value(node.input[2])
-        if len(node.input) > 2 and node.input[2]
-        else None
-    )
+    weights = get_optional_input(builder, node, 2)
 
     ignore_index = get_attribute(node, "ignore_index", -100)
     reduction = get_attribute(node, "reduction", "mean")
@@ -45,11 +42,7 @@ def negative_log_likelihood_loss(
     """Negative log likelihood loss."""
     input_node = builder.get_value(node.input[0])
     target = builder.get_value(node.input[1])
-    weight = (
-        builder.get_value(node.input[2])
-        if len(node.input) > 2 and node.input[2]
-        else None
-    )
+    weight = get_optional_input(builder, node, 2)
 
     ignore_index = get_attribute(node, "ignore_index", -100)
     reduction = get_attribute(node, "reduction", "mean")

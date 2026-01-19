@@ -8,6 +8,7 @@ import torch
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -54,25 +55,11 @@ def lstm(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     r = builder.get_value(node.input[2])
 
     # Optional inputs
-    b = None
-    if len(node.input) > 3 and node.input[3]:
-        b = builder.get_value(node.input[3])
-
-    sequence_lens = None
-    if len(node.input) > 4 and node.input[4]:
-        sequence_lens = builder.get_value(node.input[4])
-
-    initial_h = None
-    if len(node.input) > 5 and node.input[5]:
-        initial_h = builder.get_value(node.input[5])
-
-    initial_c = None
-    if len(node.input) > 6 and node.input[6]:
-        initial_c = builder.get_value(node.input[6])
-
-    peepholes = None
-    if len(node.input) > 7 and node.input[7]:
-        peepholes = builder.get_value(node.input[7])
+    b = get_optional_input(builder, node, 3)
+    sequence_lens = get_optional_input(builder, node, 4)
+    initial_h = get_optional_input(builder, node, 5)
+    initial_c = get_optional_input(builder, node, 6)
+    peepholes = get_optional_input(builder, node, 7)
 
     # Get attributes
     hidden_size = get_attribute(node, "hidden_size")
@@ -320,17 +307,9 @@ def gru(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     r = builder.get_value(node.input[2])
 
     # Optional inputs
-    b = None
-    if len(node.input) > 3 and node.input[3]:
-        b = builder.get_value(node.input[3])
-
-    sequence_lens = None
-    if len(node.input) > 4 and node.input[4]:
-        sequence_lens = builder.get_value(node.input[4])
-
-    initial_h = None
-    if len(node.input) > 5 and node.input[5]:
-        initial_h = builder.get_value(node.input[5])
+    b = get_optional_input(builder, node, 3)
+    sequence_lens = get_optional_input(builder, node, 4)
+    initial_h = get_optional_input(builder, node, 5)
 
     # Get attributes
     hidden_size = get_attribute(node, "hidden_size")
@@ -529,17 +508,9 @@ def rnn(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     r = builder.get_value(node.input[2])
 
     # Optional inputs
-    b = None
-    if len(node.input) > 3 and node.input[3]:
-        b = builder.get_value(node.input[3])
-
-    sequence_lens = None
-    if len(node.input) > 4 and node.input[4]:
-        sequence_lens = builder.get_value(node.input[4])
-
-    initial_h = None
-    if len(node.input) > 5 and node.input[5]:
-        initial_h = builder.get_value(node.input[5])
+    b = get_optional_input(builder, node, 3)
+    sequence_lens = get_optional_input(builder, node, 4)
+    initial_h = get_optional_input(builder, node, 5)
 
     # Get attributes
     hidden_size = get_attribute(node, "hidden_size")

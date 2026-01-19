@@ -9,6 +9,7 @@ import torch.nn.functional as F
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import compute_same_padding, get_optional_input, pad_list_to_onnx_pads
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -59,30 +60,14 @@ def max_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         padding = 0
         # Handle auto_pad first (before explicit pads)
         if auto_pad in ("SAME_UPPER", "SAME_LOWER"):
-            # ONNX spec for SAME padding (ceil_mode disabled):
-            # output_spatial_shape[i] = floor((input_spatial_shape[i] - 1) / strides[i]) + 1
             spatial_shape = x.shape[2:]
-            output_shape = [(s - 1) // st + 1 for s, st in zip(spatial_shape, strides)]
-            # pad_shape[i] = (output_shape[i] - 1) * strides[i]
-            #                + ((kernel[i] - 1) * dilations[i] + 1) - input_shape[i]
-            pad_total = [
-                max(0, (o - 1) * st + (k - 1) * d + 1 - i)
-                for i, o, k, st, d in zip(
-                    spatial_shape,
-                    output_shape,
-                    kernel_shape,
-                    strides,
-                    dilations,
-                )
-            ]
-            if auto_pad == "SAME_UPPER":
-                pad_list = []
-                for p in reversed(pad_total):
-                    pad_list.extend([p // 2, p - p // 2])
-            else:
-                pad_list = []
-                for p in reversed(pad_total):
-                    pad_list.extend([p - p // 2, p // 2])
+            pad_list = compute_same_padding(
+                tuple(spatial_shape),
+                tuple(kernel_shape),
+                tuple(strides),
+                tuple(dilations),
+                auto_pad,
+            )
             x = F.pad(x, pad_list, value=float("-inf"))
             padding = 0
         elif pads is not None:
@@ -227,9 +212,7 @@ def max_unpool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     indices = builder.get_value(node.input[1])
 
     # Optional output_shape input
-    output_shape = None
-    if len(node.input) > 2 and node.input[2]:
-        output_shape = builder.get_value(node.input[2])
+    output_shape = get_optional_input(builder, node, 2)
 
     kernel_shape = get_attribute(node, "kernel_shape")
     strides = get_attribute(node, "strides") or [1] * len(kernel_shape)
@@ -582,35 +565,17 @@ def average_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
             # 2. Count pooling on a mask (to count valid positions per output)
             # 3. Divide sum by count
             input_shape = x.shape[2:]
-            output_shape = [(s + st - 1) // st for s, st in zip(input_shape, strides)]
-            # Compute effective kernel size with dilation
-            effective_kernel = [
-                (k - 1) * d + 1 for k, d in zip(kernel_shape, dilations)
-            ]
-            pad_total = [
-                max(0, (o - 1) * st + ek - i)
-                for i, o, ek, st in zip(
-                    input_shape,
-                    output_shape,
-                    effective_kernel,
-                    strides,
-                )
-            ]
-            if auto_pad == "SAME_UPPER":
-                pad_list = []
-                for p in reversed(pad_total):
-                    pad_list.extend([p // 2, p - p // 2])
-            else:
-                pad_list = []
-                for p in reversed(pad_total):
-                    pad_list.extend([p - p // 2, p // 2])
+            pad_list = compute_same_padding(
+                tuple(input_shape),
+                tuple(kernel_shape),
+                tuple(strides),
+                tuple(dilations),
+                auto_pad,
+                use_effective_kernel=True,
+            )
 
             # Convert pad_list to pads format for dilated implementation
-            n = ndim
-            pads_onnx = [0] * (2 * n)
-            for i in range(n):
-                pads_onnx[i] = pad_list[2 * (n - 1 - i)]
-                pads_onnx[i + n] = pad_list[2 * (n - 1 - i) + 1]
+            pads_onnx = pad_list_to_onnx_pads(pad_list, ndim)
 
             # Use dilated implementation which handles padding correctly
             return _avg_pool_dilated(
@@ -858,35 +823,17 @@ def lp_pool(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         # Handle auto_pad first (before explicit pads)
         if auto_pad in ("SAME_UPPER", "SAME_LOWER"):
             input_shape = x.shape[2:]
-            output_shape = [(s + st - 1) // st for s, st in zip(input_shape, strides)]
-            # Compute effective kernel size with dilation
-            effective_kernel = [
-                (k - 1) * d + 1 for k, d in zip(kernel_shape, dilations)
-            ]
-            pad_total = [
-                max(0, (o - 1) * st + ek - i)
-                for i, o, ek, st in zip(
-                    input_shape,
-                    output_shape,
-                    effective_kernel,
-                    strides,
-                )
-            ]
-            if auto_pad == "SAME_UPPER":
-                pad_list = []
-                for p_total in reversed(pad_total):
-                    pad_list.extend([p_total // 2, p_total - p_total // 2])
-            else:
-                pad_list = []
-                for p_total in reversed(pad_total):
-                    pad_list.extend([p_total - p_total // 2, p_total // 2])
+            pad_list = compute_same_padding(
+                tuple(input_shape),
+                tuple(kernel_shape),
+                tuple(strides),
+                tuple(dilations),
+                auto_pad,
+                use_effective_kernel=True,
+            )
 
             # Convert pad_list to pads format for dilated implementation
-            n = ndim
-            pads_onnx = [0] * (2 * n)
-            for i in range(n):
-                pads_onnx[i] = pad_list[2 * (n - 1 - i)]
-                pads_onnx[i + n] = pad_list[2 * (n - 1 - i) + 1]
+            pads_onnx = pad_list_to_onnx_pads(pad_list, ndim)
 
             # Use dilated implementation which handles padding correctly
             return _lp_pool_dilated(

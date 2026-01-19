@@ -7,7 +7,7 @@ import onnx
 from onnx import helper, TensorProto
 
 from onnx2fx import convert
-from conftest import OPSET_MODULES
+from conftest import OPSET_MODULES, opset_id
 
 
 class TestInitializer:
@@ -57,7 +57,7 @@ class TestInitializer:
 class TestInitializerMultiOpset:
     """Test initializer handling across multiple opset versions."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_initializer_matmul_all_opsets(self, opset):
         """Initializer with MatMul should work across all opsets."""
         weight_data = torch.randn(4, 4).numpy()

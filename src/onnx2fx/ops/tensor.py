@@ -9,6 +9,7 @@ import torch
 from ..exceptions import ConversionError
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -174,8 +175,8 @@ def squeeze_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     x = builder.get_value(node.input[0])
 
     # axes is an optional input in opset 13+
-    if len(node.input) > 1 and node.input[1]:
-        axes = builder.get_value(node.input[1])
+    axes = get_optional_input(builder, node, 1)
+    if axes is not None:
 
         def _squeeze_dynamic(t, axes):
             if isinstance(axes, torch.Tensor):
@@ -354,8 +355,8 @@ def split_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     num_outputs = get_attribute(node, "num_outputs")  # Added in opset 18
 
     # split sizes is an optional input in opset 13+
-    if len(node.input) > 1 and node.input[1]:
-        split_sizes = builder.get_value(node.input[1])
+    split_sizes = get_optional_input(builder, node, 1)
+    if split_sizes is not None:
 
         def _split_with_sizes(t, sizes, dim):
             if hasattr(sizes, "tolist"):
@@ -412,13 +413,8 @@ def slice_v10(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     starts = builder.get_value(node.input[1])
     ends = builder.get_value(node.input[2])
 
-    axes = None
-    steps = None
-
-    if len(node.input) > 3 and node.input[3]:
-        axes = builder.get_value(node.input[3])
-    if len(node.input) > 4 and node.input[4]:
-        steps = builder.get_value(node.input[4])
+    axes = get_optional_input(builder, node, 3)
+    steps = get_optional_input(builder, node, 4)
 
     # Use torch.narrow for simple cases, or dynamic slicing
     return builder.call_function(
@@ -742,9 +738,7 @@ def pad_v11(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     pads = builder.get_value(node.input[1])
     mode = get_attribute(node, "mode", "constant")
 
-    constant_value = 0.0
-    if len(node.input) > 2 and node.input[2]:
-        constant_value = builder.get_value(node.input[2])
+    constant_value = get_optional_input(builder, node, 2, default=0.0)
 
     # Note: axes input (opset 18+) is not yet supported
     # If needed, would require reordering pads based on axes
@@ -906,9 +900,7 @@ def trilu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Triangular part of matrix."""
     x = builder.get_value(node.input[0])
 
-    k = 0
-    if len(node.input) > 1 and node.input[1]:
-        k = builder.get_value(node.input[1])
+    k = get_optional_input(builder, node, 1, default=0)
 
     upper = get_attribute(node, "upper", 1)
 
@@ -1117,7 +1109,7 @@ def tensor_scatter(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
     """
     past_cache = builder.get_value(node.input[0])
     update = builder.get_value(node.input[1])
-    write_indices = builder.get_value(node.input[2]) if len(node.input) > 2 else None
+    write_indices = get_optional_input(builder, node, 2)
 
     axis = get_attribute(node, "axis", -2)
     mode = get_attribute(node, "mode", "linear")

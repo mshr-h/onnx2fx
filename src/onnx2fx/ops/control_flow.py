@@ -15,6 +15,7 @@ from onnx import numpy_helper
 from ..utils.names import sanitize_name
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -393,11 +394,7 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
     # Get inputs
     max_trip_count = builder.get_value(node.input[0]) if node.input[0] else None
-    initial_cond = (
-        builder.get_value(node.input[1])
-        if len(node.input) > 1 and node.input[1]
-        else None
-    )
+    initial_cond = get_optional_input(builder, node, 1)
     loop_carried_inputs = [
         builder.get_value(node.input[i]) for i in range(2, len(node.input))
     ]

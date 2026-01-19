@@ -10,7 +10,7 @@ from onnxscript import FLOAT, INT64, script
 from onnxscript import opset23 as op
 
 from onnx2fx import convert
-from conftest import OPSET_MODULES
+from conftest import OPSET_MODULES, opset_id
 
 
 class TestTensorOps:
@@ -164,7 +164,7 @@ class TestReductionOps:
 class TestTensorOpsMultiOpset:
     """Test tensor manipulation operators across multiple opset versions."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_transpose_all_opsets(self, opset):
         """Transpose should work identically across all opsets."""
 
@@ -179,7 +179,7 @@ class TestTensorOpsMultiOpset:
         expected = x.T
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_concat_all_opsets(self, opset):
         """Concat should work identically across all opsets."""
 
@@ -195,7 +195,7 @@ class TestTensorOpsMultiOpset:
         expected = torch.cat([x, y], dim=0)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_flatten_all_opsets(self, opset):
         """Flatten should work identically across all opsets."""
 
@@ -209,7 +209,7 @@ class TestTensorOpsMultiOpset:
         result = fx_model(x)
         assert result.shape == (2, 12)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_reshape_all_opsets(self, opset):
         """Reshape should work identically across all opsets."""
 
@@ -224,7 +224,7 @@ class TestTensorOpsMultiOpset:
         result = fx_model(x, shape)
         assert result.shape == (2, 12)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_expand_all_opsets(self, opset):
         """Expand should work identically across all opsets."""
 
@@ -245,7 +245,7 @@ class TestTensorOpsMultiOpset:
 class TestReductionOpsMultiOpset:
     """Test reduction operators across multiple opset versions."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_reduce_sum_all_opsets(self, opset):
         """ReduceSum should work across all opsets."""
 
@@ -260,7 +260,7 @@ class TestReductionOpsMultiOpset:
         expected = x.sum()
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_reduce_mean_all_opsets(self, opset):
         """ReduceMean should work across all opsets."""
 
@@ -275,7 +275,7 @@ class TestReductionOpsMultiOpset:
         expected = x.mean()
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_reduce_max_all_opsets(self, opset):
         """ReduceMax should work across all opsets."""
 
@@ -290,7 +290,7 @@ class TestReductionOpsMultiOpset:
         expected = x.max()
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_reduce_min_all_opsets(self, opset):
         """ReduceMin should work across all opsets."""
 
@@ -368,7 +368,7 @@ class TestCompressOp:
 
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_compress_all_opsets(self, opset):
         """Compress should work across all opsets (9+)."""
         data_input = helper.make_tensor_value_info("data", TensorProto.FLOAT, [3, 4])
@@ -435,7 +435,7 @@ class TestConstantOfShapeOp:
         assert result.shape == (2, 3)
         torch.testing.assert_close(result, torch.full((2, 3), 3.14))
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_constant_of_shape_all_opsets(self, opset):
         """ConstantOfShape should work across all opsets (9+)."""
         shape_input = helper.make_tensor_value_info("shape", TensorProto.INT64, [2])

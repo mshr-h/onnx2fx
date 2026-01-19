@@ -5,7 +5,8 @@ This package contains all ONNX operator implementations organized by category:
 
 - activation.py: Activation functions (Relu, Sigmoid, Softmax, etc.)
 - arithmetic.py: Arithmetic and math ops (Add, Mul, Sin, Cos, etc.)
-- attention.py: Attention mechanisms (MultiHeadAttention, etc.)
+- attention.py: Attention mechanisms (standard ONNX domain)
+- attention_msft.py: Attention mechanisms (com.microsoft domain)
 - control_flow.py: Control flow ops (Loop, If, Scan)
 - convolution.py: Convolution ops (Conv, ConvTranspose, DeformConv)
 - image.py: Image processing ops (Resize, DepthToSpace, etc.)
@@ -29,6 +30,7 @@ This package contains all ONNX operator implementations organized by category:
 from . import activation
 from . import arithmetic
 from . import attention
+from . import attention_msft
 from . import control_flow
 from . import convolution
 from . import image
@@ -51,6 +53,7 @@ __all__ = [
     "activation",
     "arithmetic",
     "attention",
+    "attention_msft",
     "control_flow",
     "convolution",
     "image",

@@ -14,7 +14,7 @@ from onnxscript import opset21, opset22, opset23
 from onnx2fx import convert
 from onnx2fx.op_registry import get_handler, get_handler_versions
 
-from conftest import OPSET_MODULES, EINSUM_OPSET_MODULES
+from conftest import OPSET_MODULES, EINSUM_OPSET_MODULES, opset_id
 
 
 class TestOpsetVersionRegistry:
@@ -347,7 +347,7 @@ class TestSplitOpsets:
 class TestReluAllOpsets:
     """Test Relu works identically across all opsets."""
 
-    @pytest.mark.parametrize("op", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("op", OPSET_MODULES, ids=opset_id)
     def test_relu_all_opsets(self, op):
         """Relu should work identically across all opsets."""
 
@@ -366,7 +366,7 @@ class TestReluAllOpsets:
 class TestAddAllOpsets:
     """Test Add works identically across all opsets."""
 
-    @pytest.mark.parametrize("op", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("op", OPSET_MODULES, ids=opset_id)
     def test_add_all_opsets(self, op):
         """Add should work identically across all opsets."""
 
@@ -386,7 +386,7 @@ class TestAddAllOpsets:
 class TestMatMulAllOpsets:
     """Test MatMul works identically across all opsets."""
 
-    @pytest.mark.parametrize("op", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("op", OPSET_MODULES, ids=opset_id)
     def test_matmul_all_opsets(self, op):
         """MatMul should work identically across all opsets."""
 
@@ -407,7 +407,7 @@ class TestEinsumAllOpsets:
     """Test Einsum works identically across all supporting opsets (12+)."""
 
     @pytest.mark.parametrize(
-        "opset", EINSUM_OPSET_MODULES, ids=lambda x: f"opset{x.version}"
+        "opset", EINSUM_OPSET_MODULES, ids=opset_id
     )
     def test_einsum_matmul_all_opsets(self, opset):
         """Einsum for matrix multiplication across opsets."""
@@ -441,7 +441,7 @@ class TestEinsumAllOpsets:
 class TestGatherAllOpsets:
     """Test Gather works identically across all opsets."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_gather_all_opsets(self, opset):
         """Gather should work across all opsets."""
 
@@ -462,7 +462,7 @@ class TestGatherAllOpsets:
 class TestWhereAllOpsets:
     """Test Where works identically across all opsets."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_where_all_opsets(self, opset):
         """Where should work across all opsets."""
         cond_info = helper.make_tensor_value_info("cond", TensorProto.BOOL, [2, 2])
@@ -492,7 +492,7 @@ class TestWhereAllOpsets:
 class TestHardmaxAllOpsets:
     """Test Hardmax works identically across all opsets."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_hardmax_all_opsets(self, opset):
         """Hardmax should work across all opsets (11+)."""
         x_info = helper.make_tensor_value_info("X", TensorProto.FLOAT, [2, 5])
@@ -532,7 +532,7 @@ class TestLogSoftmaxAllOpsets:
             opset22,
             opset23,
         ],
-        ids=lambda x: f"opset{x.version}",
+        ids=opset_id,
     )
     def test_log_softmax_all_opsets(self, opset):
         """LogSoftmax should work across opsets 13+ (axis semantics changed)."""
@@ -558,7 +558,7 @@ class TestLogSoftmaxAllOpsets:
 class TestGatherNDAllOpsets:
     """Test GatherND works identically across all opsets."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_gather_nd_all_opsets(self, opset):
         """GatherND should work across all opsets (11+)."""
         data_info = helper.make_tensor_value_info("data", TensorProto.FLOAT, [2, 2])

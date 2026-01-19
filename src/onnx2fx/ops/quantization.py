@@ -8,6 +8,7 @@ import torch
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -23,7 +24,7 @@ def quantize_linear(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.N
     """Quantize input tensor using scale and zero_point."""
     x = builder.get_value(node.input[0])
     y_scale = builder.get_value(node.input[1])
-    y_zero_point = builder.get_value(node.input[2]) if len(node.input) > 2 else None
+    y_zero_point = get_optional_input(builder, node, 2)
 
     if y_zero_point is not None:
 
@@ -48,7 +49,7 @@ def dequantize_linear(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
     """Dequantize input tensor using scale and zero_point."""
     x = builder.get_value(node.input[0])
     x_scale = builder.get_value(node.input[1])
-    x_zero_point = builder.get_value(node.input[2]) if len(node.input) > 2 else None
+    x_zero_point = get_optional_input(builder, node, 2)
 
     if x_zero_point is not None:
 
@@ -157,7 +158,7 @@ def qlinear_conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
     w_zero_point = builder.get_value(node.input[5])
     y_scale = builder.get_value(node.input[6])
     y_zero_point = builder.get_value(node.input[7])
-    bias = builder.get_value(node.input[8]) if len(node.input) > 8 else None
+    bias = get_optional_input(builder, node, 8)
 
     # Get convolution attributes
     # Note: kernel_shape is inferred from weight tensor, not from attribute
@@ -436,8 +437,8 @@ def conv_integer(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
     """Integer convolution (returns int32)."""
     x = builder.get_value(node.input[0])
     w = builder.get_value(node.input[1])
-    x_zero_point = builder.get_value(node.input[2]) if len(node.input) > 2 else None
-    w_zero_point = builder.get_value(node.input[3]) if len(node.input) > 3 else None
+    x_zero_point = get_optional_input(builder, node, 2)
+    w_zero_point = get_optional_input(builder, node, 3)
 
     # Get convolution attributes
     # Note: auto_pad is not implemented; use explicit pads instead
@@ -500,8 +501,8 @@ def matmul_integer(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
     """Integer matrix multiplication (returns int32)."""
     a = builder.get_value(node.input[0])
     b = builder.get_value(node.input[1])
-    a_zero_point = builder.get_value(node.input[2]) if len(node.input) > 2 else None
-    b_zero_point = builder.get_value(node.input[3]) if len(node.input) > 3 else None
+    a_zero_point = get_optional_input(builder, node, 2)
+    b_zero_point = get_optional_input(builder, node, 3)
 
     def _matmul_integer(
         a: torch.Tensor,

@@ -8,6 +8,7 @@ import torch
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -55,7 +56,7 @@ def sequence_insert(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.N
     """Insert tensor into sequence at position."""
     seq = builder.get_value(node.input[0])
     tensor = builder.get_value(node.input[1])
-    position = builder.get_value(node.input[2]) if len(node.input) > 2 else None
+    position = get_optional_input(builder, node, 2)
 
     if position is not None:
 
@@ -76,7 +77,7 @@ def sequence_insert(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.N
 def sequence_erase(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Remove element from sequence at position."""
     seq = builder.get_value(node.input[0])
-    position = builder.get_value(node.input[1]) if len(node.input) > 1 else None
+    position = get_optional_input(builder, node, 1)
 
     if position is not None:
 
@@ -121,7 +122,7 @@ def concat_from_sequence(
 def split_to_sequence(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Split tensor into sequence of tensors."""
     x = builder.get_value(node.input[0])
-    split = builder.get_value(node.input[1]) if len(node.input) > 1 else None
+    split = get_optional_input(builder, node, 1)
 
     axis = get_attribute(node, "axis", 0)
     keepdims = get_attribute(node, "keepdims", 1)

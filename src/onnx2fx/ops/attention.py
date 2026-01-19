@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Attention and Transformer related operators."""
+"""Attention and Transformer related operators (standard ONNX domain).
+
+Microsoft domain operators are in attention_msft.py.
+"""
 
 from typing import TYPE_CHECKING
 
@@ -8,6 +11,7 @@ import torch
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -26,16 +30,8 @@ def skip_layer_normalization(
     x = builder.get_value(node.input[0])
     skip = builder.get_value(node.input[1])
     gamma = builder.get_value(node.input[2])
-    beta = (
-        builder.get_value(node.input[3])
-        if len(node.input) > 3 and node.input[3]
-        else None
-    )
-    bias = (
-        builder.get_value(node.input[4])
-        if len(node.input) > 4 and node.input[4]
-        else None
-    )
+    beta = get_optional_input(builder, node, 3)
+    bias = get_optional_input(builder, node, 4)
 
     epsilon = get_attribute(node, "epsilon", 1e-5)
 
@@ -65,20 +61,12 @@ def embed_layer_normalization(
 ) -> torch.fx.Node:
     """Embedding + LayerNorm (common in BERT-like models)."""
     input_ids = builder.get_value(node.input[0])
-    segment_ids = (
-        builder.get_value(node.input[1])
-        if len(node.input) > 1 and node.input[1]
-        else None
-    )
+    segment_ids = get_optional_input(builder, node, 1)
     word_embedding = builder.get_value(node.input[2])
     position_embedding = builder.get_value(node.input[3])
-    segment_embedding = (
-        builder.get_value(node.input[4])
-        if len(node.input) > 4 and node.input[4]
-        else None
-    )
-    gamma = builder.get_value(node.input[5]) if len(node.input) > 5 else None
-    beta = builder.get_value(node.input[6]) if len(node.input) > 6 else None
+    segment_embedding = get_optional_input(builder, node, 4)
+    gamma = get_optional_input(builder, node, 5)
+    beta = get_optional_input(builder, node, 6)
 
     epsilon = get_attribute(node, "epsilon", 1e-5)
 
@@ -130,116 +118,6 @@ def embed_layer_normalization(
 
 
 # =============================================================================
-# Microsoft Attention operator (com.microsoft domain)
-# =============================================================================
-
-
-@register("Attention", domain="com.microsoft")
-def microsoft_attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Microsoft Attention operator (com.microsoft domain).
-
-    Multi-Head Attention that can be either unidirectional (like GPT-2) or
-    bidirectional (like BERT). The weights for input projection of Q, K and V
-    are merged.
-
-    Inputs:
-        input: Input tensor with shape (batch_size, sequence_length, input_hidden_size)
-        weights: Merged Q/K/V weights with shape (input_hidden_size, hidden_size + hidden_size + v_hidden_size)
-        bias (optional): Bias tensor with shape (hidden_size + hidden_size + v_hidden_size)
-        mask_index (optional): Attention mask
-        past (optional): Past state for key and value
-        attention_bias (optional): Additional bias to add to QK
-        past_sequence_length (optional): Past sequence length
-
-    Attributes:
-        num_heads (required): Number of attention heads
-        unidirectional: Whether every token can only attend to previous tokens (default 0)
-        scale: Custom scale factor (default 1/sqrt(head_size))
-        mask_filter_value: Value to fill in attention mask (default -10000.0)
-
-    Outputs:
-        output: 3D output tensor with shape (batch_size, sequence_length, v_hidden_size)
-        present (optional): Past state for key and value
-    """
-    # Get inputs
-    input_tensor = builder.get_value(node.input[0])
-    weights = builder.get_value(node.input[1])
-    bias = (
-        builder.get_value(node.input[2])
-        if len(node.input) > 2 and node.input[2]
-        else None
-    )
-    mask_index = (
-        builder.get_value(node.input[3])
-        if len(node.input) > 3 and node.input[3]
-        else None
-    )
-    past = (
-        builder.get_value(node.input[4])
-        if len(node.input) > 4 and node.input[4]
-        else None
-    )
-    attention_bias = (
-        builder.get_value(node.input[5])
-        if len(node.input) > 5 and node.input[5]
-        else None
-    )
-
-    # Get attributes
-    num_heads = get_attribute(node, "num_heads", None)
-    if num_heads is None:
-        raise ValueError("num_heads attribute is required for Microsoft Attention")
-    unidirectional = get_attribute(node, "unidirectional", 0)
-    scale = get_attribute(node, "scale", None)
-
-    def _microsoft_attention(
-        inp: torch.Tensor,
-        w: torch.Tensor,
-        b: torch.Tensor | None,
-        mask: torch.Tensor | None,
-        past_kv: torch.Tensor | None,
-        attn_bias: torch.Tensor | None,
-        n_heads: int,
-        is_causal: bool,
-        attn_scale: float | None,
-    ) -> torch.Tensor:
-        batch_size, seq_len, hidden_size = inp.shape
-
-        # Project input to Q, K, V using merged weights
-        # weights shape: (input_hidden_size, 3 * hidden_size)
-        qkv = torch.matmul(inp, w)
-        if b is not None:
-            qkv = qkv + b
-
-        # Split into Q, K, V
-        q, k, v = qkv.chunk(3, dim=-1)
-
-        # Use scaled_dot_product_attention
-        output = torch.nn.functional.scaled_dot_product_attention(
-            q, k, v, attn_mask=mask, is_causal=is_causal, scale=attn_scale
-        )
-
-        return output
-
-    is_causal = unidirectional == 1
-
-    return builder.call_function(
-        _microsoft_attention,
-        args=(
-            input_tensor,
-            weights,
-            bias,
-            mask_index,
-            past,
-            attention_bias,
-            num_heads,
-            is_causal,
-            scale,
-        ),
-    )
-
-
-# =============================================================================
 # Attention operator (ONNX standard domain, since opset 24)
 # =============================================================================
 
@@ -281,26 +159,10 @@ def attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     key = builder.get_value(node.input[1])
     value = builder.get_value(node.input[2])
 
-    attn_mask = (
-        builder.get_value(node.input[3])
-        if len(node.input) > 3 and node.input[3]
-        else None
-    )
-    past_key = (
-        builder.get_value(node.input[4])
-        if len(node.input) > 4 and node.input[4]
-        else None
-    )
-    past_value = (
-        builder.get_value(node.input[5])
-        if len(node.input) > 5 and node.input[5]
-        else None
-    )
-    nonpad_kv_seqlen = (
-        builder.get_value(node.input[6])
-        if len(node.input) > 6 and node.input[6]
-        else None
-    )
+    attn_mask = get_optional_input(builder, node, 3)
+    past_key = get_optional_input(builder, node, 4)
+    past_value = get_optional_input(builder, node, 5)
+    nonpad_kv_seqlen = get_optional_input(builder, node, 6)
 
     # Get attributes
     is_causal = get_attribute(node, "is_causal", 0)
@@ -763,7 +625,6 @@ def attention(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 
 
 @register("SimplifiedLayerNormalization")
-@register("SimplifiedLayerNormalization", domain="com.microsoft")
 def simplified_layer_normalization(
     builder: "GraphBuilder", node: onnx.NodeProto
 ) -> torch.fx.Node:
@@ -799,7 +660,6 @@ def simplified_layer_normalization(
 
 
 @register("SkipSimplifiedLayerNormalization")
-@register("SkipSimplifiedLayerNormalization", domain="com.microsoft")
 def skip_simplified_layer_normalization(
     builder: "GraphBuilder", node: onnx.NodeProto
 ) -> torch.fx.Node:
@@ -807,11 +667,7 @@ def skip_simplified_layer_normalization(
     x = builder.get_value(node.input[0])
     skip = builder.get_value(node.input[1])
     scale = builder.get_value(node.input[2])
-    bias = (
-        builder.get_value(node.input[3])
-        if len(node.input) > 3 and node.input[3]
-        else None
-    )
+    bias = get_optional_input(builder, node, 3)
 
     epsilon = get_attribute(node, "epsilon", 1e-5)
 
@@ -833,7 +689,6 @@ def skip_simplified_layer_normalization(
 
 
 @register("GroupQueryAttention")
-@register("GroupQueryAttention", domain="com.microsoft")
 def group_query_attention(
     builder: "GraphBuilder", node: onnx.NodeProto
 ) -> torch.fx.Node:
@@ -868,20 +723,13 @@ def group_query_attention(
     key = builder.get_value(node.input[1])
     value = builder.get_value(node.input[2])
 
-    def get_optional_input(idx: int) -> torch.fx.Node | None:
-        return (
-            builder.get_value(node.input[idx])
-            if len(node.input) > idx and node.input[idx]
-            else None
-        )
-
     # Get optional inputs
-    past_key = get_optional_input(3)
-    past_value = get_optional_input(4)
-    seqlens_k = get_optional_input(5)
-    total_seq_len = get_optional_input(6)
-    cos_cache = get_optional_input(7)
-    sin_cache = get_optional_input(8)
+    past_key = get_optional_input(builder, node, 3)
+    past_value = get_optional_input(builder, node, 4)
+    seqlens_k = get_optional_input(builder, node, 5)
+    total_seq_len = get_optional_input(builder, node, 6)
+    cos_cache = get_optional_input(builder, node, 7)
+    sin_cache = get_optional_input(builder, node, 8)
 
     # Get attributes
     num_heads = get_attribute(node, "num_heads", 1)
@@ -1084,11 +932,7 @@ def rotary_embedding_onnx(
     input_tensor = builder.get_value(node.input[0])
     cos_cache = builder.get_value(node.input[1])
     sin_cache = builder.get_value(node.input[2])
-    position_ids = (
-        builder.get_value(node.input[3])
-        if len(node.input) > 3 and node.input[3]
-        else None
-    )
+    position_ids = get_optional_input(builder, node, 3)
 
     # Get attributes
     interleaved = get_attribute(node, "interleaved", 0)
@@ -1207,174 +1051,5 @@ def rotary_embedding_onnx(
             interleaved,
             num_heads,
             rotary_embedding_dim,
-        ),
-    )
-
-
-# =============================================================================
-# Rotary Embedding (com.microsoft domain)
-# =============================================================================
-
-
-@register("RotaryEmbedding", domain="com.microsoft")
-def rotary_embedding(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Rotary Position Embedding (RoPE) operator.
-
-    Applies rotary position embeddings to the input tensor. The positions are
-    represented as rotation matrices that are multiplied to query and key
-    before the inner product of query and key is taken.
-
-    Inputs:
-        - input: 3D tensor with shape (batch_size, sequence_length, hidden_size)
-                 or 4D with shape (batch_size, num_heads, sequence_length, head_size)
-        - position_ids: 1D tensor with shape (1) or 2D tensor with shape
-                        (batch_size, sequence_length)
-        - cos_cache: 2D tensor with shape (max_sequence_length, head_size / 2)
-                     or (max_sequence_length, rotary_embedding_dim / 2)
-        - sin_cache: 2D tensor with shape (max_sequence_length, head_size / 2)
-                     or (max_sequence_length, rotary_embedding_dim / 2)
-
-    Attributes:
-        - interleaved: Indicates whether the input has real and imaginary parts
-                       interleaved. Default is 0 (False).
-        - num_heads: Number of attention heads. Default is 0.
-        - rotary_embedding_dim: Rotary embedding dimension. Default is 0.
-        - scale: Custom scale. Default is 1.0.
-
-    Outputs:
-        - output: tensor with same shape as input.
-    """
-    # Get inputs
-    input_tensor = builder.get_value(node.input[0])
-    position_ids = builder.get_value(node.input[1])
-    cos_cache = builder.get_value(node.input[2])
-    sin_cache = builder.get_value(node.input[3])
-
-    # Get attributes
-    interleaved = get_attribute(node, "interleaved", 0)
-    num_heads = get_attribute(node, "num_heads", 0)
-    rotary_embedding_dim = get_attribute(node, "rotary_embedding_dim", 0)
-    scale = get_attribute(node, "scale", 1.0)
-
-    def _rotary_embedding(
-        x: torch.Tensor,
-        pos_ids: torch.Tensor,
-        cos_cache: torch.Tensor,
-        sin_cache: torch.Tensor,
-        interleaved: int,
-        num_heads: int,
-        rotary_dim: int,
-        scale: float,
-    ) -> torch.Tensor:
-        """Apply rotary position embeddings."""
-        original_shape = x.shape
-        is_3d = x.dim() == 3
-
-        if is_3d:
-            # Input is (batch_size, seq_len, hidden_size)
-            batch_size, seq_len, hidden_size = x.shape
-
-            # Determine head_size and num_heads
-            if num_heads > 0:
-                head_size = hidden_size // num_heads
-                actual_num_heads = num_heads
-            else:
-                # Infer head_size from cos_cache dimension
-                # cos_cache has shape (max_seq, rotary_dim/2)
-                rotary_half_dim = cos_cache.shape[-1]
-                head_size = rotary_half_dim * 2  # rotary_dim == head_size typically
-                actual_num_heads = hidden_size // head_size
-
-            # Reshape to (batch, num_heads, seq, head_size)
-            x = x.view(batch_size, seq_len, actual_num_heads, head_size).transpose(1, 2)
-        else:
-            # Input is (batch_size, num_heads, seq_len, head_size)
-            batch_size, actual_num_heads, seq_len, head_size = x.shape
-
-        # Get cos/sin values for positions
-        # position_ids can be (1,) scalar or (batch, seq) or (seq,)
-        if pos_ids.dim() == 1:
-            if pos_ids.numel() == 1:
-                # Single position offset - generate sequence
-                start_pos = pos_ids.item()
-                positions = torch.arange(
-                    start_pos, start_pos + seq_len, device=x.device, dtype=torch.long
-                )
-            else:
-                positions = pos_ids
-        else:
-            # (batch, seq) - use first batch for now (they should be the same)
-            positions = pos_ids[0] if pos_ids.shape[0] > 1 else pos_ids.squeeze(0)
-
-        # Gather cos/sin from cache based on positions
-        cos = cos_cache[positions]  # (seq_len, rotary_dim/2)
-        sin = sin_cache[positions]  # (seq_len, rotary_dim/2)
-
-        # Determine rotary dimension
-        if rotary_dim > 0:
-            rot_dim = rotary_dim
-        else:
-            rot_dim = cos.shape[-1] * 2  # cos/sin cache is half the rotary dim
-
-        # Expand cos/sin for batch and heads: (1, 1, seq_len, rotary_dim/2)
-        cos = cos.unsqueeze(0).unsqueeze(0)
-        sin = sin.unsqueeze(0).unsqueeze(0)
-
-        # Apply scale if specified
-        if scale != 1.0:
-            x = x * scale
-
-        # Split into rotary and pass-through parts
-        x_rot = x[..., :rot_dim]
-        x_pass = x[..., rot_dim:] if rot_dim < x.shape[-1] else None
-
-        if interleaved:
-            # Interleaved format: [x0, y0, x1, y1, ...] pairs
-            # Rotate pairs: (x, y) -> (x*cos - y*sin, x*sin + y*cos)
-            x1 = x_rot[..., ::2]  # Even indices
-            x2 = x_rot[..., 1::2]  # Odd indices
-
-            # Make sure cos/sin match the half dimension
-            cos_half = cos[..., : x1.shape[-1]]
-            sin_half = sin[..., : x1.shape[-1]]
-
-            # Apply rotation
-            x_rot_new = torch.stack(
-                [x1 * cos_half - x2 * sin_half, x1 * sin_half + x2 * cos_half], dim=-1
-            ).flatten(-2)
-        else:
-            # Non-interleaved format: first half real, second half imaginary
-            # x = [x1, x2] where x1 and x2 are halves
-            half_dim = rot_dim // 2
-            x1 = x_rot[..., :half_dim]
-            x2 = x_rot[..., half_dim:rot_dim]
-
-            # Apply rotation: (x1, x2) -> (x1*cos - x2*sin, x1*sin + x2*cos)
-            x_rot_new = torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1)
-
-        # Concatenate with pass-through part
-        if x_pass is not None:
-            x_out = torch.cat([x_rot_new, x_pass], dim=-1)
-        else:
-            x_out = x_rot_new
-
-        # Reshape back to original shape
-        if is_3d:
-            # Always reshape back from (batch, num_heads, seq, head_size) to (batch, seq, hidden)
-            x_out = x_out.transpose(1, 2).contiguous().view(original_shape)
-
-        return x_out
-
-    return builder.call_function(
-        _rotary_embedding,
-        args=(
-            input_tensor,
-            position_ids,
-            cos_cache,
-            sin_cache,
-            interleaved,
-            num_heads,
-            rotary_embedding_dim,
-            scale,
         ),
     )

@@ -12,6 +12,7 @@ import torch
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -28,16 +29,9 @@ def resize(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     x = builder.get_value(node.input[0])
 
     # roi, scales, sizes are optional inputs
-    roi = None
-    scales = None
-    sizes = None
-
-    if len(node.input) > 1 and node.input[1]:
-        roi = builder.get_value(node.input[1])
-    if len(node.input) > 2 and node.input[2]:
-        scales = builder.get_value(node.input[2])
-    if len(node.input) > 3 and node.input[3]:
-        sizes = builder.get_value(node.input[3])
+    roi = get_optional_input(builder, node, 1)
+    scales = get_optional_input(builder, node, 2)
+    sizes = get_optional_input(builder, node, 3)
 
     mode = get_attribute(node, "mode", "nearest")
     coordinate_transformation_mode = get_attribute(

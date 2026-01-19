@@ -9,6 +9,7 @@ import torch.nn.functional as F
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import compute_same_padding, get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -36,9 +37,7 @@ def conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """N-dimensional convolution."""
     x = builder.get_value(node.input[0])
     weight = builder.get_value(node.input[1])
-    bias = None
-    if len(node.input) > 2 and node.input[2]:
-        bias = builder.get_value(node.input[2])
+    bias = get_optional_input(builder, node, 2)
 
     params = _get_conv_params(node)
     strides = params["strides"] or [1]
@@ -78,25 +77,14 @@ def conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         if auto_pad in ("SAME_UPPER", "SAME_LOWER"):
             # Compute padding for SAME
             input_shape = x.shape[2:]
-            output_shape = [(s + st - 1) // st for s, st in zip(input_shape, strides)]
-            pad_total = [
-                max(0, (o - 1) * st + (k - 1) * d + 1 - i)
-                for i, o, k, st, d in zip(
-                    input_shape,
-                    output_shape,
-                    kernel_shape or weight.shape[2:],
-                    strides,
-                    dilations,
-                )
-            ]
-            if auto_pad == "SAME_UPPER":
-                pad_list = []
-                for p in reversed(pad_total):
-                    pad_list.extend([p // 2, p - p // 2])
-            else:
-                pad_list = []
-                for p in reversed(pad_total):
-                    pad_list.extend([p - p // 2, p // 2])
+            k_shape = kernel_shape or weight.shape[2:]
+            pad_list = compute_same_padding(
+                tuple(input_shape),
+                tuple(k_shape),
+                tuple(strides),
+                tuple(dilations),
+                auto_pad,
+            )
             x = F.pad(x, pad_list)
             padding = 0
 
@@ -147,9 +135,7 @@ def conv_transpose(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
     """N-dimensional transposed convolution."""
     x = builder.get_value(node.input[0])
     weight = builder.get_value(node.input[1])
-    bias = None
-    if len(node.input) > 2 and node.input[2]:
-        bias = builder.get_value(node.input[2])
+    bias = get_optional_input(builder, node, 2)
 
     strides = get_attribute(node, "strides") or [1]
     dilations = get_attribute(node, "dilations") or [1]
@@ -382,13 +368,8 @@ def deform_conv(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     weight = builder.get_value(node.input[1])
     offset = builder.get_value(node.input[2])
 
-    bias = None
-    if len(node.input) > 3 and node.input[3]:
-        bias = builder.get_value(node.input[3])
-
-    mask = None
-    if len(node.input) > 4 and node.input[4]:
-        mask = builder.get_value(node.input[4])
+    bias = get_optional_input(builder, node, 3)
+    mask = get_optional_input(builder, node, 4)
 
     strides = get_attribute(node, "strides") or [1, 1]
     dilations = get_attribute(node, "dilations") or [1, 1]

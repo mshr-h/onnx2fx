@@ -11,7 +11,7 @@ from onnxscript import opset21, opset22, opset23
 from onnxscript import opset23 as op
 
 from onnx2fx import convert
-from conftest import OPSET_MODULES
+from conftest import OPSET_MODULES, opset_id
 
 
 class TestLogSoftmaxOp:
@@ -1163,7 +1163,7 @@ class TestRotaryEmbedding:
 class TestAttentionOpsMultiOpset:
     """Test attention-related operators across multiple opset versions."""
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_hardmax_all_opsets(self, opset):
         """Hardmax should work across all opsets (11+)."""
         x_info = helper.make_tensor_value_info("X", TensorProto.FLOAT, [2, 5])
@@ -1199,7 +1199,7 @@ class TestAttentionOpsMultiOpset:
             opset22,
             opset23,
         ],
-        ids=lambda x: f"opset{x.version}",
+        ids=opset_id,
     )
     def test_log_softmax_all_opsets(self, opset):
         """LogSoftmax should work across opsets 13+ (axis semantics changed)."""
@@ -1221,7 +1221,7 @@ class TestAttentionOpsMultiOpset:
         result = fx_module(x)
         torch.testing.assert_close(result, expected)
 
-    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=lambda x: f"opset{x.version}")
+    @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_gather_nd_all_opsets(self, opset):
         """GatherND should work across all opsets (11+)."""
         data_info = helper.make_tensor_value_info("data", TensorProto.FLOAT, [2, 2])
@@ -1246,4 +1246,134 @@ class TestAttentionOpsMultiOpset:
 
         result = fx_module(data, indices)
         expected = torch.tensor([0.0, 3.0])
+        torch.testing.assert_close(result, expected)
+
+
+# =============================================================================
+# Microsoft Domain (com.microsoft) Tests
+# =============================================================================
+
+
+class TestSkipLayerNormalizationMicrosoft:
+    """Test SkipLayerNormalization with com.microsoft domain."""
+
+    def test_skip_layer_norm_microsoft_domain(self):
+        """Test skip connection + layer normalization with com.microsoft domain."""
+        from onnx import TensorProto, helper
+
+        batch_size = 2
+        seq_len = 4
+        hidden_size = 8
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        skip_info = helper.make_tensor_value_info(
+            "skip", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        gamma_info = helper.make_tensor_value_info(
+            "gamma", TensorProto.FLOAT, [hidden_size]
+        )
+        beta_info = helper.make_tensor_value_info(
+            "beta", TensorProto.FLOAT, [hidden_size]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+
+        skip_ln_node = helper.make_node(
+            "SkipLayerNormalization",
+            ["input", "skip", "gamma", "beta"],
+            ["output"],
+            name="skip_layer_norm",
+            domain="com.microsoft",
+            epsilon=1e-5,
+        )
+
+        graph = helper.make_graph(
+            [skip_ln_node],
+            "skip_ln_msft_test",
+            [input_info, skip_info, gamma_info, beta_info],
+            [output_info],
+        )
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
+
+        fx_module = convert(model)
+
+        input_tensor = torch.randn(batch_size, seq_len, hidden_size)
+        skip_tensor = torch.randn(batch_size, seq_len, hidden_size)
+        gamma = torch.randn(hidden_size)
+        beta = torch.randn(hidden_size)
+
+        result = fx_module(input_tensor, skip_tensor, gamma, beta)
+
+        # Manual computation
+        hidden = input_tensor + skip_tensor
+        expected = torch.nn.functional.layer_norm(
+            hidden, (hidden_size,), weight=gamma, bias=beta, eps=1e-5
+        )
+
+        torch.testing.assert_close(result, expected)
+
+
+class TestSimplifiedLayerNormalizationMicrosoft:
+    """Test SimplifiedLayerNormalization with com.microsoft domain."""
+
+    def test_simplified_layer_norm_microsoft_domain(self):
+        """Test SimplifiedLayerNormalization (RMSNorm) with com.microsoft domain."""
+        from onnx import TensorProto, helper
+
+        batch_size, seq_len, hidden_size = 2, 4, 8
+
+        input_info = helper.make_tensor_value_info(
+            "input", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+        scale_info = helper.make_tensor_value_info(
+            "scale", TensorProto.FLOAT, [hidden_size]
+        )
+        output_info = helper.make_tensor_value_info(
+            "output", TensorProto.FLOAT, [batch_size, seq_len, hidden_size]
+        )
+
+        node = helper.make_node(
+            "SimplifiedLayerNormalization",
+            ["input", "scale"],
+            ["output"],
+            name="simplified_ln",
+            domain="com.microsoft",
+            axis=-1,
+            epsilon=1e-5,
+        )
+
+        graph = helper.make_graph(
+            [node],
+            "simplified_ln_msft_test",
+            [input_info, scale_info],
+            [output_info],
+        )
+        model = helper.make_model(
+            graph,
+            opset_imports=[
+                helper.make_opsetid("", 21),
+                helper.make_opsetid("com.microsoft", 1),
+            ],
+        )
+
+        fx_module = convert(model)
+
+        x = torch.randn(batch_size, seq_len, hidden_size)
+        scale = torch.randn(hidden_size)
+
+        result = fx_module(x, scale)
+
+        # Manual RMSNorm computation
+        rms = torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + 1e-5)
+        expected = (x / rms) * scale
+
         torch.testing.assert_close(result, expected)

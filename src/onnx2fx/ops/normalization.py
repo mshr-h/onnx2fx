@@ -9,6 +9,7 @@ import torch.nn.functional as F
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -94,9 +95,7 @@ def layer_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.
     x = builder.get_value(node.input[0])
     scale = builder.get_value(node.input[1])
 
-    bias = None
-    if len(node.input) > 2 and node.input[2]:
-        bias = builder.get_value(node.input[2])
+    bias = get_optional_input(builder, node, 2)
 
     axis = get_attribute(node, "axis", -1)
     epsilon = get_attribute(node, "epsilon", 1e-5)

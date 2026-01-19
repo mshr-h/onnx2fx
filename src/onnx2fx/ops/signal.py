@@ -12,6 +12,7 @@ import torch
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -44,14 +45,10 @@ def stft(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     frame_step = builder.get_value(node.input[1])
 
     # Optional window input
-    window = None
-    if len(node.input) > 2 and node.input[2]:
-        window = builder.get_value(node.input[2])
+    window = get_optional_input(builder, node, 2)
 
     # Optional frame_length input
-    frame_length = None
-    if len(node.input) > 3 and node.input[3]:
-        frame_length = builder.get_value(node.input[3])
+    frame_length = get_optional_input(builder, node, 3)
 
     # Get onesided attribute (default is 1)
     onesided = get_attribute(node, "onesided", 1)
@@ -355,16 +352,15 @@ def nms(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     boxes = builder.get_value(node.input[0])
     scores = builder.get_value(node.input[1])
 
-    max_output = None
-    iou_threshold = 0.0
-    score_threshold = float("-inf")
+    max_output = get_optional_input(builder, node, 2)
+    iou_threshold = get_optional_input(builder, node, 3)
+    score_threshold = get_optional_input(builder, node, 4)
 
-    if len(node.input) > 2 and node.input[2]:
-        max_output = builder.get_value(node.input[2])
-    if len(node.input) > 3 and node.input[3]:
-        iou_threshold = builder.get_value(node.input[3])
-    if len(node.input) > 4 and node.input[4]:
-        score_threshold = builder.get_value(node.input[4])
+    # Set defaults if not provided
+    if iou_threshold is None:
+        iou_threshold = 0.0
+    if score_threshold is None:
+        score_threshold = float("-inf")
 
     center_point_box = get_attribute(node, "center_point_box", 0)
 
