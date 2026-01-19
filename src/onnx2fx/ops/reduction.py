@@ -13,6 +13,46 @@ if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
 
 
+# =============================================================================
+# Helper functions for reduction operators
+# =============================================================================
+
+
+def _normalize_axes(axes):
+    """Normalize axes to tuple format for PyTorch operations.
+    
+    Converts torch.Tensor or list to tuple for consistent handling.
+    """
+    if isinstance(axes, torch.Tensor):
+        return tuple(axes.tolist())
+    elif isinstance(axes, (list, tuple)):
+        return tuple(axes)
+    return axes
+
+
+def _handle_empty_axes(axes, noop_with_empty_axes):
+    """Handle empty axes list based on noop_with_empty_axes flag.
+    
+    Returns (should_noop, normalized_axes).
+    - If axes is empty and noop_with_empty_axes is True, returns (True, axes)
+    - If axes is empty and noop_with_empty_axes is False, returns (False, None)
+    - Otherwise returns (False, axes)
+    """
+    # Check for empty list/tuple
+    if isinstance(axes, (list, tuple)) and len(axes) == 0:
+        if noop_with_empty_axes:
+            return True, axes
+        return False, None
+    
+    # Check for empty tensor
+    if isinstance(axes, torch.Tensor) and axes.numel() == 0:
+        if noop_with_empty_axes:
+            return True, axes
+        return False, None
+    
+    return False, axes
+
+
 def _get_reduction_axes(
     node: onnx.NodeProto, builder: "GraphBuilder"
 ) -> list[int] | None:
@@ -58,26 +98,18 @@ def reduce_sum(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     noop_with_empty_axes = get_attribute(node, "noop_with_empty_axes", 0)
 
     def _reduce_sum(t, axes, keepdims, noop_with_empty_axes):
-        # Handle empty axes list
-        if isinstance(axes, (list, tuple)) and len(axes) == 0:
-            if noop_with_empty_axes:
-                return t
-            # Empty axes with noop=False means reduce all dimensions
-            axes = None
-        if isinstance(axes, torch.Tensor) and axes.numel() == 0:
-            if noop_with_empty_axes:
-                return t
-            axes = None
+        should_noop, axes = _handle_empty_axes(axes, noop_with_empty_axes)
+        if should_noop:
+            return t
+        
         if axes is None:
             result = torch.sum(t)
             if keepdims:
                 # Reshape to have all dimensions as 1
                 result = result.reshape([1] * t.ndim)
             return result
-        if isinstance(axes, torch.Tensor):
-            axes = tuple(axes.tolist())
-        elif isinstance(axes, (list, tuple)):
-            axes = tuple(axes)
+        
+        axes = _normalize_axes(axes)
         return torch.sum(t, dim=axes, keepdim=keepdims)
 
     return builder.call_function(
@@ -94,24 +126,17 @@ def reduce_mean(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     noop_with_empty_axes = get_attribute(node, "noop_with_empty_axes", 0)
 
     def _reduce_mean(t, axes, keepdims, noop_with_empty_axes):
-        # Handle empty axes list
-        if isinstance(axes, (list, tuple)) and len(axes) == 0:
-            if noop_with_empty_axes:
-                return t
-            axes = None
-        if isinstance(axes, torch.Tensor) and axes.numel() == 0:
-            if noop_with_empty_axes:
-                return t
-            axes = None
+        should_noop, axes = _handle_empty_axes(axes, noop_with_empty_axes)
+        if should_noop:
+            return t
+        
         if axes is None:
             result = torch.mean(t)
             if keepdims:
                 result = result.reshape([1] * t.ndim)
             return result
-        if isinstance(axes, torch.Tensor):
-            axes = tuple(axes.tolist())
-        elif isinstance(axes, (list, tuple)):
-            axes = tuple(axes)
+        
+        axes = _normalize_axes(axes)
         return torch.mean(t, dim=axes, keepdim=keepdims)
 
     return builder.call_function(
@@ -268,15 +293,9 @@ def reduce_prod(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     noop_with_empty_axes = get_attribute(node, "noop_with_empty_axes", 0)
 
     def _reduce_prod(t, axes, keepdims, noop_with_empty_axes):
-        # Handle empty axes list
-        if isinstance(axes, (list, tuple)) and len(axes) == 0:
-            if noop_with_empty_axes:
-                return t
-            axes = None
-        if isinstance(axes, torch.Tensor) and axes.numel() == 0:
-            if noop_with_empty_axes:
-                return t
-            axes = None
+        should_noop, axes = _handle_empty_axes(axes, noop_with_empty_axes)
+        if should_noop:
+            return t
 
         if axes is None:
             result = torch.prod(t)
@@ -312,10 +331,7 @@ def reduce_l1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         abs_t = torch.abs(t)
         if axes is None:
             return torch.sum(abs_t)
-        if isinstance(axes, torch.Tensor):
-            axes = tuple(axes.tolist())
-        elif isinstance(axes, (list, tuple)):
-            axes = tuple(axes)
+        axes = _normalize_axes(axes)
         return torch.sum(abs_t, dim=axes, keepdim=keepdims)
 
     return builder.call_function(_reduce_l1, args=(x, axes, bool(keepdims)))
@@ -331,10 +347,7 @@ def reduce_l2(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     def _reduce_l2(t, axes, keepdims):
         if axes is None:
             return torch.norm(t)
-        if isinstance(axes, torch.Tensor):
-            axes = tuple(axes.tolist())
-        elif isinstance(axes, (list, tuple)):
-            axes = tuple(axes)
+        axes = _normalize_axes(axes)
         return torch.norm(t, dim=axes, keepdim=keepdims)
 
     return builder.call_function(_reduce_l2, args=(x, axes, bool(keepdims)))
@@ -350,10 +363,7 @@ def reduce_log_sum(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
     def _reduce_log_sum(t, axes, keepdims):
         if axes is None:
             return torch.log(torch.sum(t))
-        if isinstance(axes, torch.Tensor):
-            axes = tuple(axes.tolist())
-        elif isinstance(axes, (list, tuple)):
-            axes = tuple(axes)
+        axes = _normalize_axes(axes)
         return torch.log(torch.sum(t, dim=axes, keepdim=keepdims))
 
     return builder.call_function(_reduce_log_sum, args=(x, axes, bool(keepdims)))
@@ -369,10 +379,7 @@ def reduce_log_sum_exp(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.f
     def _reduce_log_sum_exp(t, axes, keepdims):
         if axes is None:
             return torch.logsumexp(t, dim=tuple(range(t.dim())))
-        if isinstance(axes, torch.Tensor):
-            axes = tuple(axes.tolist())
-        elif isinstance(axes, (list, tuple)):
-            axes = tuple(axes)
+        axes = _normalize_axes(axes)
         return torch.logsumexp(t, dim=axes, keepdim=keepdims)
 
     return builder.call_function(_reduce_log_sum_exp, args=(x, axes, bool(keepdims)))
@@ -389,10 +396,7 @@ def reduce_sum_square(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
         sq = torch.square(t)
         if axes is None:
             return torch.sum(sq)
-        if isinstance(axes, torch.Tensor):
-            axes = tuple(axes.tolist())
-        elif isinstance(axes, (list, tuple)):
-            axes = tuple(axes)
+        axes = _normalize_axes(axes)
         return torch.sum(sq, dim=axes, keepdim=keepdims)
 
     return builder.call_function(_reduce_sum_square, args=(x, axes, bool(keepdims)))
