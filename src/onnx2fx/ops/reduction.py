@@ -8,6 +8,7 @@ import torch
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.op_helpers import get_attribute_or_input
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
@@ -15,38 +16,23 @@ if TYPE_CHECKING:
 
 def _get_reduction_axes(
     node: onnx.NodeProto, builder: "GraphBuilder"
-) -> list[int] | None:
+) -> list[int] | torch.fx.Node | None:
     """Get axes for reduction, handling both attribute and input formats.
 
     In opset < 13, axes is an attribute.
     In opset 13-17, axes can be an attribute or an optional input.
     In opset 18+, axes is an optional input only.
     """
-    # First, always check if axes is provided as an attribute
-    # This works for opset < 18 where axes can be an attribute
-    axes_attr = get_attribute(node, "axes")
-    if axes_attr is not None:
-        return axes_attr
-
-    # If no attribute, check if axes is an input (opset 13+)
-    if builder.opset_version >= 13:
-        if len(node.input) > 1 and node.input[1]:
-            axes_name = node.input[1]
-            # Check if axes is an initializer (constant)
-            if axes_name in builder.initializer_map:
-                axes_tensor = builder.initializer_map[axes_name]
-                axes = axes_tensor.tolist()
-                if isinstance(axes, int):
-                    axes = [axes]
-                return axes
-            # Otherwise get the FX node
-            axes = builder.get_value(axes_name)
-            if isinstance(axes, torch.Tensor):
-                axes = axes.tolist()
-            return axes
-
-    # No axes specified means reduce over all dimensions
-    return None
+    return get_attribute_or_input(
+        builder,
+        node,
+        attr_name="axes",
+        input_index=1,
+        opset_version=builder.opset_version,
+        attr_allowed_until=17,
+        input_allowed_since=13,
+        default=None,
+    )
 
 
 @register("ReduceSum")

@@ -12,6 +12,7 @@ from onnxscript import opset16, opset17, opset18, opset19, opset20
 from onnxscript import opset21, opset22, opset23
 
 from onnx2fx import convert
+from onnx2fx.exceptions import ConversionError
 from onnx2fx.op_registry import get_handler, get_handler_versions
 
 from conftest import OPSET_MODULES, EINSUM_OPSET_MODULES, opset_id, run_onnx_test
@@ -189,6 +190,50 @@ class TestSqueezeOpsets:
         fx_model = run_onnx_test(model, (x, axes), expected)
         result = fx_model(x, axes)
         assert result.shape == (2, 4)
+
+
+class TestReduceSumOpsets:
+    """Tests for ReduceSum opset version differences.
+
+    Opset < 13: axes is an attribute
+    Opset 13-17: axes can be attribute or optional input
+    Opset 18+: axes is an optional input only
+    """
+
+    @script(default_opset=opset11)
+    def reduce_sum_v11_attr(x: FLOAT) -> FLOAT:
+        return opset11.ReduceSum(x, axes=[1], keepdims=0)
+
+    @script(default_opset=opset18)
+    def reduce_sum_v18_input(x: FLOAT, axes: INT64) -> FLOAT:
+        return opset18.ReduceSum(x, axes, keepdims=0)
+
+    def test_reduce_sum_opset11_attribute(self):
+        model = self.reduce_sum_v11_attr.to_model_proto()
+        assert model.opset_import[0].version == 11
+
+        x = torch.randn(2, 3)
+        expected = x.sum(dim=1)
+        run_onnx_test(model, x, expected)
+
+    def test_reduce_sum_opset18_input(self):
+        model = self.reduce_sum_v18_input.to_model_proto()
+        assert model.opset_import[0].version == 18
+
+        x = torch.randn(2, 3)
+        axes = torch.tensor([1], dtype=torch.int64)
+        expected = x.sum(dim=1)
+        run_onnx_test(model, (x, axes), expected)
+
+    def test_reduce_sum_opset18_attribute_invalid(self):
+        x_info = helper.make_tensor_value_info("x", TensorProto.FLOAT, [2, 3])
+        y_info = helper.make_tensor_value_info("y", TensorProto.FLOAT, [2])
+        node = helper.make_node("ReduceSum", ["x"], ["y"], axes=[1], keepdims=0)
+        graph = helper.make_graph([node], "reduce_sum_invalid", [x_info], [y_info])
+        model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 18)])
+
+        with pytest.raises(ConversionError):
+            convert(model)
 
 
 class TestUnsqueezeOpsets:
