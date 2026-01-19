@@ -7,8 +7,7 @@ import torch.nn.functional as F
 from onnxscript import FLOAT, script
 from onnxscript import opset23 as op
 
-from onnx2fx import convert
-from conftest import OPSET_MODULES, opset_id
+from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
 class TestActivationOps:
@@ -44,52 +43,39 @@ class TestActivationOps:
 
     def test_relu(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.relu_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.relu(x))
+        run_onnx_test(self.relu_script.to_model_proto, x, torch.relu(x))
 
     def test_sigmoid(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.sigmoid_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.sigmoid(x))
+        run_onnx_test(self.sigmoid_script.to_model_proto, x, torch.sigmoid(x))
 
     def test_tanh(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.tanh_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.tanh(x))
+        run_onnx_test(self.tanh_script.to_model_proto, x, torch.tanh(x))
 
     def test_softmax(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.softmax_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.softmax(x, dim=-1))
+        run_onnx_test(self.softmax_script.to_model_proto, x, torch.softmax(x, dim=-1))
 
     def test_leaky_relu(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.leaky_relu_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.nn.functional.leaky_relu(x, 0.1))
+        run_onnx_test(
+            self.leaky_relu_script.to_model_proto,
+            x,
+            torch.nn.functional.leaky_relu(x, 0.1),
+        )
 
     def test_elu(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.elu_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.nn.functional.elu(x, 1.0))
+        run_onnx_test(
+            self.elu_script.to_model_proto, x, torch.nn.functional.elu(x, 1.0)
+        )
 
     def test_softplus(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.softplus_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.nn.functional.softplus(x))
+        run_onnx_test(
+            self.softplus_script.to_model_proto, x, torch.nn.functional.softplus(x)
+        )
 
 
 class TestActivationOpsMultiOpset:
@@ -103,12 +89,8 @@ class TestActivationOpsMultiOpset:
         def relu_script(x: FLOAT) -> FLOAT:
             return opset.Relu(x)
 
-        model = relu_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = torch.relu(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(relu_script.to_model_proto, x, torch.relu(x))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_sigmoid_all_opsets(self, opset):
@@ -118,12 +100,8 @@ class TestActivationOpsMultiOpset:
         def sigmoid_script(x: FLOAT) -> FLOAT:
             return opset.Sigmoid(x)
 
-        model = sigmoid_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = torch.sigmoid(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(sigmoid_script.to_model_proto, x, torch.sigmoid(x))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_tanh_all_opsets(self, opset):
@@ -133,12 +111,8 @@ class TestActivationOpsMultiOpset:
         def tanh_script(x: FLOAT) -> FLOAT:
             return opset.Tanh(x)
 
-        model = tanh_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = torch.tanh(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(tanh_script.to_model_proto, x, torch.tanh(x))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_leaky_relu_all_opsets(self, opset):
@@ -148,12 +122,8 @@ class TestActivationOpsMultiOpset:
         def leaky_relu_script(x: FLOAT) -> FLOAT:
             return opset.LeakyRelu(x, alpha=0.1)
 
-        model = leaky_relu_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = F.leaky_relu(x, 0.1)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(leaky_relu_script.to_model_proto, x, F.leaky_relu(x, 0.1))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_elu_all_opsets(self, opset):
@@ -163,12 +133,8 @@ class TestActivationOpsMultiOpset:
         def elu_script(x: FLOAT) -> FLOAT:
             return opset.Elu(x, alpha=1.0)
 
-        model = elu_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = F.elu(x, 1.0)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(elu_script.to_model_proto, x, F.elu(x, 1.0))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_softplus_all_opsets(self, opset):
@@ -178,12 +144,8 @@ class TestActivationOpsMultiOpset:
         def softplus_script(x: FLOAT) -> FLOAT:
             return opset.Softplus(x)
 
-        model = softplus_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = F.softplus(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(softplus_script.to_model_proto, x, F.softplus(x))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_softmax_with_axis_all_opsets(self, opset):
@@ -193,9 +155,5 @@ class TestActivationOpsMultiOpset:
         def softmax_script(x: FLOAT) -> FLOAT:
             return opset.Softmax(x, axis=-1)
 
-        model = softmax_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 3, 4)
-        result = fx_model(x)
-        expected = F.softmax(x, dim=-1)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(softmax_script.to_model_proto, x, F.softmax(x, dim=-1))

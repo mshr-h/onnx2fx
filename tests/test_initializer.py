@@ -6,8 +6,7 @@ import torch
 import onnx
 from onnx import helper, TensorProto
 
-from onnx2fx import convert
-from conftest import OPSET_MODULES, opset_id
+from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
 class TestInitializer:
@@ -42,16 +41,9 @@ class TestInitializer:
             graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
         )
 
-        # Convert model with initializer
-        fx_model = convert(model)
-
-        # Test that the model works correctly
         x = torch.randn(2, 4)
-        with torch.inference_mode():
-            result = fx_model(x)
-
         expected = torch.matmul(x, torch.from_numpy(weight_data))
-        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
+        run_onnx_test(model, x, expected)
 
 
 class TestInitializerMultiOpset:
@@ -82,11 +74,6 @@ class TestInitializerMultiOpset:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(2, 4)
-        with torch.inference_mode():
-            result = fx_model(x)
-
         expected = torch.matmul(x, torch.from_numpy(weight_data))
-        torch.testing.assert_close(result, expected, atol=1e-5, rtol=1e-5)
+        run_onnx_test(model, x, expected)

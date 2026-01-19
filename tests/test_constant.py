@@ -8,8 +8,7 @@ from onnx import helper, TensorProto
 from onnxscript import FLOAT, script
 from onnxscript import opset23 as op
 
-from onnx2fx import convert
-from conftest import OPSET_MODULES, opset_id
+from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
 class TestConstantOp:
@@ -25,23 +24,9 @@ class TestConstantOp:
 
     def test_constant_operation(self):
         """Test Constant op is correctly converted."""
-        example_input = torch.randn(2, 4)
-        onnx_model = self.constant_add_script.to_model_proto()
-
-        fx_model = convert(onnx_model)
-
-        # Eager mode evaluation
-        eager_output = self.constant_add_script(example_input.numpy())
-
-        with torch.inference_mode():
-            fx_output = fx_model(example_input)
-
-        (
-            torch.testing.assert_close(
-                torch.from_numpy(eager_output), fx_output, rtol=1e-5, atol=1e-5
-            ),
-            ("Constant op outputs do not match!"),
-        )
+        x = torch.randn(2, 4)
+        expected = x + torch.ones(2, 4)
+        run_onnx_test(self.constant_add_script.to_model_proto, x, expected)
 
 
 class TestConstantOpMultiOpset:
@@ -67,9 +52,6 @@ class TestConstantOpMultiOpset:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_model = convert(model)
-
         x = torch.tensor([4.0, 5.0, 6.0])
-        result = fx_model(x)
         expected = x + torch.tensor([1.0, 2.0, 3.0])
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, x, expected)

@@ -5,6 +5,7 @@ import torch
 from onnxscript import FLOAT, INT64, script
 from onnxscript import opset23 as op
 
+from conftest import run_onnx_test
 from onnx2fx import convert
 
 
@@ -73,21 +74,19 @@ class TestSequenceOps:
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
         c = torch.randn(2, 3)
-        fx_model = convert(self.sequence_construct_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(a, b, c)
         expected = torch.cat([a, b, c], dim=0)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(
+            self.sequence_construct_script.to_model_proto, (a, b, c), expected
+        )
 
     def test_sequence_at(self):
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
         c = torch.randn(2, 3)
         idx = torch.tensor(1, dtype=torch.int64)
-        fx_model = convert(self.sequence_at_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(a, b, c, idx)
-        torch.testing.assert_close(result, b)
+        run_onnx_test(
+            self.sequence_at_script.to_model_proto, (a, b, c, idx), b
+        )
 
     def test_sequence_length(self):
         a = torch.randn(2, 3)
@@ -108,60 +107,52 @@ class TestSequenceOps:
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
         new_elem = torch.randn(2, 3)
-        fx_model = convert(self.sequence_insert_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(a, b, new_elem)
         expected = torch.cat([a, b, new_elem], dim=0)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(
+            self.sequence_insert_script.to_model_proto, (a, b, new_elem), expected
+        )
 
     def test_sequence_insert_at_position(self):
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
         new_elem = torch.randn(2, 3)
         pos = torch.tensor(1, dtype=torch.int64)
-        fx_model = convert(self.sequence_insert_at_pos_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(a, b, new_elem, pos)
         # Insert at position 1: [a, new_elem, b]
         expected = torch.cat([a, new_elem, b], dim=0)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(
+            self.sequence_insert_at_pos_script.to_model_proto,
+            (a, b, new_elem, pos),
+            expected,
+        )
 
     def test_sequence_erase(self):
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
         c = torch.randn(2, 3)
-        fx_model = convert(self.sequence_erase_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(a, b, c)
         # Erase last element: [a, b]
         expected = torch.cat([a, b], dim=0)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(self.sequence_erase_script.to_model_proto, (a, b, c), expected)
 
     def test_sequence_erase_at_position(self):
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
         c = torch.randn(2, 3)
         pos = torch.tensor(1, dtype=torch.int64)
-        fx_model = convert(self.sequence_erase_at_pos_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(a, b, c, pos)
         # Erase at position 1: [a, c]
         expected = torch.cat([a, c], dim=0)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(
+            self.sequence_erase_at_pos_script.to_model_proto, (a, b, c, pos), expected
+        )
 
     def test_concat_from_sequence_with_stack(self):
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
         c = torch.randn(2, 3)
-        fx_model = convert(self.concat_from_sequence_stack_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(a, b, c)
         expected = torch.stack([a, b, c], dim=0)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(
+            self.concat_from_sequence_stack_script.to_model_proto, (a, b, c), expected
+        )
 
     def test_split_to_sequence(self):
         x = torch.randn(6, 3)
-        fx_model = convert(self.split_to_sequence_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, x)
+        run_onnx_test(self.split_to_sequence_script.to_model_proto, x, x)

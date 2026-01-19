@@ -7,6 +7,7 @@ from onnxscript import FLOAT, script
 from onnxscript import opset23 as op
 
 from onnx2fx import convert
+from conftest import run_onnx_test
 
 
 # =============================================================================
@@ -31,24 +32,15 @@ class TestTrigOps:
 
     def test_sin(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.sin_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.sin(x))
+        run_onnx_test(self.sin_script.to_model_proto, x, torch.sin(x))
 
     def test_cos(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.cos_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.cos(x))
+        run_onnx_test(self.cos_script.to_model_proto, x, torch.cos(x))
 
     def test_tan(self):
         x = torch.randn(2, 4) * 0.5  # Avoid large values
-        fx_model = convert(self.tan_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.tan(x), atol=1e-5, rtol=1e-5)
+        run_onnx_test(self.tan_script.to_model_proto, x, torch.tan(x), atol=1e-5, rtol=1e-5)
 
 
 # =============================================================================
@@ -69,10 +61,7 @@ class TestMathOps:
 
     def test_erf(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.erf_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.erf(x))
+        run_onnx_test(self.erf_script.to_model_proto, x, torch.erf(x))
 
     def test_isnan(self):
         x = torch.tensor([1.0, float("nan"), 2.0, float("nan")])
@@ -112,17 +101,12 @@ class TestRangeOp:
             graph, opset_imports=[onnx.helper.make_opsetid("", 23)]
         )
 
-        fx_model = convert(model)
-
         start = torch.tensor(0.0)
         limit = torch.tensor(5.0)
         delta = torch.tensor(1.0)
-
-        with torch.inference_mode():
-            result = fx_model(start, limit, delta)
-
         expected = torch.arange(0.0, 5.0, 1.0)
-        torch.testing.assert_close(result, expected)
+
+        run_onnx_test(model, (start, limit, delta), expected)
 
 
 # =============================================================================
@@ -150,16 +134,11 @@ class TestCumSumOp:
             graph, opset_imports=[onnx.helper.make_opsetid("", 23)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(2, 4)
         axis = torch.tensor(1)
-
-        with torch.inference_mode():
-            result = fx_model(x, axis)
-
         expected = torch.cumsum(x, dim=1)
-        torch.testing.assert_close(result, expected)
+
+        run_onnx_test(model, (x, axis), expected)
 
 
 class TestTriluOp:
@@ -177,15 +156,10 @@ class TestTriluOp:
             graph, opset_imports=[onnx.helper.make_opsetid("", 23)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(3, 3)
-
-        with torch.inference_mode():
-            result = fx_model(x)
-
         expected = torch.triu(x)
-        torch.testing.assert_close(result, expected)
+
+        run_onnx_test(model, x, expected)
 
     def test_tril(self):
         """Test lower triangular."""
@@ -199,12 +173,7 @@ class TestTriluOp:
             graph, opset_imports=[onnx.helper.make_opsetid("", 23)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(3, 3)
-
-        with torch.inference_mode():
-            result = fx_model(x)
-
         expected = torch.tril(x)
-        torch.testing.assert_close(result, expected)
+
+        run_onnx_test(model, x, expected)

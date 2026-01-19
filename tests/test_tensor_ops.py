@@ -10,7 +10,7 @@ from onnxscript import FLOAT, INT64, script
 from onnxscript import opset23 as op
 
 from onnx2fx import convert
-from conftest import OPSET_MODULES, opset_id
+from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
 class TestTensorOps:
@@ -45,18 +45,12 @@ class TestTensorOps:
 
     def test_transpose(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.transpose_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, x.T)
+        run_onnx_test(self.transpose_script.to_model_proto, x, x.T)
 
     def test_concat(self):
         x = torch.randn(2, 4)
         y = torch.randn(3, 4)
-        fx_model = convert(self.concat_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        torch.testing.assert_close(result, torch.cat([x, y], dim=0))
+        run_onnx_test(self.concat_script.to_model_proto, (x, y), torch.cat([x, y], dim=0))
 
     def test_flatten(self):
         x = torch.randn(2, 3, 4)
@@ -134,31 +128,19 @@ class TestReductionOps:
 
     def test_reduce_sum(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.reduce_sum_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, x.sum())
+        run_onnx_test(self.reduce_sum_script.to_model_proto, x, x.sum())
 
     def test_reduce_mean(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.reduce_mean_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, x.mean())
+        run_onnx_test(self.reduce_mean_script.to_model_proto, x, x.mean())
 
     def test_reduce_max(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.reduce_max_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, x.max())
+        run_onnx_test(self.reduce_max_script.to_model_proto, x, x.max())
 
     def test_reduce_min(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.reduce_min_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, x.min())
+        run_onnx_test(self.reduce_min_script.to_model_proto, x, x.min())
 
 
 class TestTensorOpsMultiOpset:
@@ -172,12 +154,8 @@ class TestTensorOpsMultiOpset:
         def transpose_script(x: FLOAT) -> FLOAT:
             return opset.Transpose(x, perm=[1, 0])
 
-        model = transpose_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = x.T
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(transpose_script.to_model_proto, x, x.T)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_concat_all_opsets(self, opset):
@@ -187,13 +165,9 @@ class TestTensorOpsMultiOpset:
         def concat_script(x: FLOAT, y: FLOAT) -> FLOAT:
             return opset.Concat(x, y, axis=0)
 
-        model = concat_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
         y = torch.randn(3, 4)
-        result = fx_model(x, y)
-        expected = torch.cat([x, y], dim=0)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(concat_script.to_model_proto, (x, y), torch.cat([x, y], dim=0))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_flatten_all_opsets(self, opset):
@@ -232,14 +206,9 @@ class TestTensorOpsMultiOpset:
         def expand_script(x: FLOAT, shape: INT64) -> FLOAT:
             return opset.Expand(x, shape)
 
-        model = expand_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(1, 4)
         shape = torch.tensor([3, 4], dtype=torch.int64)
-        result = fx_model(x, shape)
-        assert result.shape == (3, 4)
-        expected = x.expand(3, 4)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(expand_script.to_model_proto, (x, shape), x.expand(3, 4))
 
 
 class TestReductionOpsMultiOpset:
@@ -253,12 +222,8 @@ class TestReductionOpsMultiOpset:
         def reduce_sum_script(x: FLOAT) -> FLOAT:
             return opset.ReduceSum(x, keepdims=0)
 
-        model = reduce_sum_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = x.sum()
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(reduce_sum_script.to_model_proto, x, x.sum())
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_reduce_mean_all_opsets(self, opset):
@@ -268,12 +233,8 @@ class TestReductionOpsMultiOpset:
         def reduce_mean_script(x: FLOAT) -> FLOAT:
             return opset.ReduceMean(x, keepdims=0)
 
-        model = reduce_mean_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = x.mean()
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(reduce_mean_script.to_model_proto, x, x.mean())
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_reduce_max_all_opsets(self, opset):
@@ -283,12 +244,8 @@ class TestReductionOpsMultiOpset:
         def reduce_max_script(x: FLOAT) -> FLOAT:
             return opset.ReduceMax(x, keepdims=0)
 
-        model = reduce_max_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = x.max()
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(reduce_max_script.to_model_proto, x, x.max())
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_reduce_min_all_opsets(self, opset):
@@ -298,12 +255,8 @@ class TestReductionOpsMultiOpset:
         def reduce_min_script(x: FLOAT) -> FLOAT:
             return opset.ReduceMin(x, keepdims=0)
 
-        model = reduce_min_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = x.min()
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(reduce_min_script.to_model_proto, x, x.min())
 
 
 class TestCompressOp:
@@ -328,17 +281,13 @@ class TestCompressOp:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         data = torch.tensor(
             [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]
         )
         condition = torch.tensor([True, False, True])
-
-        result = fx_module(data, condition)
         expected = torch.tensor([[1.0, 2.0, 3.0, 4.0], [9.0, 10.0, 11.0, 12.0]])
 
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (data, condition), expected)
 
     def test_compress_flat(self):
         """Test compress without axis (flattened)."""
@@ -358,15 +307,11 @@ class TestCompressOp:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         data = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         condition = torch.tensor([True, False, True, False, True, False])
-
-        result = fx_module(data, condition)
         expected = torch.tensor([1.0, 3.0, 5.0])
 
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (data, condition), expected)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_compress_all_opsets(self, opset):
@@ -389,17 +334,13 @@ class TestCompressOp:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_module = convert(model)
-
         data = torch.tensor(
             [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0]]
         )
         condition = torch.tensor([True, False, True])
-
-        result = fx_module(data, condition)
         expected = torch.tensor([[1.0, 2.0, 3.0, 4.0], [9.0, 10.0, 11.0, 12.0]])
 
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (data, condition), expected)
 
 
 class TestConstantOfShapeOp:
@@ -426,14 +367,10 @@ class TestConstantOfShapeOp:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         shape = torch.tensor([2, 3], dtype=torch.int64)
+        expected = torch.full((2, 3), 3.14)
 
-        result = fx_module(shape)
-
-        assert result.shape == (2, 3)
-        torch.testing.assert_close(result, torch.full((2, 3), 3.14))
+        run_onnx_test(model, shape, expected)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_constant_of_shape_all_opsets(self, opset):
@@ -454,13 +391,10 @@ class TestConstantOfShapeOp:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_module = convert(model)
-
         shape = torch.tensor([2, 3], dtype=torch.int64)
-        result = fx_module(shape)
         expected = torch.full((2, 3), 3.14)
 
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, shape, expected)
 
 
 class TestMultiOutputOps:
@@ -516,15 +450,11 @@ class TestMultiOutputOps:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         x = torch.tensor(
             [[1.0, 4.0, 2.0, 3.0], [5.0, 2.0, 8.0, 1.0], [3.0, 6.0, 4.0, 7.0]]
         )
         k = torch.tensor([2], dtype=torch.int64)
 
-        values, indices = fx_module(x, k)
-
         expected_values, expected_indices = torch.topk(x, 2, dim=-1)
-        torch.testing.assert_close(values, expected_values)
-        torch.testing.assert_close(indices, expected_indices)
+
+        run_onnx_test(model, (x, k), (expected_values, expected_indices))

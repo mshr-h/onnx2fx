@@ -9,7 +9,7 @@ from onnxscript import FLOAT, script
 from onnxscript import opset23 as op
 
 from onnx2fx import convert
-from conftest import OPSET_MODULES, opset_id
+from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
 class TestMatMulOps:
@@ -22,18 +22,12 @@ class TestMatMulOps:
     def test_matmul(self):
         x = torch.randn(2, 3)
         y = torch.randn(3, 4)
-        fx_model = convert(self.matmul_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        torch.testing.assert_close(result, torch.matmul(x, y))
+        run_onnx_test(self.matmul_script.to_model_proto, (x, y), torch.matmul(x, y))
 
     def test_matmul_batched(self):
         x = torch.randn(2, 3, 4)
         y = torch.randn(2, 4, 5)
-        fx_model = convert(self.matmul_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        torch.testing.assert_close(result, torch.matmul(x, y))
+        run_onnx_test(self.matmul_script.to_model_proto, (x, y), torch.matmul(x, y))
 
 
 class TestGemmOp:
@@ -55,17 +49,12 @@ class TestGemmOp:
             graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
         )
 
-        fx_model = convert(model)
-
         A = torch.randn(2, 3)
         B = torch.randn(3, 4)
         C = torch.randn(4)
-
-        with torch.inference_mode():
-            result = fx_model(A, B, C)
-
         expected = torch.matmul(A, B) + C
-        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
+
+        run_onnx_test(model, (A, B, C), expected, rtol=1e-5, atol=1e-5)
 
 
 class TestConvOps:
@@ -95,16 +84,11 @@ class TestConvOps:
             graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(1, 3, 8, 8)
         w = torch.randn(16, 3, 3, 3)
-
-        with torch.inference_mode():
-            result = fx_model(x, w)
-
         expected = torch.nn.functional.conv2d(x, w, padding=1)
-        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
+
+        run_onnx_test(model, (x, w), expected, rtol=1e-5, atol=1e-5)
 
     def test_conv2d_with_bias(self):
         """Test Conv2D with bias."""
@@ -133,17 +117,12 @@ class TestConvOps:
             graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(1, 3, 8, 8)
         w = torch.randn(16, 3, 3, 3)
         b = torch.randn(16)
-
-        with torch.inference_mode():
-            result = fx_model(x, w, b)
-
         expected = torch.nn.functional.conv2d(x, w, bias=b)
-        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
+
+        run_onnx_test(model, (x, w, b), expected, rtol=1e-5, atol=1e-5)
 
 
 class TestPoolingOps:
@@ -165,15 +144,10 @@ class TestPoolingOps:
             graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(1, 3, 8, 8)
-
-        with torch.inference_mode():
-            result = fx_model(x)
-
         expected = torch.nn.functional.max_pool2d(x, kernel_size=2, stride=2)
-        torch.testing.assert_close(result, expected)
+
+        run_onnx_test(model, x, expected)
 
     def test_max_pool2d_auto_pad_same_upper(self):
         """Test MaxPool2D with auto_pad=SAME_UPPER."""
@@ -272,15 +246,10 @@ class TestPoolingOps:
             graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(1, 3, 8, 8)
-
-        with torch.inference_mode():
-            result = fx_model(x)
-
         expected = torch.nn.functional.avg_pool2d(x, kernel_size=2, stride=2)
-        torch.testing.assert_close(result, expected)
+
+        run_onnx_test(model, x, expected)
 
     def test_global_average_pool(self):
         """Test GlobalAveragePool."""
@@ -296,15 +265,10 @@ class TestPoolingOps:
             graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(1, 3, 8, 8)
-
-        with torch.inference_mode():
-            result = fx_model(x)
-
         expected = x.mean(dim=(2, 3), keepdim=True)
-        torch.testing.assert_close(result, expected)
+
+        run_onnx_test(model, x, expected)
 
 
 class TestNormalizationOps:
@@ -346,19 +310,14 @@ class TestNormalizationOps:
             graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(2, 3, 4, 4)
         scale = torch.ones(3)
         bias = torch.zeros(3)
         mean = torch.zeros(3)
         var = torch.ones(3)
-
-        with torch.inference_mode():
-            result = fx_model(x, scale, bias, mean, var)
-
         expected = torch.nn.functional.batch_norm(x, mean, var, scale, bias, eps=1e-5)
-        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
+
+        run_onnx_test(model, (x, scale, bias, mean, var), expected, rtol=1e-5, atol=1e-5)
 
     def test_layer_norm(self):
         """Test LayerNormalization."""
@@ -384,17 +343,12 @@ class TestNormalizationOps:
             graph, opset_imports=[onnx.helper.make_opsetid("", 17)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(2, 3, 4)
         scale = torch.ones(4)
         bias = torch.zeros(4)
-
-        with torch.inference_mode():
-            result = fx_model(x, scale, bias)
-
         expected = torch.nn.functional.layer_norm(x, [4], scale, bias, eps=1e-5)
-        torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-5)
+
+        run_onnx_test(model, (x, scale, bias), expected, rtol=1e-5, atol=1e-5)
 
 
 class TestDropout:
@@ -412,15 +366,10 @@ class TestDropout:
             graph, opset_imports=[onnx.helper.make_opsetid("", 15)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(2, 3)
 
-        with torch.inference_mode():
-            result = fx_model(x)
-
         # In inference mode, dropout should be identity
-        torch.testing.assert_close(result, x)
+        run_onnx_test(model, x, x)
 
 
 class TestNNOpsMultiOpset:
@@ -434,13 +383,9 @@ class TestNNOpsMultiOpset:
         def matmul_script(x: FLOAT, y: FLOAT) -> FLOAT:
             return opset.MatMul(x, y)
 
-        model = matmul_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 3)
         y = torch.randn(3, 4)
-        result = fx_model(x, y)
-        expected = torch.matmul(x, y)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(matmul_script.to_model_proto, (x, y), torch.matmul(x, y))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_matmul_batched_all_opsets(self, opset):
@@ -450,13 +395,9 @@ class TestNNOpsMultiOpset:
         def matmul_script(x: FLOAT, y: FLOAT) -> FLOAT:
             return opset.MatMul(x, y)
 
-        model = matmul_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 3, 4)
         y = torch.randn(2, 4, 5)
-        result = fx_model(x, y)
-        expected = torch.matmul(x, y)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(matmul_script.to_model_proto, (x, y), torch.matmul(x, y))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_batch_normalization_all_opsets(self, opset):
@@ -496,16 +437,11 @@ class TestNNOpsMultiOpset:
             graph, opset_imports=[onnx.helper.make_opsetid("", opset.version)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(2, 3, 4, 4)
         scale = torch.ones(3)
         bias = torch.zeros(3)
         mean = torch.zeros(3)
         var = torch.ones(3)
-
-        with torch.inference_mode():
-            result = fx_model(x, scale, bias, mean, var)
-
         expected = F.batch_norm(x, mean, var, scale, bias, training=False, eps=1e-5)
-        torch.testing.assert_close(result, expected, atol=1e-5, rtol=1e-5)
+
+        run_onnx_test(model, (x, scale, bias, mean, var), expected, atol=1e-5, rtol=1e-5)

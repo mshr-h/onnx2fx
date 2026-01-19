@@ -14,7 +14,7 @@ from onnxscript import opset21, opset22, opset23
 from onnx2fx import convert
 from onnx2fx.op_registry import get_handler, get_handler_versions
 
-from conftest import OPSET_MODULES, EINSUM_OPSET_MODULES, opset_id
+from conftest import OPSET_MODULES, EINSUM_OPSET_MODULES, opset_id, run_onnx_test
 
 
 class TestOpsetVersionRegistry:
@@ -78,61 +78,48 @@ class TestSoftmaxOpsets:
         model = self.softmax_v11_default.to_model_proto()
         assert model.opset_import[0].version == 11
 
-        fx_model = convert(model)
         x = torch.randn(2, 3, 4)
-        result = fx_model(x)
-
         # Opset < 13: coerce to 2D at axis=1, apply softmax, reshape back
         x_2d = x.reshape(2, -1)  # [2, 12]
         expected = F.softmax(x_2d, dim=1).reshape(2, 3, 4)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, x, expected)
 
     def test_softmax_opset11_explicit_axis(self):
         """Opset 11: explicit axis=2."""
         model = self.softmax_v11_axis2.to_model_proto()
-        fx_model = convert(model)
-        x = torch.randn(2, 3, 4)
-        result = fx_model(x)
 
+        x = torch.randn(2, 3, 4)
         # Coerce to 2D at axis=2
         x_2d = x.reshape(6, 4)  # [2*3, 4]
         expected = F.softmax(x_2d, dim=1).reshape(2, 3, 4)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, x, expected)
 
     def test_softmax_opset13_default_axis(self):
         """Opset 13+: default axis=-1, direct softmax."""
         model = self.softmax_v13_default.to_model_proto()
         assert model.opset_import[0].version == 13
 
-        fx_model = convert(model)
         x = torch.randn(2, 3, 4)
-        result = fx_model(x)
-
         # Opset 13+: direct softmax on last dimension
         expected = F.softmax(x, dim=-1)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, x, expected)
 
     def test_softmax_opset13_explicit_axis(self):
         """Opset 13+: explicit axis=1."""
         model = self.softmax_v13_axis1.to_model_proto()
-        fx_model = convert(model)
-        x = torch.randn(2, 3, 4)
-        result = fx_model(x)
 
+        x = torch.randn(2, 3, 4)
         expected = F.softmax(x, dim=1)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, x, expected)
 
     def test_softmax_opset23(self):
         """Opset 23: same behavior as opset 13."""
         model = self.softmax_v23_default.to_model_proto()
         assert model.opset_import[0].version == 23
 
-        fx_model = convert(model)
         x = torch.randn(2, 3, 4)
-        result = fx_model(x)
-
         expected = F.softmax(x, dim=-1)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, x, expected)
 
 
 class TestSqueezeOpsets:
@@ -163,46 +150,44 @@ class TestSqueezeOpsets:
         model = self.squeeze_v11_attr.to_model_proto()
         assert model.opset_import[0].version == 11
 
-        fx_model = convert(model)
         x = torch.randn(2, 1, 4)
+        expected = x.squeeze(1)
+        fx_model = run_onnx_test(model, x, expected)
         result = fx_model(x)
-
         assert result.shape == (2, 4)
-        torch.testing.assert_close(result, x.squeeze(1))
 
     def test_squeeze_opset13_input(self):
         """Opset 13+: axes as input."""
         model = self.squeeze_v13_input.to_model_proto()
         assert model.opset_import[0].version == 13
 
-        fx_model = convert(model)
         x = torch.randn(2, 1, 4)
         axes = torch.tensor([1], dtype=torch.int64)
+        expected = x.squeeze(1)
+        fx_model = run_onnx_test(model, (x, axes), expected)
         result = fx_model(x, axes)
-
         assert result.shape == (2, 4)
-        torch.testing.assert_close(result, x.squeeze(1))
 
     def test_squeeze_opset13_no_axes(self):
         """Opset 13+: no axes input - squeeze all."""
         model = self.squeeze_v13_no_axes.to_model_proto()
-        fx_model = convert(model)
-        x = torch.randn(2, 1, 1, 4)
-        result = fx_model(x)
 
+        x = torch.randn(2, 1, 1, 4)
+        expected = x.squeeze()
+        fx_model = run_onnx_test(model, x, expected)
+        result = fx_model(x)
         assert result.shape == (2, 4)
-        torch.testing.assert_close(result, x.squeeze())
 
     def test_squeeze_opset23(self):
         """Opset 23: same behavior as opset 13."""
         model = self.squeeze_v23_input.to_model_proto()
         assert model.opset_import[0].version == 23
 
-        fx_model = convert(model)
         x = torch.randn(2, 1, 4)
         axes = torch.tensor([1], dtype=torch.int64)
+        expected = x.squeeze(1)
+        fx_model = run_onnx_test(model, (x, axes), expected)
         result = fx_model(x, axes)
-
         assert result.shape == (2, 4)
 
 
@@ -230,36 +215,34 @@ class TestUnsqueezeOpsets:
         model = self.unsqueeze_v11_attr.to_model_proto()
         assert model.opset_import[0].version == 11
 
-        fx_model = convert(model)
         x = torch.randn(2, 4)
+        expected = x.unsqueeze(1)
+        fx_model = run_onnx_test(model, x, expected)
         result = fx_model(x)
-
         assert result.shape == (2, 1, 4)
-        torch.testing.assert_close(result, x.unsqueeze(1))
 
     def test_unsqueeze_opset13_input(self):
         """Opset 13+: axes as input."""
         model = self.unsqueeze_v13_input.to_model_proto()
         assert model.opset_import[0].version == 13
 
-        fx_model = convert(model)
         x = torch.randn(2, 4)
         axes = torch.tensor([1], dtype=torch.int64)
+        expected = x.unsqueeze(1)
+        fx_model = run_onnx_test(model, (x, axes), expected)
         result = fx_model(x, axes)
-
         assert result.shape == (2, 1, 4)
-        torch.testing.assert_close(result, x.unsqueeze(1))
 
     def test_unsqueeze_opset23(self):
         """Opset 23: same behavior as opset 13."""
         model = self.unsqueeze_v23_input.to_model_proto()
         assert model.opset_import[0].version == 23
 
-        fx_model = convert(model)
         x = torch.randn(2, 4)
         axes = torch.tensor([1], dtype=torch.int64)
+        expected = x.unsqueeze(1)
+        fx_model = run_onnx_test(model, (x, axes), expected)
         result = fx_model(x, axes)
-
         assert result.shape == (2, 1, 4)
 
 
@@ -355,12 +338,9 @@ class TestReluAllOpsets:
         def relu_script(x: FLOAT) -> FLOAT:
             return op.Relu(x)
 
-        model = relu_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
         expected = torch.relu(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(relu_script.to_model_proto, x, expected)
 
 
 class TestAddAllOpsets:
@@ -374,13 +354,10 @@ class TestAddAllOpsets:
         def add_script(x: FLOAT, y: FLOAT) -> FLOAT:
             return op.Add(x, y)
 
-        model = add_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
-        result = fx_model(x, y)
         expected = x + y
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(add_script.to_model_proto, (x, y), expected)
 
 
 class TestMatMulAllOpsets:
@@ -394,13 +371,10 @@ class TestMatMulAllOpsets:
         def matmul_script(x: FLOAT, y: FLOAT) -> FLOAT:
             return op.MatMul(x, y)
 
-        model = matmul_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 3)
         y = torch.randn(3, 4)
-        result = fx_model(x, y)
         expected = torch.matmul(x, y)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(matmul_script.to_model_proto, (x, y), expected)
 
 
 class TestEinsumAllOpsets:
@@ -426,16 +400,10 @@ class TestEinsumAllOpsets:
             graph, opset_imports=[onnx.helper.make_opsetid("", opset.version)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(2, 3)
         y = torch.randn(3, 4)
-
-        with torch.inference_mode():
-            result = fx_model(x, y)
-
         expected = torch.einsum("ij,jk->ik", x, y)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (x, y), expected)
 
 
 class TestGatherAllOpsets:
@@ -449,14 +417,10 @@ class TestGatherAllOpsets:
         def gather_script(data: FLOAT, indices: INT64) -> FLOAT:
             return opset.Gather(data, indices, axis=0)
 
-        model = gather_script.to_model_proto()
-        fx_model = convert(model)
-
         data = torch.randn(5, 4)
         indices = torch.tensor([0, 2, 4], dtype=torch.int64)
-        result = fx_model(data, indices)
         expected = data[indices]
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(gather_script.to_model_proto, (data, indices), expected)
 
 
 class TestWhereAllOpsets:
@@ -479,14 +443,11 @@ class TestWhereAllOpsets:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_model = convert(model)
-
         cond = torch.tensor([[True, False], [False, True]])
         x = torch.randn(2, 2)
         y = torch.randn(2, 2)
-        result = fx_model(cond, x, y)
         expected = torch.where(cond, x, y)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (cond, x, y), expected)
 
 
 class TestHardmaxAllOpsets:
@@ -505,13 +466,9 @@ class TestHardmaxAllOpsets:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_module = convert(model)
-
         x = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0], [5.0, 4.0, 3.0, 2.0, 1.0]])
         expected = torch.tensor([[0.0, 0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 0.0, 0.0]])
-
-        result = fx_module(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, x, expected)
 
 
 class TestLogSoftmaxAllOpsets:
@@ -546,13 +503,9 @@ class TestLogSoftmaxAllOpsets:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_module = convert(model)
-
         x = torch.randn(2, 3, 4)
         expected = F.log_softmax(x, dim=-1)
-
-        result = fx_module(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, x, expected)
 
 
 class TestGatherNDAllOpsets:
@@ -576,11 +529,7 @@ class TestGatherNDAllOpsets:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_module = convert(model)
-
         data = torch.tensor([[0.0, 1.0], [2.0, 3.0]])
         indices = torch.tensor([[0, 0], [1, 1]], dtype=torch.int64)
-
-        result = fx_module(data, indices)
         expected = torch.tensor([0.0, 3.0])
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (data, indices), expected)

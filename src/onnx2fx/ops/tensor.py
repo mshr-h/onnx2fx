@@ -9,6 +9,7 @@ import torch
 from ..exceptions import ConversionError
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.names import sanitize_name
 from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
@@ -46,7 +47,7 @@ def constant(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         )
 
     output_name = node.output[0]
-    safe_name = output_name.replace(".", "_").replace("/", "_")
+    safe_name = sanitize_name(output_name)
     builder._constants[safe_name] = value
 
     fx_node = builder.graph.get_attr(safe_name)

@@ -7,8 +7,7 @@ from onnx import TensorProto, helper
 from onnxscript import FLOAT, script
 from onnxscript import opset23 as op
 
-from onnx2fx import convert
-from conftest import OPSET_MODULES, opset_id
+from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
 class TestBinaryArithmetic:
@@ -41,50 +40,34 @@ class TestBinaryArithmetic:
     def test_sub(self):
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
-        fx_model = convert(self.sub_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        torch.testing.assert_close(result, x - y)
+        run_onnx_test(self.sub_script.to_model_proto, (x, y), x - y)
 
     def test_mul(self):
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
-        fx_model = convert(self.mul_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        torch.testing.assert_close(result, x * y)
+        run_onnx_test(self.mul_script.to_model_proto, (x, y), x * y)
 
     def test_div(self):
         x = torch.randn(2, 4)
         y = torch.randn(2, 4) + 0.1  # Avoid division by zero
-        fx_model = convert(self.div_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        torch.testing.assert_close(result, x / y)
+        run_onnx_test(self.div_script.to_model_proto, (x, y), x / y)
 
     def test_pow(self):
         x = torch.abs(torch.randn(2, 4)) + 0.1  # Positive values
         y = torch.randn(2, 4)
-        fx_model = convert(self.pow_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        torch.testing.assert_close(result, torch.pow(x, y), rtol=1e-5, atol=1e-5)
+        run_onnx_test(
+            self.pow_script.to_model_proto, (x, y), torch.pow(x, y), rtol=1e-5, atol=1e-5
+        )
 
     def test_min(self):
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
-        fx_model = convert(self.min_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        torch.testing.assert_close(result, torch.minimum(x, y))
+        run_onnx_test(self.min_script.to_model_proto, (x, y), torch.minimum(x, y))
 
     def test_max(self):
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
-        fx_model = convert(self.max_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        torch.testing.assert_close(result, torch.maximum(x, y))
+        run_onnx_test(self.max_script.to_model_proto, (x, y), torch.maximum(x, y))
 
 
 class TestUnaryArithmetic:
@@ -120,52 +103,31 @@ class TestUnaryArithmetic:
 
     def test_neg(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.neg_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, -x)
+        run_onnx_test(self.neg_script.to_model_proto, x, -x)
 
     def test_abs(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.abs_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.abs(x))
+        run_onnx_test(self.abs_script.to_model_proto, x, torch.abs(x))
 
     def test_sqrt(self):
         x = torch.abs(torch.randn(2, 4)) + 0.1
-        fx_model = convert(self.sqrt_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.sqrt(x))
+        run_onnx_test(self.sqrt_script.to_model_proto, x, torch.sqrt(x))
 
     def test_exp(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.exp_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.exp(x))
+        run_onnx_test(self.exp_script.to_model_proto, x, torch.exp(x))
 
     def test_log(self):
         x = torch.abs(torch.randn(2, 4)) + 0.1
-        fx_model = convert(self.log_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.log(x))
+        run_onnx_test(self.log_script.to_model_proto, x, torch.log(x))
 
     def test_ceil(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.ceil_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.ceil(x))
+        run_onnx_test(self.ceil_script.to_model_proto, x, torch.ceil(x))
 
     def test_floor(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.floor_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        torch.testing.assert_close(result, torch.floor(x))
+        run_onnx_test(self.floor_script.to_model_proto, x, torch.floor(x))
 
 
 class TestComparisonOps:
@@ -186,26 +148,17 @@ class TestComparisonOps:
     def test_equal(self):
         x = torch.tensor([1.0, 2.0, 3.0])
         y = torch.tensor([1.0, 0.0, 3.0])
-        fx_model = convert(self.equal_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        assert torch.equal(result, torch.eq(x, y))
+        run_onnx_test(self.equal_script.to_model_proto, (x, y), torch.eq(x, y))
 
     def test_greater(self):
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
-        fx_model = convert(self.greater_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        assert torch.equal(result, torch.gt(x, y))
+        run_onnx_test(self.greater_script.to_model_proto, (x, y), torch.gt(x, y))
 
     def test_less(self):
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
-        fx_model = convert(self.less_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, y)
-        assert torch.equal(result, torch.lt(x, y))
+        run_onnx_test(self.less_script.to_model_proto, (x, y), torch.lt(x, y))
 
 
 class TestArithmeticOpsMultiOpset:
@@ -219,13 +172,9 @@ class TestArithmeticOpsMultiOpset:
         def add_script(x: FLOAT, y: FLOAT) -> FLOAT:
             return opset.Add(x, y)
 
-        model = add_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
-        result = fx_model(x, y)
-        expected = x + y
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(add_script.to_model_proto, (x, y), x + y)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_sub_all_opsets(self, opset):
@@ -235,13 +184,9 @@ class TestArithmeticOpsMultiOpset:
         def sub_script(x: FLOAT, y: FLOAT) -> FLOAT:
             return opset.Sub(x, y)
 
-        model = sub_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
-        result = fx_model(x, y)
-        expected = x - y
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(sub_script.to_model_proto, (x, y), x - y)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_mul_all_opsets(self, opset):
@@ -251,13 +196,9 @@ class TestArithmeticOpsMultiOpset:
         def mul_script(x: FLOAT, y: FLOAT) -> FLOAT:
             return opset.Mul(x, y)
 
-        model = mul_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
         y = torch.randn(2, 4)
-        result = fx_model(x, y)
-        expected = x * y
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(mul_script.to_model_proto, (x, y), x * y)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_div_all_opsets(self, opset):
@@ -267,13 +208,9 @@ class TestArithmeticOpsMultiOpset:
         def div_script(x: FLOAT, y: FLOAT) -> FLOAT:
             return opset.Div(x, y)
 
-        model = div_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
         y = torch.randn(2, 4) + 0.1  # Avoid division by zero
-        result = fx_model(x, y)
-        expected = x / y
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(div_script.to_model_proto, (x, y), x / y)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_neg_all_opsets(self, opset):
@@ -283,12 +220,8 @@ class TestArithmeticOpsMultiOpset:
         def neg_script(x: FLOAT) -> FLOAT:
             return opset.Neg(x)
 
-        model = neg_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = -x
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(neg_script.to_model_proto, x, -x)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_abs_all_opsets(self, opset):
@@ -298,12 +231,8 @@ class TestArithmeticOpsMultiOpset:
         def abs_script(x: FLOAT) -> FLOAT:
             return opset.Abs(x)
 
-        model = abs_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = torch.abs(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(abs_script.to_model_proto, x, torch.abs(x))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_sqrt_all_opsets(self, opset):
@@ -313,12 +242,8 @@ class TestArithmeticOpsMultiOpset:
         def sqrt_script(x: FLOAT) -> FLOAT:
             return opset.Sqrt(x)
 
-        model = sqrt_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.abs(torch.randn(2, 4)) + 0.1
-        result = fx_model(x)
-        expected = torch.sqrt(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(sqrt_script.to_model_proto, x, torch.sqrt(x))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_exp_all_opsets(self, opset):
@@ -328,12 +253,8 @@ class TestArithmeticOpsMultiOpset:
         def exp_script(x: FLOAT) -> FLOAT:
             return opset.Exp(x)
 
-        model = exp_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 4)
-        result = fx_model(x)
-        expected = torch.exp(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(exp_script.to_model_proto, x, torch.exp(x))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_log_all_opsets(self, opset):
@@ -343,12 +264,8 @@ class TestArithmeticOpsMultiOpset:
         def log_script(x: FLOAT) -> FLOAT:
             return opset.Log(x)
 
-        model = log_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.abs(torch.randn(2, 4)) + 0.1
-        result = fx_model(x)
-        expected = torch.log(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(log_script.to_model_proto, x, torch.log(x))
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_matmul_all_opsets(self, opset):
@@ -358,13 +275,9 @@ class TestArithmeticOpsMultiOpset:
         def matmul_script(x: FLOAT, y: FLOAT) -> FLOAT:
             return opset.MatMul(x, y)
 
-        model = matmul_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 3)
         y = torch.randn(3, 4)
-        result = fx_model(x, y)
-        expected = torch.matmul(x, y)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(matmul_script.to_model_proto, (x, y), torch.matmul(x, y))
 
 
 class TestBitShiftOp:
@@ -389,15 +302,11 @@ class TestBitShiftOp:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         x = torch.tensor([1, 2, 4], dtype=torch.int32)
         y = torch.tensor([1, 2, 3], dtype=torch.int32)
-
-        result = fx_module(x, y)
         expected = torch.tensor([2, 8, 32], dtype=torch.int32)
 
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (x, y), expected)
 
     def test_bit_shift_right(self):
         """Test right bit shift."""
@@ -418,15 +327,11 @@ class TestBitShiftOp:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         x = torch.tensor([16, 32, 64], dtype=torch.int32)
         y = torch.tensor([1, 2, 3], dtype=torch.int32)
-
-        result = fx_module(x, y)
         expected = torch.tensor([8, 8, 8], dtype=torch.int32)
 
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (x, y), expected)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_bitshift_left_all_opsets(self, opset):
@@ -447,12 +352,8 @@ class TestBitShiftOp:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_module = convert(model)
-
         x = torch.tensor([1, 2, 4], dtype=torch.int32)
         y = torch.tensor([1, 2, 3], dtype=torch.int32)
-
-        result = fx_module(x, y)
         expected = x << y
 
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (x, y), expected)

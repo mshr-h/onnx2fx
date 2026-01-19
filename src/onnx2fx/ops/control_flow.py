@@ -175,7 +175,7 @@ def _build_subgraph_module(
             return self.graph.call_function(func, args=tuple(args), kwargs=kwargs or {})
 
         def register_submodule(self, name: str, module: nn.Module) -> str:
-            safe_name = name.replace(".", "_").replace("/", "_").replace("-", "_")
+            safe_name = sanitize_name(name)
             if safe_name in self._submodules:
                 counter = 0
                 while f"{safe_name}_{counter}" in self._submodules:

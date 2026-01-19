@@ -248,7 +248,7 @@ class GraphBuilder:
         root_module = torch.nn.Module()
         # Register constants as buffers
         for name, tensor in self._constants.items():
-            root_module.register_buffer(name.replace(".", "_"), tensor)
+            root_module.register_buffer(sanitize_name(name), tensor)
         # Register submodules
         for name, submod in self._submodules.items():
             root_module.add_module(name, submod)
@@ -323,7 +323,7 @@ class GraphBuilder:
             The actual name used (may be modified to avoid conflicts).
         """
         # Sanitize name
-        safe_name = name.replace(".", "_").replace("/", "_").replace("-", "_")
+        safe_name = sanitize_name(name)
         # Ensure unique name
         if safe_name in self._submodules:
             counter = 0
@@ -467,6 +467,13 @@ class GraphBuilder:
                 )
             fx_node = handler(self, node)
 
+            # Add ONNX metadata to the operator node
+            # Some handlers return a list of nodes (e.g., gradient ops)
+            if fx_node is not None and hasattr(fx_node, "meta"):
+                fx_node.meta["onnx_op_type"] = node.op_type
+                fx_node.meta["onnx_name"] = node.name
+                fx_node.meta["onnx_domain"] = domain
+
             # Handle multiple outputs
             if len(node.output) == 1:
                 self.env[node.output[0]] = fx_node
@@ -481,6 +488,11 @@ class GraphBuilder:
                             else x,
                             args=(fx_node, i),
                         )
+                        # Propagate ONNX metadata to getitem node
+                        getitem_node.meta["onnx_op_type"] = node.op_type
+                        getitem_node.meta["onnx_name"] = node.name
+                        getitem_node.meta["onnx_domain"] = domain
+                        getitem_node.meta["onnx_output_index"] = i
                         self.env[output_name] = getitem_node
 
     def _create_outputs(self) -> None:

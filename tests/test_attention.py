@@ -11,7 +11,7 @@ from onnxscript import opset21, opset22, opset23
 from onnxscript import opset23 as op
 
 from onnx2fx import convert
-from conftest import OPSET_MODULES, opset_id
+from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
 class TestLogSoftmaxOp:
@@ -24,14 +24,9 @@ class TestLogSoftmaxOp:
         ) -> onnxscript.FLOAT[2, 3, 4]:
             return op.LogSoftmax(x, axis=-1)
 
-        model = log_softmax_model.to_model_proto()
-        fx_module = convert(model)
-
         x = torch.randn(2, 3, 4)
         expected = torch.nn.functional.log_softmax(x, dim=-1)
-
-        result = fx_module(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(log_softmax_model.to_model_proto, x, expected)
 
 
 class TestHardmaxOp:
@@ -42,14 +37,9 @@ class TestHardmaxOp:
         def hardmax_model(x: onnxscript.FLOAT[2, 5]) -> onnxscript.FLOAT[2, 5]:
             return op.Hardmax(x, axis=-1)
 
-        model = hardmax_model.to_model_proto()
-        fx_module = convert(model)
-
         x = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0], [5.0, 4.0, 3.0, 2.0, 1.0]])
         expected = torch.tensor([[0.0, 0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 0.0, 0.0]])
-
-        result = fx_module(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(hardmax_model.to_model_proto, x, expected)
 
 
 class TestSequenceOps:
@@ -138,14 +128,10 @@ class TestConcatFromSequence:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
-
-        result = fx_module(a, b)
         expected = torch.cat([a, b], dim=0)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (a, b), expected)
 
     def test_concat_from_sequence_new_axis(self):
         from onnx import TensorProto, helper
@@ -166,14 +152,10 @@ class TestConcatFromSequence:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
-
-        result = fx_module(a, b)
         expected = torch.stack([a, b], dim=0)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (a, b), expected)
 
 
 class TestGatherScatterND:
@@ -187,15 +169,10 @@ class TestGatherScatterND:
         ) -> onnxscript.FLOAT[2]:
             return op.GatherND(data, indices)
 
-        model = gather_nd_model.to_model_proto()
-        fx_module = convert(model)
-
         data = torch.tensor([[0.0, 1.0], [2.0, 3.0]])
         indices = torch.tensor([[0, 0], [1, 1]], dtype=torch.int64)
-
-        result = fx_module(data, indices)
         expected = torch.tensor([0.0, 3.0])
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(gather_nd_model.to_model_proto, (data, indices), expected)
 
 
 class TestLossOps:
@@ -223,14 +200,10 @@ class TestLossOps:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         scores = torch.randn(3, 5)
         labels = torch.tensor([1, 0, 4], dtype=torch.int64)
-
-        result = fx_module(scores, labels)
         expected = torch.nn.functional.cross_entropy(scores, labels, reduction="mean")
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (scores, labels), expected)
 
     def test_nll_loss(self):
         from onnx import TensorProto, helper
@@ -252,15 +225,11 @@ class TestLossOps:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         # Input should be log-probabilities for NLL loss
         input_tensor = torch.nn.functional.log_softmax(torch.randn(3, 5), dim=-1)
         target = torch.tensor([1, 0, 4], dtype=torch.int64)
-
-        result = fx_module(input_tensor, target)
         expected = torch.nn.functional.nll_loss(input_tensor, target, reduction="mean")
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (input_tensor, target), expected)
 
 
 class TestAttentionOp:
@@ -311,22 +280,16 @@ class TestAttentionOp:
             ],
         )
 
-        fx_module = convert(model)
-
         # Create test inputs
         input_tensor = torch.randn(batch_size, seq_len, hidden_size)
         weight = torch.randn(hidden_size, 3 * hidden_size)
         bias = torch.randn(3 * hidden_size)
 
-        # Run the converted model
-        result = fx_module(input_tensor, weight, bias)
-
         # Compute expected using scaled_dot_product_attention
         qkv = torch.matmul(input_tensor, weight) + bias
         q, k, v = qkv.chunk(3, dim=-1)
         expected = torch.nn.functional.scaled_dot_product_attention(q, k, v)
-
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (input_tensor, weight, bias), expected)
 
     def test_attention_without_bias(self):
         """Test attention without bias."""
@@ -370,19 +333,14 @@ class TestAttentionOp:
             ],
         )
 
-        fx_module = convert(model)
-
         input_tensor = torch.randn(batch_size, seq_len, hidden_size)
         weight = torch.randn(hidden_size, 3 * hidden_size)
-
-        result = fx_module(input_tensor, weight)
 
         # Compute expected using scaled_dot_product_attention
         qkv = torch.matmul(input_tensor, weight)
         q, k, v = qkv.chunk(3, dim=-1)
         expected = torch.nn.functional.scaled_dot_product_attention(q, k, v)
-
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (input_tensor, weight), expected)
 
     def test_attention_unidirectional(self):
         """Test causal (unidirectional) attention."""
@@ -426,12 +384,8 @@ class TestAttentionOp:
             ],
         )
 
-        fx_module = convert(model)
-
         input_tensor = torch.randn(batch_size, seq_len, hidden_size)
         weight = torch.randn(hidden_size, 3 * hidden_size)
-
-        result = fx_module(input_tensor, weight)
 
         # Compute expected using scaled_dot_product_attention with is_causal=True
         qkv = torch.matmul(input_tensor, weight)
@@ -439,8 +393,7 @@ class TestAttentionOp:
         expected = torch.nn.functional.scaled_dot_product_attention(
             q, k, v, is_causal=True
         )
-
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (input_tensor, weight), expected)
 
 
 class TestSkipLayerNormalization:
@@ -486,22 +439,17 @@ class TestSkipLayerNormalization:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         input_tensor = torch.randn(batch_size, seq_len, hidden_size)
         skip_tensor = torch.randn(batch_size, seq_len, hidden_size)
         gamma = torch.randn(hidden_size)
         beta = torch.randn(hidden_size)
-
-        result = fx_module(input_tensor, skip_tensor, gamma, beta)
 
         # Manual computation
         hidden = input_tensor + skip_tensor
         expected = torch.nn.functional.layer_norm(
             hidden, (hidden_size,), weight=gamma, bias=beta, eps=1e-5
         )
-
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (input_tensor, skip_tensor, gamma, beta), expected)
 
 
 class TestSimplifiedLayerNormalization:
@@ -540,19 +488,14 @@ class TestSimplifiedLayerNormalization:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         x = torch.randn(batch_size, seq_len, hidden_size)
         scale = torch.randn(hidden_size)
-
-        result = fx_module(x, scale)
 
         # Manual RMSNorm computation
         variance = x.pow(2).mean(dim=-1, keepdim=True)
         x_normalized = x * torch.rsqrt(variance + 1e-5)
         expected = x_normalized * scale
-
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (x, scale), expected)
 
     def test_simplified_layer_norm_fp16(self):
         """Test SimplifiedLayerNormalization with FP16."""
@@ -587,19 +530,14 @@ class TestSimplifiedLayerNormalization:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         x = torch.randn(batch_size, seq_len, hidden_size, dtype=torch.float16)
         scale = torch.randn(hidden_size, dtype=torch.float16)
-
-        result = fx_module(x, scale)
 
         # Manual RMSNorm computation
         variance = x.pow(2).mean(dim=-1, keepdim=True)
         x_normalized = x * torch.rsqrt(variance + 1e-5)
         expected = x_normalized * scale
-
-        torch.testing.assert_close(result, expected, rtol=1e-2, atol=1e-2)
+        run_onnx_test(model, (x, scale), expected, rtol=1e-2, atol=1e-2)
 
 
 class TestGroupQueryAttention:
@@ -1176,13 +1114,9 @@ class TestAttentionOpsMultiOpset:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_module = convert(model)
-
         x = torch.tensor([[1.0, 2.0, 3.0, 4.0, 5.0], [5.0, 4.0, 3.0, 2.0, 1.0]])
         expected = torch.tensor([[0.0, 0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 0.0, 0.0]])
-
-        result = fx_module(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, x, expected)
 
     @pytest.mark.parametrize(
         "opset",
@@ -1213,13 +1147,9 @@ class TestAttentionOpsMultiOpset:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_module = convert(model)
-
         x = torch.randn(2, 3, 4)
         expected = torch.nn.functional.log_softmax(x, dim=-1)
-
-        result = fx_module(x)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, x, expected)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_gather_nd_all_opsets(self, opset):
@@ -1239,14 +1169,10 @@ class TestAttentionOpsMultiOpset:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_module = convert(model)
-
         data = torch.tensor([[0.0, 1.0], [2.0, 3.0]])
         indices = torch.tensor([[0, 0], [1, 1]], dtype=torch.int64)
-
-        result = fx_module(data, indices)
         expected = torch.tensor([0.0, 3.0])
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (data, indices), expected)
 
 
 # =============================================================================
@@ -1304,22 +1230,17 @@ class TestSkipLayerNormalizationMicrosoft:
             ],
         )
 
-        fx_module = convert(model)
-
         input_tensor = torch.randn(batch_size, seq_len, hidden_size)
         skip_tensor = torch.randn(batch_size, seq_len, hidden_size)
         gamma = torch.randn(hidden_size)
         beta = torch.randn(hidden_size)
-
-        result = fx_module(input_tensor, skip_tensor, gamma, beta)
 
         # Manual computation
         hidden = input_tensor + skip_tensor
         expected = torch.nn.functional.layer_norm(
             hidden, (hidden_size,), weight=gamma, bias=beta, eps=1e-5
         )
-
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (input_tensor, skip_tensor, gamma, beta), expected)
 
 
 class TestSimplifiedLayerNormalizationMicrosoft:
@@ -1365,15 +1286,10 @@ class TestSimplifiedLayerNormalizationMicrosoft:
             ],
         )
 
-        fx_module = convert(model)
-
         x = torch.randn(batch_size, seq_len, hidden_size)
         scale = torch.randn(hidden_size)
-
-        result = fx_module(x, scale)
 
         # Manual RMSNorm computation
         rms = torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + 1e-5)
         expected = (x / rms) * scale
-
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (x, scale), expected)

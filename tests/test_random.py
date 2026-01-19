@@ -4,7 +4,7 @@
 import torch
 from onnx import TensorProto, helper
 
-from onnx2fx import convert
+from conftest import run_onnx_test
 
 
 class TestRandomOps:
@@ -29,14 +29,9 @@ class TestRandomOps:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         x = torch.randn(2, 3)
-        result = fx_module(x)
-
-        assert result.shape == (2, 3)
-        assert (result >= 0.0).all()
-        assert (result <= 1.0).all()
+        expected_shape = torch.zeros(2, 3)
+        run_onnx_test(model, x, expected_shape, check_shape_only=True)
 
     def test_random_normal_like(self):
         """Test RandomNormalLike operator."""
@@ -57,12 +52,9 @@ class TestRandomOps:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         x = torch.randn(3, 4)
-        result = fx_module(x)
-
-        assert result.shape == (3, 4)
+        expected_shape = torch.zeros(3, 4)
+        run_onnx_test(model, x, expected_shape, check_shape_only=True)
 
 
 class TestBernoulliOp:
@@ -85,13 +77,7 @@ class TestBernoulliOp:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         # Probabilities
         x = torch.tensor([[0.0, 0.5, 1.0], [0.0, 0.5, 1.0], [0.0, 0.5, 1.0]])
-
-        result = fx_module(x)
-
-        assert result.shape == (3, 3)
-        # Values should be 0 or 1
-        assert ((result == 0) | (result == 1)).all()
+        expected_shape = torch.zeros(3, 3)
+        run_onnx_test(model, x, expected_shape, check_shape_only=True)

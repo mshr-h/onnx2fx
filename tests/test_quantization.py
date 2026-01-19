@@ -9,7 +9,7 @@ from onnxscript import opset13, opset14, opset15, opset16, opset17
 from onnxscript import opset18, opset19, opset20, opset21, opset22, opset23
 
 from onnx2fx import convert
-from conftest import OPSET_MODULES, opset_id
+from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
 class TestQuantizeLinear:
@@ -34,16 +34,11 @@ class TestQuantizeLinear:
         graph = helper.make_graph([node], "test", [x], [y], [scale, zero_point])
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
-        fx_module = convert(model)
-
         test_input = torch.randn(2, 3)
-        result = fx_module(test_input)
-
-        # Manual calculation
         expected = torch.clamp(torch.round(test_input / 0.1) + 128, 0, 255).to(
             torch.uint8
         )
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, test_input, expected)
 
     def test_quantize_without_zero_point(self):
         """Test quantization without zero point (int8)."""
@@ -61,13 +56,9 @@ class TestQuantizeLinear:
         graph = helper.make_graph([node], "test", [x], [y], [scale])
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
-        fx_module = convert(model)
-
         test_input = torch.randn(2, 3)
-        result = fx_module(test_input)
-
         expected = torch.clamp(torch.round(test_input / 0.1), -128, 127).to(torch.int8)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, test_input, expected)
 
 
 class TestDequantizeLinear:
@@ -92,13 +83,9 @@ class TestDequantizeLinear:
         graph = helper.make_graph([node], "test", [x], [y], [scale, zero_point])
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
-        fx_module = convert(model)
-
         test_input = torch.randint(0, 256, (2, 3), dtype=torch.uint8)
-        result = fx_module(test_input)
-
         expected = (test_input.float() - 128) * 0.1
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, test_input, expected)
 
     def test_dequantize_without_zero_point(self):
         """Test dequantization without zero point."""
@@ -116,13 +103,9 @@ class TestDequantizeLinear:
         graph = helper.make_graph([node], "test", [x], [y], [scale])
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
-        fx_module = convert(model)
-
         test_input = torch.randint(-128, 127, (2, 3), dtype=torch.int8)
-        result = fx_module(test_input)
-
         expected = test_input.float() * 0.1
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, test_input, expected)
 
 
 class TestDynamicQuantizeLinear:
@@ -350,17 +333,14 @@ class TestMatMulInteger:
         graph = helper.make_graph([node], "test", [a, b], [y], [a_zp, b_zp])
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
-        fx_module = convert(model)
-
         a_input = torch.randint(0, 256, (2, 3), dtype=torch.uint8)
         b_input = torch.randint(0, 256, (3, 4), dtype=torch.uint8)
-        result = fx_module(a_input, b_input)
 
         # Verify manually
         a_int = a_input.int() - 128
         b_int = b_input.int() - 128
         expected = torch.matmul(a_int.float(), b_int.float()).int()
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (a_input, b_input), expected)
 
 
 class TestConvInteger:
@@ -426,15 +406,10 @@ class TestQuantizedPipeline:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
-        fx_module = convert(model)
-
         # Use input in the quantizable range: [-1.28, 1.27] with scale=0.01
         test_input = torch.clamp(torch.randn(2, 3), -1.2, 1.2)
-        result = fx_module(test_input)
-
         # Result should be close to input (within quantization error)
-        # Quantization error is approximately scale/2 = 0.005
-        torch.testing.assert_close(result, test_input, rtol=0.1, atol=0.01)
+        run_onnx_test(model, test_input, test_input, rtol=0.1, atol=0.01)
 
     def test_quantized_matmul_chain(self):
         """Test chain of quantized operations."""
@@ -493,15 +468,11 @@ class TestQuantizedPipeline:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
-        fx_module = convert(model)
-
         a_input = torch.randn(2, 3)
         b_input = torch.randn(3, 4)
-        result = fx_module(a_input, b_input)
-
         # Compare with float matmul (with quantization error tolerance)
         expected = torch.matmul(a_input, b_input)
-        torch.testing.assert_close(result, expected, rtol=0.2, atol=0.5)
+        run_onnx_test(model, (a_input, b_input), expected, rtol=0.2, atol=0.5)
 
 
 class TestQuantizationMultiOpset:
@@ -542,14 +513,9 @@ class TestQuantizationMultiOpset:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_module = convert(model)
-
         test_input = torch.randn(2, 3)
-        result = fx_module(test_input)
-
-        # Manual calculation (int8)
         expected = torch.clamp(torch.round(test_input / 0.1), -128, 127).to(torch.int8)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, test_input, expected)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_dequantize_linear_all_opsets(self, opset):
@@ -570,10 +536,6 @@ class TestQuantizationMultiOpset:
             graph, opset_imports=[helper.make_opsetid("", opset.version)]
         )
 
-        fx_module = convert(model)
-
         test_input = torch.randint(-128, 127, (2, 3), dtype=torch.int8)
-        result = fx_module(test_input)
-
         expected = test_input.float() * 0.1
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, test_input, expected)
