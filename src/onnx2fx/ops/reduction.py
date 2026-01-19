@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 def _normalize_axes(axes):
     """Normalize axes to tuple format for PyTorch operations.
-    
+
     Converts torch.Tensor or list to tuple for consistent handling.
     """
     if isinstance(axes, torch.Tensor):
@@ -32,7 +32,7 @@ def _normalize_axes(axes):
 
 def _handle_empty_axes(axes, noop_with_empty_axes):
     """Handle empty axes list based on noop_with_empty_axes flag.
-    
+
     Returns (should_noop, normalized_axes).
     - If axes is empty and noop_with_empty_axes is True, returns (True, axes)
     - If axes is empty and noop_with_empty_axes is False, returns (False, None)
@@ -43,13 +43,13 @@ def _handle_empty_axes(axes, noop_with_empty_axes):
         if noop_with_empty_axes:
             return True, axes
         return False, None
-    
+
     # Check for empty tensor
     if isinstance(axes, torch.Tensor) and axes.numel() == 0:
         if noop_with_empty_axes:
             return True, axes
         return False, None
-    
+
     return False, axes
 
 
@@ -101,14 +101,14 @@ def reduce_sum(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         should_noop, axes = _handle_empty_axes(axes, noop_with_empty_axes)
         if should_noop:
             return t
-        
+
         if axes is None:
             result = torch.sum(t)
             if keepdims:
                 # Reshape to have all dimensions as 1
                 result = result.reshape([1] * t.ndim)
             return result
-        
+
         axes = _normalize_axes(axes)
         return torch.sum(t, dim=axes, keepdim=keepdims)
 
@@ -129,13 +129,13 @@ def reduce_mean(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         should_noop, axes = _handle_empty_axes(axes, noop_with_empty_axes)
         if should_noop:
             return t
-        
+
         if axes is None:
             result = torch.mean(t)
             if keepdims:
                 result = result.reshape([1] * t.ndim)
             return result
-        
+
         axes = _normalize_axes(axes)
         return torch.mean(t, dim=axes, keepdim=keepdims)
 
