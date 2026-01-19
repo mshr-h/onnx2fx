@@ -50,7 +50,9 @@ class TestTensorOps:
     def test_concat(self):
         x = torch.randn(2, 4)
         y = torch.randn(3, 4)
-        run_onnx_test(self.concat_script.to_model_proto, (x, y), torch.cat([x, y], dim=0))
+        run_onnx_test(
+            self.concat_script.to_model_proto, (x, y), torch.cat([x, y], dim=0)
+        )
 
     def test_flatten(self):
         x = torch.randn(2, 3, 4)

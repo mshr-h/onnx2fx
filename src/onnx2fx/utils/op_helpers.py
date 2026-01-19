@@ -142,7 +142,9 @@ def compute_same_padding(
         effective_kernel = [(k - 1) * d + 1 for k, d in zip(kernel_shape, dilations)]
         pad_total = [
             max(0, (o - 1) * st + ek - i)
-            for i, o, ek, st in zip(input_shape, output_shape, effective_kernel, strides)
+            for i, o, ek, st in zip(
+                input_shape, output_shape, effective_kernel, strides
+            )
         ]
     else:
         # Standard formula: (output - 1) * stride + (kernel - 1) * dilation + 1 - input

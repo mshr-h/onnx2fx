@@ -9,7 +9,11 @@ import torch.nn.functional as F
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
-from ..utils.op_helpers import compute_same_padding, get_optional_input, pad_list_to_onnx_pads
+from ..utils.op_helpers import (
+    compute_same_padding,
+    get_optional_input,
+    pad_list_to_onnx_pads,
+)
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder

@@ -317,7 +317,9 @@ class TestNormalizationOps:
         var = torch.ones(3)
         expected = torch.nn.functional.batch_norm(x, mean, var, scale, bias, eps=1e-5)
 
-        run_onnx_test(model, (x, scale, bias, mean, var), expected, rtol=1e-5, atol=1e-5)
+        run_onnx_test(
+            model, (x, scale, bias, mean, var), expected, rtol=1e-5, atol=1e-5
+        )
 
     def test_layer_norm(self):
         """Test LayerNormalization."""
@@ -444,4 +446,6 @@ class TestNNOpsMultiOpset:
         var = torch.ones(3)
         expected = F.batch_norm(x, mean, var, scale, bias, training=False, eps=1e-5)
 
-        run_onnx_test(model, (x, scale, bias, mean, var), expected, atol=1e-5, rtol=1e-5)
+        run_onnx_test(
+            model, (x, scale, bias, mean, var), expected, atol=1e-5, rtol=1e-5
+        )

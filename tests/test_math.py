@@ -40,7 +40,9 @@ class TestTrigOps:
 
     def test_tan(self):
         x = torch.randn(2, 4) * 0.5  # Avoid large values
-        run_onnx_test(self.tan_script.to_model_proto, x, torch.tan(x), atol=1e-5, rtol=1e-5)
+        run_onnx_test(
+            self.tan_script.to_model_proto, x, torch.tan(x), atol=1e-5, rtol=1e-5
+        )
 
 
 # =============================================================================

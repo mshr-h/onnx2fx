@@ -100,9 +100,13 @@ register("Log")(unary_op(torch.log, "Element-wise natural logarithm."))
 
 register("Equal")(binary_op(torch.eq, "Element-wise equality comparison."))
 register("Greater")(binary_op(torch.gt, "Element-wise greater-than comparison."))
-register("GreaterOrEqual")(binary_op(torch.ge, "Element-wise greater-than-or-equal comparison."))
+register("GreaterOrEqual")(
+    binary_op(torch.ge, "Element-wise greater-than-or-equal comparison.")
+)
 register("Less")(binary_op(torch.lt, "Element-wise less-than comparison."))
-register("LessOrEqual")(binary_op(torch.le, "Element-wise less-than-or-equal comparison."))
+register("LessOrEqual")(
+    binary_op(torch.le, "Element-wise less-than-or-equal comparison.")
+)
 register("And")(binary_op(torch.logical_and, "Element-wise logical AND."))
 register("Or")(binary_op(torch.logical_or, "Element-wise logical OR."))
 register("Xor")(binary_op(torch.logical_xor, "Element-wise logical XOR."))

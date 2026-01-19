@@ -380,9 +380,7 @@ class TestMatMulAllOpsets:
 class TestEinsumAllOpsets:
     """Test Einsum works identically across all supporting opsets (12+)."""
 
-    @pytest.mark.parametrize(
-        "opset", EINSUM_OPSET_MODULES, ids=opset_id
-    )
+    @pytest.mark.parametrize("opset", EINSUM_OPSET_MODULES, ids=opset_id)
     def test_einsum_matmul_all_opsets(self, opset):
         """Einsum for matrix multiplication across opsets."""
         x_info = onnx.helper.make_tensor_value_info("X", onnx.TensorProto.FLOAT, [2, 3])

@@ -56,7 +56,11 @@ class TestBinaryArithmetic:
         x = torch.abs(torch.randn(2, 4)) + 0.1  # Positive values
         y = torch.randn(2, 4)
         run_onnx_test(
-            self.pow_script.to_model_proto, (x, y), torch.pow(x, y), rtol=1e-5, atol=1e-5
+            self.pow_script.to_model_proto,
+            (x, y),
+            torch.pow(x, y),
+            rtol=1e-5,
+            atol=1e-5,
         )
 
     def test_min(self):

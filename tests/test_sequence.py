@@ -84,9 +84,7 @@ class TestSequenceOps:
         b = torch.randn(2, 3)
         c = torch.randn(2, 3)
         idx = torch.tensor(1, dtype=torch.int64)
-        run_onnx_test(
-            self.sequence_at_script.to_model_proto, (a, b, c, idx), b
-        )
+        run_onnx_test(self.sequence_at_script.to_model_proto, (a, b, c, idx), b)
 
     def test_sequence_length(self):
         a = torch.randn(2, 3)
