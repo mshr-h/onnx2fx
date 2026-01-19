@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Advanced operators.
+"""Signal processing operators.
 
-This module implements specialized ONNX operators including
-Einsum, matrix determinant, non-maximum suppression, and STFT.
+This module implements specialized ONNX operators for signal processing,
+including STFT, mel spectrograms, window functions, and non-maximum suppression.
 """
 
 from typing import TYPE_CHECKING
@@ -255,28 +255,93 @@ def mel_weight_matrix(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
 
 
 # =============================================================================
-# Einsum operator
+# Window function operators
 # =============================================================================
 
 
-@register("Einsum")
-def einsum(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Einstein summation."""
-    equation = get_attribute(node, "equation")
-    inputs = [builder.get_value(name) for name in node.input]
-    return builder.call_function(torch.einsum, args=(equation, *inputs))
+@register("HannWindow", since_version=17)
+def hann_window(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Generate a Hann window.
+
+    Attributes:
+        periodic: If 1, returns periodic window. If 0, returns symmetric window.
+        output_datatype: ONNX TensorProto data type for output (default: FLOAT).
+    """
+    from ..utils.dtype import onnx_dtype_to_torch
+
+    size = builder.get_value(node.input[0])
+    periodic = get_attribute(node, "periodic", 1)
+    output_datatype = get_attribute(node, "output_datatype", 1)  # Default: FLOAT
+
+    dtype = onnx_dtype_to_torch(output_datatype)
+
+    def _hann_window(
+        window_length: torch.Tensor, periodic: bool, dtype: torch.dtype
+    ) -> torch.Tensor:
+        length = int(window_length.item())
+        return torch.hann_window(length, periodic=periodic, dtype=dtype)
+
+    return builder.call_function(_hann_window, args=(size, bool(periodic), dtype))
 
 
-# =============================================================================
-# Matrix determinant
-# =============================================================================
+@register("HammingWindow", since_version=17)
+def hamming_window(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Generate a Hamming window.
+
+    Attributes:
+        periodic: If 1, returns periodic window. If 0, returns symmetric window.
+        output_datatype: ONNX TensorProto data type for output (default: FLOAT).
+
+    Note:
+        ONNX uses specific Hamming coefficients (alpha=0.543478, beta=0.456522)
+        which differ from PyTorch's defaults (0.54, 0.46).
+    """
+    from ..utils.dtype import onnx_dtype_to_torch
+
+    size = builder.get_value(node.input[0])
+    periodic = get_attribute(node, "periodic", 1)
+    output_datatype = get_attribute(node, "output_datatype", 1)  # Default: FLOAT
+
+    dtype = onnx_dtype_to_torch(output_datatype)
+
+    # ONNX HammingWindow uses these specific coefficients
+    alpha = 0.543478
+    beta = 0.456522
+
+    def _hamming_window(
+        window_length: torch.Tensor, periodic: bool, dtype: torch.dtype
+    ) -> torch.Tensor:
+        length = int(window_length.item())
+        return torch.hamming_window(
+            length, periodic=periodic, alpha=alpha, beta=beta, dtype=dtype
+        )
+
+    return builder.call_function(_hamming_window, args=(size, bool(periodic), dtype))
 
 
-@register("Det")
-def det(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Matrix determinant."""
-    x = builder.get_value(node.input[0])
-    return builder.call_function(torch.linalg.det, args=(x,))
+@register("BlackmanWindow", since_version=17)
+def blackman_window(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Generate a Blackman window.
+
+    Attributes:
+        periodic: If 1, returns periodic window. If 0, returns symmetric window.
+        output_datatype: ONNX TensorProto data type for output (default: FLOAT).
+    """
+    from ..utils.dtype import onnx_dtype_to_torch
+
+    size = builder.get_value(node.input[0])
+    periodic = get_attribute(node, "periodic", 1)
+    output_datatype = get_attribute(node, "output_datatype", 1)  # Default: FLOAT
+
+    dtype = onnx_dtype_to_torch(output_datatype)
+
+    def _blackman_window(
+        window_length: torch.Tensor, periodic: bool, dtype: torch.dtype
+    ) -> torch.Tensor:
+        length = int(window_length.item())
+        return torch.blackman_window(length, periodic=periodic, dtype=dtype)
+
+    return builder.call_function(_blackman_window, args=(size, bool(periodic), dtype))
 
 
 # =============================================================================

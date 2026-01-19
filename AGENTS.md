@@ -16,19 +16,25 @@ onnx2fx/
 │   ├── exceptions.py      # Custom exception classes
 │   ├── ops/               # ONNX operator implementations
 │   │   ├── activation.py  # Activation functions (Relu, Sigmoid, etc.)
-│   │   ├── advanced.py    # Advanced ops (Einsum, Det, NMS, etc.)
-│   │   ├── arithmetic.py  # Arithmetic ops (Add, Mul, etc.)
+│   │   ├── arithmetic.py  # Arithmetic ops (Add, Mul, Sin, Cos, etc.)
 │   │   ├── attention.py   # Attention ops (MultiHeadAttention, etc.)
-│   │   ├── control_flow.py # Control flow ops (Loop, If)
+│   │   ├── control_flow.py # Control flow ops (Loop, If, Scan)
+│   │   ├── convolution.py # Convolution ops (Conv, ConvTranspose, DeformConv)
 │   │   ├── image.py       # Image ops (Resize, DepthToSpace, etc.)
+│   │   ├── linalg.py      # Linear algebra ops (Einsum, Det)
 │   │   ├── loss.py        # Loss functions (SoftmaxCrossEntropyLoss, etc.)
-│   │   ├── misc.py        # Miscellaneous ops (StringNormalizer)
-│   │   ├── nn.py          # Neural network ops (Conv, BatchNorm, etc.)
+│   │   ├── nn.py          # Core neural network ops (MatMul, Gemm, Dropout)
+│   │   ├── normalization.py # Normalization ops (BatchNorm, LayerNorm, etc.)
+│   │   ├── pooling.py     # Pooling ops (MaxPool, AveragePool, etc.)
 │   │   ├── quantization.py # Quantization ops (QLinear*, etc.)
-│   │   ├── random.py      # Random ops (RandomNormal, etc.)
+│   │   ├── random.py      # Random ops (RandomNormal, Bernoulli, etc.)
+│   │   ├── recurrent.py   # Recurrent neural networks (LSTM, GRU, RNN)
 │   │   ├── reduction.py   # Reduction ops (Sum, Mean, etc.)
 │   │   ├── sequence.py    # Sequence ops (SequenceConstruct, etc.)
-│   │   └── tensor.py      # Tensor ops (Reshape, Transpose, etc.)
+│   │   ├── signal.py      # Signal processing (STFT, MelWeightMatrix, window functions, NMS)
+│   │   ├── string.py      # String ops (StringNormalizer)
+│   │   ├── tensor.py      # Tensor ops (Reshape, Transpose, etc.)
+│   │   └── training.py    # Training ops (Gradient, Momentum, Adagrad)
 │   └── utils/             # Utility modules
 │       ├── analyze.py     # Model analysis utilities
 │       ├── attributes.py  # ONNX attribute parsing
