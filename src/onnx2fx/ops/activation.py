@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Activation function operators."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import onnx
 import torch
@@ -13,6 +13,37 @@ from ..utils.op_helpers import unary_op, unary_op_with_kwargs
 
 if TYPE_CHECKING:
     from ..graph_builder import GraphBuilder
+
+
+def _coerced_softmax_handler(
+    torch_fn: Callable[..., torch.Tensor],
+    *,
+    default_axis: int,
+    doc: str,
+) -> Callable[["GraphBuilder", onnx.NodeProto], torch.fx.Node]:
+    def handler(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+        x = builder.get_value(node.input[0])
+        axis = get_attribute(node, "axis", default_axis)
+
+        def _coerced_softmax(t: torch.Tensor, axis: int) -> torch.Tensor:
+            # Handle negative axis
+            if axis < 0:
+                axis = t.dim() + axis
+
+            # Coerce to 2D: flatten [0:axis] and [axis:]
+            orig_shape = t.shape
+            pre_dim = 1
+            for i in range(axis):
+                pre_dim *= t.shape[i]
+
+            t_2d = t.reshape(pre_dim, -1)
+            result_2d = torch_fn(t_2d, dim=1)
+            return result_2d.reshape(orig_shape)
+
+        return builder.call_function(_coerced_softmax, args=(x, axis))
+
+    handler.__doc__ = doc
+    return handler
 
 
 register("Relu")(unary_op(F.relu, "ReLU activation."))
@@ -130,32 +161,16 @@ def hard_sigmoid(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node
 register("Tanh")(unary_op(torch.tanh, "Tanh activation."))
 
 
-@register("Softmax", since_version=1)
-def softmax_v1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Softmax activation for opset 1-12.
-
-    In opset < 13, the default axis is 1, and softmax is computed on a
-    "coerced" 2D tensor (flatten dimensions before/after axis).
-    """
-    x = builder.get_value(node.input[0])
-    axis = get_attribute(node, "axis", 1)  # Default was 1 in opset < 13
-
-    def _softmax_v1(t: torch.Tensor, axis: int) -> torch.Tensor:
-        # Handle negative axis
-        if axis < 0:
-            axis = t.dim() + axis
-
-        # Coerce to 2D: flatten [0:axis] and [axis:]
-        orig_shape = t.shape
-        pre_dim = 1
-        for i in range(axis):
-            pre_dim *= t.shape[i]
-
-        t_2d = t.reshape(pre_dim, -1)
-        result_2d = F.softmax(t_2d, dim=1)
-        return result_2d.reshape(orig_shape)
-
-    return builder.call_function(_softmax_v1, args=(x, axis))
+register("Softmax", since_version=1)(
+    _coerced_softmax_handler(
+        F.softmax,
+        default_axis=1,
+        doc=(
+            "Softmax activation for opset 1-12 with axis defaulting to 1 and "
+            "2D coercion."
+        ),
+    )
+)
 
 
 register("Softmax", since_version=13)(
@@ -170,30 +185,16 @@ register("Softmax", since_version=13)(
 )
 
 
-@register("LogSoftmax", since_version=1)
-def log_softmax_v1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Log Softmax activation for opset 1-12.
-
-    In opset < 13, the default axis is 1, and log_softmax is computed on a
-    "coerced" 2D tensor.
-    """
-    x = builder.get_value(node.input[0])
-    axis = get_attribute(node, "axis", 1)  # Default was 1 in opset < 13
-
-    def _log_softmax_v1(t: torch.Tensor, axis: int) -> torch.Tensor:
-        if axis < 0:
-            axis = t.dim() + axis
-
-        orig_shape = t.shape
-        pre_dim = 1
-        for i in range(axis):
-            pre_dim *= t.shape[i]
-
-        t_2d = t.reshape(pre_dim, -1)
-        result_2d = F.log_softmax(t_2d, dim=1)
-        return result_2d.reshape(orig_shape)
-
-    return builder.call_function(_log_softmax_v1, args=(x, axis))
+register("LogSoftmax", since_version=1)(
+    _coerced_softmax_handler(
+        F.log_softmax,
+        default_axis=1,
+        doc=(
+            "Log Softmax activation for opset 1-12 with axis defaulting to 1 "
+            "and 2D coercion."
+        ),
+    )
+)
 
 
 register("LogSoftmax", since_version=13)(
