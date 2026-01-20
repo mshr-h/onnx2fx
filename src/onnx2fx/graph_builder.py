@@ -214,6 +214,52 @@ class GraphBuilder:
             versions[domain] = opset.version
         return versions
 
+    def _resolve_handler(
+        self, node: onnx.NodeProto
+    ) -> tuple[Callable[["GraphBuilder", onnx.NodeProto], Any], str, int]:
+        """Resolve the handler for an ONNX node and return handler, domain, opset."""
+        domain = node.domain if node.domain else ""
+        opset = self.get_opset_version(domain)
+        handler = get_handler(node.op_type, domain, opset)
+        if handler is None:
+            raise UnsupportedOpError(node.op_type, domain=domain, opset_version=opset)
+        return handler, domain, opset
+
+    def _tag_operator_node(
+        self, node: onnx.NodeProto, fx_node: torch.fx.Node, domain: str
+    ) -> None:
+        """Attach ONNX metadata to an operator node."""
+        if fx_node is not None and hasattr(fx_node, "meta"):
+            self._set_onnx_metadata(
+                fx_node,
+                op_type=node.op_type,
+                name=node.name,
+                domain=domain,
+            )
+
+    def _register_outputs(
+        self, node: onnx.NodeProto, fx_node: torch.fx.Node, domain: str
+    ) -> None:
+        """Register node outputs in the environment."""
+        if len(node.output) == 1:
+            self.env[node.output[0]] = fx_node
+            return
+
+        for i, output_name in enumerate(node.output):
+            if output_name:  # Skip empty output names
+                getitem_node = self.graph.call_function(
+                    lambda x, idx=i: x[idx] if isinstance(x, (tuple, list)) else x,
+                    args=(fx_node, i),
+                )
+                self._set_onnx_metadata(
+                    getitem_node,
+                    op_type=node.op_type,
+                    name=node.name,
+                    domain=domain,
+                    output_index=i,
+                )
+                self.env[output_name] = getitem_node
+
     @property
     def opset_version(self) -> int:
         """Get the opset version for the default ONNX domain.
@@ -488,48 +534,13 @@ class GraphBuilder:
 
         for node in sorted_nodes:
             # Get handler with domain and opset version support
-            domain = node.domain if node.domain else ""
-            opset = self.get_opset_version(domain)
-            handler = get_handler(node.op_type, domain, opset)
-            if handler is None:
-                raise UnsupportedOpError(
-                    node.op_type, domain=domain, opset_version=opset
-                )
+            handler, domain, _opset = self._resolve_handler(node)
             fx_node = handler(self, node)
 
             # Add ONNX metadata to the operator node
             # Some handlers return a list of nodes (e.g., gradient ops)
-            if fx_node is not None and hasattr(fx_node, "meta"):
-                self._set_onnx_metadata(
-                    fx_node,
-                    op_type=node.op_type,
-                    name=node.name,
-                    domain=domain,
-                )
-
-            # Handle multiple outputs
-            if len(node.output) == 1:
-                self.env[node.output[0]] = fx_node
-            else:
-                # For multi-output nodes, fx_node should be a tuple or we extract via getitem
-                for i, output_name in enumerate(node.output):
-                    if output_name:  # Skip empty output names
-                        # Create a getitem node to extract each output
-                        getitem_node = self.graph.call_function(
-                            lambda x, idx=i: x[idx]
-                            if isinstance(x, (tuple, list))
-                            else x,
-                            args=(fx_node, i),
-                        )
-                        # Propagate ONNX metadata to getitem node
-                        self._set_onnx_metadata(
-                            getitem_node,
-                            op_type=node.op_type,
-                            name=node.name,
-                            domain=domain,
-                            output_index=i,
-                        )
-                        self.env[output_name] = getitem_node
+            self._tag_operator_node(node, fx_node, domain)
+            self._register_outputs(node, fx_node, domain)
 
     def _create_outputs(self) -> None:
         output_nodes = [self.get_value(value.name) for value in self.model.graph.output]
