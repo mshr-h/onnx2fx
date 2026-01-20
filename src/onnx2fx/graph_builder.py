@@ -256,6 +256,30 @@ class GraphBuilder:
         module.graph.lint()
         return module
 
+    @staticmethod
+    def _set_onnx_metadata(
+        node: torch.fx.Node,
+        *,
+        op_type: str,
+        name: Optional[str] = None,
+        domain: Optional[str] = None,
+        shape: Optional[List[Optional[int]]] = None,
+        dtype: Optional[torch.dtype] = None,
+        output_index: Optional[int] = None,
+    ) -> None:
+        """Populate standard ONNX metadata on an FX node."""
+        node.meta["onnx_op_type"] = op_type
+        if name is not None:
+            node.meta["onnx_name"] = name
+        if domain is not None:
+            node.meta["onnx_domain"] = domain
+        if shape is not None:
+            node.meta["onnx_shape"] = shape
+        if dtype is not None:
+            node.meta["onnx_dtype"] = dtype
+        if output_index is not None:
+            node.meta["onnx_output_index"] = output_index
+
     def get_value(self, name: str) -> torch.fx.Node:
         """Get a value (node) by name from the environment.
 
@@ -417,10 +441,13 @@ class GraphBuilder:
 
             # Create a get_attr node to access the buffer
             fx_node = self.graph.get_attr(safe_name)
-            fx_node.meta["onnx_op_type"] = "Initializer"
-            fx_node.meta["onnx_name"] = name
-            fx_node.meta["onnx_shape"] = list(tensor.shape)
-            fx_node.meta["onnx_dtype"] = tensor.dtype
+            self._set_onnx_metadata(
+                fx_node,
+                op_type="Initializer",
+                name=name,
+                shape=list(tensor.shape),
+                dtype=tensor.dtype,
+            )
             self.env[name] = fx_node
 
     def _create_placeholders(self) -> None:
@@ -437,10 +464,13 @@ class GraphBuilder:
             safe_name = sanitize_name(value.name)
             placeholder = self.graph.placeholder(safe_name)
             info = self.value_info_map.get(value.name)
-            placeholder.meta["onnx_shape"] = info[0] if info else None
-            placeholder.meta["onnx_dtype"] = info[1] if info else None
-            placeholder.meta["onnx_op_type"] = "Input"
-            placeholder.meta["onnx_name"] = value.name
+            self._set_onnx_metadata(
+                placeholder,
+                op_type="Input",
+                name=value.name,
+                shape=info[0] if info else None,
+                dtype=info[1] if info else None,
+            )
             self.env[value.name] = placeholder
             self.input_names.append(value.name)
 
@@ -470,9 +500,12 @@ class GraphBuilder:
             # Add ONNX metadata to the operator node
             # Some handlers return a list of nodes (e.g., gradient ops)
             if fx_node is not None and hasattr(fx_node, "meta"):
-                fx_node.meta["onnx_op_type"] = node.op_type
-                fx_node.meta["onnx_name"] = node.name
-                fx_node.meta["onnx_domain"] = domain
+                self._set_onnx_metadata(
+                    fx_node,
+                    op_type=node.op_type,
+                    name=node.name,
+                    domain=domain,
+                )
 
             # Handle multiple outputs
             if len(node.output) == 1:
@@ -489,10 +522,13 @@ class GraphBuilder:
                             args=(fx_node, i),
                         )
                         # Propagate ONNX metadata to getitem node
-                        getitem_node.meta["onnx_op_type"] = node.op_type
-                        getitem_node.meta["onnx_name"] = node.name
-                        getitem_node.meta["onnx_domain"] = domain
-                        getitem_node.meta["onnx_output_index"] = i
+                        self._set_onnx_metadata(
+                            getitem_node,
+                            op_type=node.op_type,
+                            name=node.name,
+                            domain=domain,
+                            output_index=i,
+                        )
                         self.env[output_name] = getitem_node
 
     def _create_outputs(self) -> None:
