@@ -18,6 +18,7 @@ onnx2fx/
 │   │   ├── activation.py  # Activation functions (Relu, Sigmoid, etc.)
 │   │   ├── arithmetic.py  # Arithmetic ops (Add, Mul, Sin, Cos, etc.)
 │   │   ├── attention.py   # Attention ops (MultiHeadAttention, etc.)
+│   │   ├── attention_msft.py # Microsoft domain attention ops
 │   │   ├── control_flow.py # Control flow ops (Loop, If, Scan)
 │   │   ├── convolution.py # Convolution ops (Conv, ConvTranspose, DeformConv)
 │   │   ├── image.py       # Image ops (Resize, DepthToSpace, etc.)
@@ -39,6 +40,8 @@ onnx2fx/
 │       ├── analyze.py     # Model analysis utilities
 │       ├── attributes.py  # ONNX attribute parsing
 │       ├── dtype.py       # ONNX to PyTorch dtype mapping
+│       ├── names.py       # Name sanitization utilities
+│       ├── op_helpers.py  # Op helper utilities
 │       └── training.py    # Training utilities (make_trainable)
 ├── tests/                 # Test suite
 └── pyproject.toml         # Project configuration
@@ -163,8 +166,8 @@ For parsing ONNX node attributes, use functions from `onnx2fx.utils.attributes`:
 - `AnalysisResult` - Dataclass with analysis results (supported_ops, unsupported_ops, etc.)
 
 #### Operator Registration
-- `register_op(op_type, handler, domain, since_version)` - Register custom operator
-- `unregister_op(op_type, domain)` - Unregister an operator handler
+- `register_op(op_type, handler=None, domain="", since_version=1)` - Register custom operator
+- `unregister_op(op_type, domain="", since_version=None)` - Unregister an operator handler
 - `is_supported(op_type, domain)` - Check if operator is supported
 - `get_supported_ops(domain)` - List supported operators for a domain
 - `get_all_supported_ops()` - Get all supported operators across all domains

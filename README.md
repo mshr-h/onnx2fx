@@ -231,99 +231,35 @@ except Onnx2FxError as e:
 
 ### Standard ONNX Domain
 
-#### Activation Functions
-- Relu, LeakyRelu, PRelu, Elu, Selu, Celu
-- Sigmoid, HardSigmoid, HardSwish, Tanh
-- Softmax, LogSoftmax, Hardmax
-- Softplus, Softsign
-- Gelu, Silu, Mish
-- ThresholdedRelu
+This is a short list of representative operators. For the full list, call
+`get_supported_ops()` or `get_all_supported_ops()`.
 
-#### Arithmetic & Element-wise
-- Add, Sub, Mul, Div, Pow, Mod
-- Neg, Abs, Sign, Ceil, Floor, Round
-- Sqrt, Exp, Log, Reciprocal
-- Min, Max, Mean, Sum
-- Clip, Erf
-
-#### Comparison & Logical
-- Equal, Greater, Less, GreaterOrEqual, LessOrEqual
-- And, Or, Not, Xor
-- Where, IsNaN, IsInf
-- BitwiseAnd, BitwiseOr, BitwiseXor, BitwiseNot, BitShift
-
-#### Trigonometric
-- Sin, Cos, Tan
-- Sinh, Cosh, Tanh
-- Asin, Acos, Atan
-- Asinh, Acosh, Atanh
-
-#### Reduction
-- ReduceSum, ReduceMean, ReduceMax, ReduceMin, ReduceProd
-- ReduceL1, ReduceL2
-- ReduceLogSum, ReduceLogSumExp, ReduceSumSquare
-- ArgMax, ArgMin
-- TopK, CumSum
-
-#### Tensor Manipulation
-- Reshape, Transpose, Squeeze, Unsqueeze
-- Concat, Split, Slice, Gather, GatherElements, GatherND
-- ScatterElements, ScatterND
-- Expand, Tile, Flatten
-- Pad, Resize
-- Shape, Size
-- Cast, CastLike, Identity
-- Constant, ConstantOfShape
-
-#### Control Flow
-- If, Loop
-
-#### Neural Network Layers
-- Conv, ConvTranspose, ConvInteger
-- MatMul, Gemm, MatMulInteger
-- MaxPool, AveragePool, GlobalMaxPool, GlobalAveragePool
-- BatchNormalization, InstanceNormalization, LayerNormalization, GroupNormalization
-- Dropout, LRN
-
-#### Quantization
-- QuantizeLinear, DequantizeLinear, DynamicQuantizeLinear
-- QLinearConv, QLinearMatMul, QLinearAdd, QLinearMul
-- QLinearSigmoid, QLinearLeakyRelu, QLinearGlobalAveragePool
-
-#### Sequence Operations
-- SequenceConstruct, SequenceAt, SequenceEmpty
-- SequenceInsert, SequenceErase, SequenceLength
-- ConcatFromSequence, SplitToSequence
-- ReverseSequence
-
-#### Other
-- Einsum, NonZero, NonMaxSuppression
-- OneHot, Range, EyeLike, Det
-- Unique, Compress, Trilu
-- DepthToSpace, SpaceToDepth
-- StringNormalizer
-
-#### Random & Sampling
-- RandomNormal, RandomNormalLike
-- RandomUniform, RandomUniformLike
-- Multinomial, Bernoulli
-
-#### Loss Functions
-- NegativeLogLikelihoodLoss, SoftmaxCrossEntropyLoss
+- **Core tensor & shape**: Reshape, Transpose, Concat, Split, Slice, Gather, Pad, Resize, Shape, Cast
+- **Math & activations**: Add, Mul, MatMul, Gemm, Relu, Gelu, SiLU, Softmax, LogSoftmax
+- **Normalization & pooling**: BatchNormalization, LayerNormalization, InstanceNormalization, GroupNormalization, MaxPool, AveragePool, GlobalAveragePool
+- **Reductions & indexing**: ReduceSum, ReduceMean, ArgMax, ArgMin, TopK
+- **Control flow & sequence**: If, Loop, SequenceConstruct, SplitToSequence, ConcatFromSequence
+- **Quantization**: QuantizeLinear, DequantizeLinear, QLinearConv, QLinearMatMul
+- **Other**: Einsum, NonMaxSuppression, StringNormalizer
 
 #### Attention & Normalization Extensions
-- Attention, GroupQueryAttention
+- Attention (opset 24+)
+- RotaryEmbedding (opset 23+)
+- GroupQueryAttention
 - EmbedLayerNormalization
-- SkipLayerNormalization, SkipSimplifiedLayerNormalization
+- SkipLayerNormalization
 - SimplifiedLayerNormalization
+- SkipSimplifiedLayerNormalization
 
 ### Microsoft Domain (`com.microsoft`)
 
-> Note: SimplifiedLayerNormalization, SkipSimplifiedLayerNormalization, and GroupQueryAttention are also available in the standard ONNX domain.
+> Note: Some operators are available in both the standard and Microsoft domains (e.g., Attention, RotaryEmbedding, SimplifiedLayerNormalization, SkipSimplifiedLayerNormalization, GroupQueryAttention, SkipLayerNormalization, EmbedLayerNormalization).
 
-- SimplifiedLayerNormalization, SkipSimplifiedLayerNormalization
-- GroupQueryAttention
+- Attention
 - RotaryEmbedding
+- SimplifiedLayerNormalization, SkipSimplifiedLayerNormalization
+- SkipLayerNormalization, EmbedLayerNormalization
+- GroupQueryAttention
 
 ## API Reference
 
@@ -347,13 +283,14 @@ Register a custom ONNX operator handler.
 - `domain` (`str`, optional): The ONNX domain. Default is "" (standard ONNX domain).
 - `since_version` (`int`, optional): The minimum opset version for this handler. Default is 1.
 
-### `unregister_op(op_type, domain="")`
+### `unregister_op(op_type, domain="", since_version=None)`
 
 Unregister an operator handler.
 
 **Parameters:**
 - `op_type` (`str`): The ONNX operator type name.
 - `domain` (`str`, optional): The ONNX domain.
+- `since_version` (`int`, optional): The specific opset handler to remove. If None, removes all versions.
 
 **Returns:**
 - `bool`: True if the operator was unregistered.
