@@ -158,16 +158,16 @@ def softmax_v1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     return builder.call_function(_softmax_v1, args=(x, axis))
 
 
-@register("Softmax", since_version=13)
-def softmax_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Softmax activation for opset 13+.
-
-    In opset 13+, the default axis is -1 (last dimension), and softmax is
-    applied directly without coercion.
-    """
-    x = builder.get_value(node.input[0])
-    axis = get_attribute(node, "axis", -1)  # Default changed to -1 in opset 13
-    return builder.call_function(F.softmax, args=(x,), kwargs={"dim": axis})
+register("Softmax", since_version=13)(
+    unary_op_with_kwargs(
+        F.softmax,
+        attr_map={"dim": ("axis", -1)},
+        doc=(
+            "Softmax activation for opset 13+ with axis defaulting to the last "
+            "dimension."
+        ),
+    )
+)
 
 
 @register("LogSoftmax", since_version=1)
@@ -196,15 +196,13 @@ def log_softmax_v1(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.No
     return builder.call_function(_log_softmax_v1, args=(x, axis))
 
 
-@register("LogSoftmax", since_version=13)
-def log_softmax_v13(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Log Softmax activation for opset 13+.
-
-    In opset 13+, the default axis is -1.
-    """
-    x = builder.get_value(node.input[0])
-    axis = get_attribute(node, "axis", -1)  # Default changed to -1 in opset 13
-    return builder.call_function(F.log_softmax, args=(x,), kwargs={"dim": axis})
+register("LogSoftmax", since_version=13)(
+    unary_op_with_kwargs(
+        F.log_softmax,
+        attr_map={"dim": ("axis", -1)},
+        doc="Log Softmax activation for opset 13+.",
+    )
+)
 
 
 register("Softplus")(unary_op(F.softplus, "Softplus activation."))
