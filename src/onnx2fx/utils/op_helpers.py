@@ -190,6 +190,7 @@ def unary_op_with_kwargs(
     torch_fn: Callable[..., torch.Tensor],
     *,
     attr_map: dict[str, tuple[str, Any]],
+    fixed_kwargs: Optional[dict[str, Any]] = None,
     doc: Optional[str] = None,
 ) -> Callable[["GraphBuilder", onnx.NodeProto], torch.fx.Node]:
     """Create a handler for unary operators with attribute-based kwargs.
@@ -211,6 +212,8 @@ def unary_op_with_kwargs(
             kwarg: get_attribute(node, attr_name, default)
             for kwarg, (attr_name, default) in attr_map.items()
         }
+        if fixed_kwargs:
+            kwargs.update(fixed_kwargs)
         return builder.call_function(torch_fn, args=(x,), kwargs=kwargs)
 
     if doc:

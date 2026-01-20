@@ -211,14 +211,13 @@ register("Softplus")(unary_op(F.softplus, "Softplus activation."))
 register("Softsign")(unary_op(F.softsign, "Softsign activation."))
 
 
-@register("Gelu")
-def gelu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Gaussian Error Linear Unit activation."""
-    x = builder.get_value(node.input[0])
-    approximate = get_attribute(node, "approximate", "none")
-    if approximate == "tanh":
-        return builder.call_function(F.gelu, args=(x,), kwargs={"approximate": "tanh"})
-    return builder.call_function(F.gelu, args=(x,))
+register("Gelu")(
+    unary_op_with_kwargs(
+        F.gelu,
+        attr_map={"approximate": ("approximate", "none")},
+        doc="Gaussian Error Linear Unit activation.",
+    )
+)
 
 
 register("Silu")(unary_op(F.silu, "Sigmoid Linear Unit (SiLU/Swish) activation."))
@@ -226,12 +225,14 @@ register("Swish")(unary_op(F.silu, "Swish activation (alias for SiLU)."))
 register("Mish")(unary_op(F.mish, "Mish activation."))
 
 
-@register("ThresholdedRelu")
-def thresholded_relu(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
-    """Thresholded ReLU activation."""
-    x = builder.get_value(node.input[0])
-    alpha = get_attribute(node, "alpha", 1.0)
-    return builder.call_function(F.threshold, args=(x, alpha, 0.0))
+register("ThresholdedRelu")(
+    unary_op_with_kwargs(
+        F.threshold,
+        attr_map={"threshold": ("alpha", 1.0)},
+        fixed_kwargs={"value": 0.0},
+        doc="Thresholded ReLU activation.",
+    )
+)
 
 
 register("HardSwish")(unary_op(F.hardswish, "Hard Swish activation."))
