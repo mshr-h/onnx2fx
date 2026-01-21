@@ -167,18 +167,26 @@ def reverse_sequence(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.
     def _reverse_sequence(x, sequence_lens, batch_axis, time_axis):
         result = x.clone()
         for i, seq_len in enumerate(sequence_lens):
-            seq_len_val = (
+            seq_len_val = int(
                 seq_len.item() if isinstance(seq_len, torch.Tensor) else seq_len
             )
+            if seq_len_val <= 1:
+                # Nothing to reverse for length 0 or 1
+                continue
+
             # Create indices for this batch
             idx = [slice(None)] * x.dim()
             idx[batch_axis] = i
-            idx[time_axis] = slice(None, int(seq_len_val))
+            idx[time_axis] = slice(None, seq_len_val)
 
-            reversed_idx = list(idx)
-            reversed_idx[time_axis] = slice(int(seq_len_val) - 1, None, -1)
-
-            result[tuple(idx)] = x[tuple(reversed_idx)]
+            # Extract the subsequence, reverse it along time_axis, and put it back
+            subsequence = x[tuple(idx)]
+            # Use torch.flip to reverse along the time_axis dimension
+            # Since we've already indexed by batch_axis, the time_axis in the
+            # subsequence is shifted if batch_axis < time_axis
+            effective_time_axis = time_axis if batch_axis > time_axis else time_axis - 1
+            reversed_subseq = torch.flip(subsequence, dims=[effective_time_axis])
+            result[tuple(idx)] = reversed_subseq
 
         return result
 

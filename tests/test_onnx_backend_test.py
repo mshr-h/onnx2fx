@@ -95,8 +95,6 @@ SKIP_PATTERNS = [
     r".*dequantizelinear.*float4.*",
     r".*dequantizelinear.*uint4.*",
     r".*qlinearmatmul.*",
-    # ReverseSequence
-    r".*reversesequence.*",
     # Compress with default axis
     r".*compress_default_axis.*",
     # Pow with integer types
