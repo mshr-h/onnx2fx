@@ -54,6 +54,9 @@ onnx2fx/
 git clone https://github.com/mshr-h/onnx2fx.git
 cd onnx2fx
 uv sync --dev
+
+# Run Python scripts using uv
+uv run python your_script.py
 ```
 
 Core Requirements:
