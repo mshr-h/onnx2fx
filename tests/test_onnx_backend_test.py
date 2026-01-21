@@ -118,10 +118,6 @@ SKIP_PATTERNS = [
     r".*equal_string.*",
     # CumSum with int32
     r".*cumsum.*int32.*",
-    # Division with integer types (PyTorch returns float)
-    r".*div_int8.*",
-    r".*div_int16.*",
-    r".*div_uint8.*",
     # NonMaxSuppression with flipped coordinates
     r".*nonmaxsuppression_flipped.*",
     # EyeLike with off-diagonal or dtype

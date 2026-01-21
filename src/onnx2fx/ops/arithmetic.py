@@ -22,8 +22,28 @@ if TYPE_CHECKING:
 register("Add")(binary_op(torch.add, "Element-wise addition."))
 register("Sub")(binary_op(torch.sub, "Element-wise subtraction."))
 register("Mul")(binary_op(torch.mul, "Element-wise multiplication."))
-register("Div")(binary_op(torch.div, "Element-wise division."))
 register("Pow")(binary_op(torch.pow, "Element-wise power."))
+
+
+def _onnx_div(lhs: torch.Tensor, rhs: torch.Tensor) -> torch.Tensor:
+    """ONNX-compatible division.
+
+    For integer types, ONNX Div truncates toward zero (like C integer division),
+    and the result must have the same integer dtype as the inputs.
+    For floating-point types, it performs standard division.
+    """
+    if not lhs.dtype.is_floating_point and not lhs.dtype.is_complex:
+        # Integer types: use truncation toward zero
+        return torch.div(lhs, rhs, rounding_mode="trunc")
+    return torch.div(lhs, rhs)
+
+
+@register("Div")
+def div(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Element-wise division."""
+    lhs = builder.get_value(node.input[0])
+    rhs = builder.get_value(node.input[1])
+    return builder.call_function(_onnx_div, args=(lhs, rhs))
 
 
 @register("Mod")
