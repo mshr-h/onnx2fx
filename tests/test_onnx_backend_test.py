@@ -28,15 +28,10 @@ testcases = (
 # Tests to skip due to unsupported PyTorch dtypes or ONNX features
 # These are known limitations that cannot be fixed without PyTorch changes
 SKIP_PATTERNS = [
-    # Unsupported dtypes in PyTorch (uint16, uint32, uint64 operations)
+    # Unsupported dtypes in PyTorch
     r".*_uint16.*",
     r".*_uint32.*",
     r".*_uint64.*",
-    # FLOAT8/FLOAT4/INT4/UINT4 types not fully supported
-    r".*FLOAT8.*",
-    r".*FLOAT4.*",
-    r".*INT4.*",
-    r".*UINT4.*",
     r".*float8.*",
     r".*float4.*",
     r".*int4.*",
@@ -47,11 +42,8 @@ SKIP_PATTERNS = [
     r".*_e4m3fnuz.*",
     r".*_e5m2fnuz.*",
     r".*e2m1.*",
-    # BFLOAT16 cast issues
     r".*BFLOAT16.*",
     r".*bfloat16.*",
-    # Bitshift operations on unsupported types
-    r".*bitshift.*uint.*",
     # Tests requiring multiple outputs that are not properly handled
     r".*_mask_ratio$",  # dropout mask ratio outputs
     r".*_log_prob$",  # SCE log_prob outputs
@@ -116,8 +108,8 @@ SKIP_PATTERNS = [
     r".*onehot_negative_indices.*",
     # Wrap pad mode
     r".*wrap_pad.*",
-    # Adam multiple - pre-computed test data doesn't match ONNX reference implementation
-    r"test_adam_multiple",
+    # Adam
+    r"test_adam*",
     # DFT inverse tests have tiny numerical differences in FFT implementations
     r"test_dft_*",
     # ImageDecoder
@@ -128,8 +120,6 @@ SKIP_PATTERNS = [
     r"test_tfidfvectorizer_*",
     # RegexFullMatch
     r"test_regex_full_match_*",
-    # Adam
-    r"test_adam*",
     # LabelEncoder
     r"test_ai_onnx_ml_label_encoder_*",
     # Binarizer
