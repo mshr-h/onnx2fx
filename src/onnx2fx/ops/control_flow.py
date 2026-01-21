@@ -69,6 +69,7 @@ def _build_subgraph_module(
     body_graph: onnx.GraphProto,
     parent_env: Dict[str, torch.fx.Node],
     parent_opset_versions: Dict[str, int],
+    parent_type_info: Optional[Dict[str, bool]] = None,
 ) -> Tuple[torch.fx.GraphModule, List[str], List[str], List[str]]:
     """Build an FX GraphModule from an ONNX subgraph.
 
@@ -80,6 +81,8 @@ def _build_subgraph_module(
         Environment from parent graph (for accessing outer scope values).
     parent_opset_versions : Dict[str, int]
         Opset versions from parent model.
+    parent_type_info : Optional[Dict[str, bool]]
+        Mapping from value names to whether they are optional types in parent scope.
 
     Returns
     -------
@@ -91,6 +94,10 @@ def _build_subgraph_module(
     graph = torch.fx.Graph()
     env: Dict[str, torch.fx.Node] = {}
     constants: Dict[str, torch.Tensor] = {}
+
+    # Initialize parent type info
+    if parent_type_info is None:
+        parent_type_info = {}
 
     # Get input and output names
     input_names = [inp.name for inp in body_graph.input]
@@ -150,10 +157,35 @@ def _build_subgraph_module(
             self._constants = constants
             self._submodules: Dict[str, nn.Module] = {}
             self.initializer_map = initializer_map
+            self._body_graph = body_graph
+            self._parent_type_info = parent_type_info
+            # Build type info for this subgraph (to pass to nested subgraphs)
+            self._type_info = self._build_type_info()
+
+        def _build_type_info(self) -> Dict[str, bool]:
+            """Build a mapping of value names to whether they are optional types."""
+            info: Dict[str, bool] = {}
+            # Include parent type info
+            info.update(self._parent_type_info)
+            # Add types from this subgraph
+            for value_info in self._body_graph.input:
+                info[value_info.name] = value_info.type.HasField("optional_type")
+            for value_info in self._body_graph.value_info:
+                info[value_info.name] = value_info.type.HasField("optional_type")
+            for value_info in self._body_graph.output:
+                info[value_info.name] = value_info.type.HasField("optional_type")
+            return info
 
         @property
         def opset_version(self) -> int:
             return self._opset_versions.get("", 1)
+
+        def is_optional_type(self, name: str) -> bool:
+            """Check if a value has optional type in the subgraph or parent scope."""
+            # First check the combined type info (includes parent scope)
+            if name in self._type_info:
+                return self._type_info[name]
+            return False
 
         def get_opset_version(self, domain: str = "") -> int:
             return self._opset_versions.get(domain, 1)
@@ -399,9 +431,14 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         builder.get_value(node.input[i]) for i in range(2, len(node.input))
     ]
 
+    # Get parent type info if available (for nested subgraphs)
+    parent_type_info = getattr(builder, "_type_info", None)
+
     # Build subgraph module
     body_module, body_input_names, body_output_names, outer_refs = (
-        _build_subgraph_module(body_graph, builder.env, builder._opset_versions)
+        _build_subgraph_module(
+            body_graph, builder.env, builder._opset_versions, parent_type_info
+        )
     )
 
     # Get outer scope values that the body references
@@ -585,9 +622,14 @@ def scan_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         builder.get_value(node.input[i]) for i in range(n_state_vars, len(node.input))
     ]
 
+    # Get parent type info if available (for nested subgraphs)
+    parent_type_info = getattr(builder, "_type_info", None)
+
     # Build subgraph module
     body_module, body_input_names, body_output_names, outer_refs = (
-        _build_subgraph_module(body_graph, builder.env, builder._opset_versions)
+        _build_subgraph_module(
+            body_graph, builder.env, builder._opset_versions, parent_type_info
+        )
     )
 
     # Get outer scope values that the body references
@@ -664,9 +706,14 @@ def scan_op_v8(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
         for i in range(n_state_vars, len(remaining_inputs))
     ]
 
+    # Get parent type info if available (for nested subgraphs)
+    parent_type_info = getattr(builder, "_type_info", None)
+
     # Build subgraph module
     body_module, body_input_names, body_output_names, outer_refs = (
-        _build_subgraph_module(body_graph, builder.env, builder._opset_versions)
+        _build_subgraph_module(
+            body_graph, builder.env, builder._opset_versions, parent_type_info
+        )
     )
 
     # Get outer scope values that the body references
@@ -831,12 +878,19 @@ def if_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
             "If operator requires 'then_branch' and 'else_branch' attributes"
         )
 
+    # Get parent type info if available (for nested subgraphs)
+    parent_type_info = getattr(builder, "_type_info", None)
+
     # Build subgraph modules for both branches
     then_module, then_input_names, then_output_names, then_outer_refs = (
-        _build_subgraph_module(then_graph, builder.env, builder._opset_versions)
+        _build_subgraph_module(
+            then_graph, builder.env, builder._opset_versions, parent_type_info
+        )
     )
     else_module, else_input_names, else_output_names, else_outer_refs = (
-        _build_subgraph_module(else_graph, builder.env, builder._opset_versions)
+        _build_subgraph_module(
+            else_graph, builder.env, builder._opset_versions, parent_type_info
+        )
     )
 
     # Get outer scope values for both branches

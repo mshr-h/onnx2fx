@@ -261,15 +261,25 @@ def optional_get_element(
 
     if is_optional:
         # Input is optional type - need to unwrap
+        # However, in ONNX Loops, the optional type can be "refined" to a non-optional
+        # after the first iteration. We need to handle both cases:
+        # 1. True optional wrapper: [value] (length 1) -> return value
+        # 2. Plain value after refinement: return as-is
 
         def _get_element_from_optional(opt):
+            if opt is None:
+                raise ValueError("Cannot get element from empty optional")
             if isinstance(opt, list):
                 if len(opt) == 0:
                     raise ValueError("Cannot get element from empty optional")
-                # Unwrap the optional: return the first (and only) element
-                return opt[0]
-            if opt is None:
-                raise ValueError("Cannot get element from empty optional")
+                if len(opt) == 1:
+                    # This looks like an optional wrapper [value] - unwrap it
+                    return opt[0]
+                else:
+                    # Length > 1: this is a plain sequence (after loop refinement)
+                    # Return as-is since it's already unwrapped
+                    return opt
+            # Not a list - return as-is (tensor, etc.)
             return opt
 
         return builder.call_function(_get_element_from_optional, args=(optional_input,))

@@ -57,8 +57,6 @@ SKIP_PATTERNS = [
     r".*_log_prob$",  # SCE log_prob outputs
     # Unique op has complex output handling
     r".*unique.*",
-    # Loop with sequence outputs
-    r".*loop.*seq.*",
     # Sequence operations with complex semantics
     r".*sequence_insert.*",
     r".*sequence_map.*",
