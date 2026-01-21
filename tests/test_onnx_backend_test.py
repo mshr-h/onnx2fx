@@ -62,7 +62,6 @@ SKIP_PATTERNS = [
     r".*optional_has_element.*",
     r".*identity_sequence.*",
     r".*identity_opt.*",
-    r".*if_seq.*",
     r".*if_opt.*",
     # Loop with sequence outputs
     r".*loop.*seq.*",
@@ -161,37 +160,77 @@ def should_skip_test(test_name: str) -> bool:
     return bool(SKIP_PATTERN_RE.match(test_name))
 
 
+def _load_proto_from_file(pb_path: str):
+    """Load a proto from file, trying TensorProto first, then SequenceProto.
+
+    Returns either a numpy array (for tensors) or a list of numpy arrays (for sequences).
+    """
+    with open(pb_path, "rb") as f:
+        data = f.read()
+
+    # Try TensorProto first
+    tensor = onnx.TensorProto()
+    tensor.ParseFromString(data)
+
+    # If tensor has segment field, try parsing as SequenceProto instead
+    # Segments are not supported, but this often indicates misparse
+    if tensor.HasField("segment"):
+        seq = onnx.SequenceProto()
+        seq.ParseFromString(data)
+        if seq.tensor_values:
+            # It's a sequence of tensors
+            return [onnx.numpy_helper.to_array(t) for t in seq.tensor_values]
+        # If no tensor values, it might still be a malformed tensor
+        raise ValueError(f"Tensor segments are not supported: {pb_path}")
+
+    return onnx.numpy_helper.to_array(tensor)
+
+
 def load_test_data(data_dir: str):
     """Load test input/output data from .pb files.
 
     Returns inputs and outputs as lists (ordered by file index) since
     some ONNX backend test data has empty tensor names.
+
+    Raises:
+        ValueError: If tensor data contains unsupported features (e.g., segments).
     """
     inputs = []
     outputs = []
     for pb in sorted(glob.glob(os.path.join(data_dir, "input_*.pb"))):
-        tensor = onnx.TensorProto()
-        with open(pb, "rb") as f:
-            tensor.ParseFromString(f.read())
-        inputs.append(onnx.numpy_helper.to_array(tensor))
+        inputs.append(_load_proto_from_file(pb))
     for pb in sorted(glob.glob(os.path.join(data_dir, "output_*.pb"))):
-        tensor = onnx.TensorProto()
-        with open(pb, "rb") as f:
-            tensor.ParseFromString(f.read())
-        outputs.append(onnx.numpy_helper.to_array(tensor))
+        outputs.append(_load_proto_from_file(pb))
     return {"input": inputs, "output": outputs}
 
 
-def _convert_input(inp: np.ndarray):
-    """Convert numpy array to torch tensor, handling string types."""
-    if inp.dtype == np.object_:
-        # String arrays - keep as numpy, will be handled by StringNormalizer
-        return inp
-    return torch.from_numpy(inp.copy())
+def _convert_input(inp):
+    """Convert numpy array to torch tensor, handling string types and sequences."""
+    if isinstance(inp, list):
+        # Sequence of tensors
+        return [_convert_input(t) for t in inp]
+    if isinstance(inp, np.ndarray):
+        if inp.dtype == np.object_:
+            # String arrays - keep as numpy, will be handled by StringNormalizer
+            return inp
+        return torch.from_numpy(inp.copy())
+    return inp
 
 
 def _compare_outputs(expected, actual, rtol, atol):
-    """Compare outputs, handling both tensor and string types."""
+    """Compare outputs, handling tensor, string, and sequence types."""
+    # Handle sequence outputs (list of tensors)
+    if isinstance(expected, list):
+        assert isinstance(actual, (list, tuple)), (
+            f"Expected list/tuple for sequence output, got {type(actual)}"
+        )
+        assert len(expected) == len(actual), (
+            f"Sequence length mismatch: expected {len(expected)}, got {len(actual)}"
+        )
+        for exp_item, act_item in zip(expected, actual):
+            _compare_outputs(exp_item, act_item, rtol, atol)
+        return
+
     if isinstance(expected, np.ndarray) and expected.dtype == np.object_:
         # String comparison
         assert isinstance(actual, np.ndarray), (
