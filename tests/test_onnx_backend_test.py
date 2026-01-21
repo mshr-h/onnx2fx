@@ -57,12 +57,6 @@ SKIP_PATTERNS = [
     r".*_log_prob$",  # SCE log_prob outputs
     # Unique op has complex output handling
     r".*unique.*",
-    # Optional/sequence type handling
-    r".*optional_get_element.*",
-    r".*optional_has_element.*",
-    r".*identity_sequence.*",
-    r".*identity_opt.*",
-    r".*if_opt.*",
     # Loop with sequence outputs
     r".*loop.*seq.*",
     # Sequence operations with complex semantics
@@ -160,6 +154,39 @@ def should_skip_test(test_name: str) -> bool:
     return bool(SKIP_PATTERN_RE.match(test_name))
 
 
+def _load_sequence_proto(seq: onnx.SequenceProto, unwrap_optional: bool = True):
+    """Recursively load a SequenceProto, handling nested sequences and optionals.
+
+    ONNX uses SequenceProto to represent both sequences and optionals:
+    - elem_type=1 (TENSOR): sequence of tensors
+    - elem_type=3 (SEQUENCE): sequence of sequences, OR optional containing a sequence/tensor
+
+    When unwrap_optional=True and we have a sequence of sequences/tensors representing
+    an Optional, we load it but keep the list wrapping so that OptionalGetElement can
+    properly extract it.
+    """
+    if seq.tensor_values:
+        # It's a sequence of tensors
+        return [onnx.numpy_helper.to_array(t) for t in seq.tensor_values]
+    elif seq.sequence_values:
+        # It could be a nested sequence OR an optional containing a sequence
+        # elem_type=3 (SEQUENCE) is used for both seq(seq(...)) and optional(seq(...))
+        if unwrap_optional and seq.elem_type == 3 and len(seq.sequence_values) == 0:
+            # Empty optional - return empty list (which means no element)
+            return []
+        else:
+            # Load nested sequences - keep the list structure
+            # For optional(seq(...)), this returns [[tensors...]] so OptionalGetElement
+            # can extract [tensors...] as the inner sequence
+            return [
+                _load_sequence_proto(s, unwrap_optional=False)
+                for s in seq.sequence_values
+            ]
+    else:
+        # Empty sequence
+        return []
+
+
 def _load_proto_from_file(pb_path: str):
     """Load a proto from file, trying TensorProto first, then SequenceProto.
 
@@ -168,19 +195,24 @@ def _load_proto_from_file(pb_path: str):
     with open(pb_path, "rb") as f:
         data = f.read()
 
-    # Try TensorProto first
+    # Try SequenceProto first - it should have name and/or actual values
+    try:
+        seq = onnx.SequenceProto()
+        seq.ParseFromString(data)
+        # Check if it's actually a SequenceProto by checking for name or actual values
+        # Note: elem_type alone is not reliable because TensorProto fields can be misinterpreted
+        if seq.name or seq.tensor_values or seq.sequence_values:
+            return _load_sequence_proto(seq)
+    except Exception:
+        # Not a valid SequenceProto, try TensorProto
+        pass
+
+    # Try TensorProto
     tensor = onnx.TensorProto()
     tensor.ParseFromString(data)
 
-    # If tensor has segment field, try parsing as SequenceProto instead
-    # Segments are not supported, but this often indicates misparse
+    # If tensor has segment field, it's not supported
     if tensor.HasField("segment"):
-        seq = onnx.SequenceProto()
-        seq.ParseFromString(data)
-        if seq.tensor_values:
-            # It's a sequence of tensors
-            return [onnx.numpy_helper.to_array(t) for t in seq.tensor_values]
-        # If no tensor values, it might still be a malformed tensor
         raise ValueError(f"Tensor segments are not supported: {pb_path}")
 
     return onnx.numpy_helper.to_array(tensor)

@@ -185,3 +185,102 @@ def reverse_sequence(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.
     return builder.call_function(
         _reverse_sequence, args=(x, sequence_lens, batch_axis, time_axis)
     )
+
+
+@register("Optional", since_version=15)
+def optional_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+    """Create an optional value.
+
+    If an input is provided, wraps it in a list to represent "optional with value".
+    If no input is provided, creates an empty optional (empty list or None).
+
+    Representation:
+    - optional(tensor): [tensor]
+    - optional(sequence): [[tensors...]]
+    - empty optional: [] or None
+    """
+    if len(node.input) > 0 and node.input[0]:
+        # Wrap the input in a list to represent optional with value
+        value = builder.get_value(node.input[0])
+
+        def _wrap_optional(v):
+            return [v]
+
+        return builder.call_function(_wrap_optional, args=(value,))
+    else:
+        # Create an empty optional (empty list)
+        return builder.call_function(list, args=())
+
+
+@register("OptionalHasElement", since_version=15)
+def optional_has_element(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
+    """Check if an optional value has an element.
+
+    An optional is considered empty if:
+    - It is None
+    - It is an empty list (ONNX representation of empty optional)
+    """
+    optional_input = get_optional_input(builder, node, 0)
+
+    if optional_input is not None:
+
+        def _has_element(opt):
+            # Handle list representation of optional (used in ONNX test data)
+            if isinstance(opt, list):
+                return torch.tensor(len(opt) > 0, dtype=torch.bool)
+            # Handle None representation
+            return torch.tensor(opt is not None, dtype=torch.bool)
+
+        return builder.call_function(_has_element, args=(optional_input,))
+    else:
+        # No input provided means empty optional
+        return builder.call_function(lambda: torch.tensor(False, dtype=torch.bool))
+
+
+@register("OptionalGetElement", since_version=15)
+def optional_get_element(
+    builder: "GraphBuilder", node: onnx.NodeProto
+) -> torch.fx.Node:
+    """Get the element from an optional value.
+
+    Handles both None and list representations of optionals.
+    Raises an error if the optional is empty.
+
+    The behavior depends on the input type:
+    - optional(tensor): [tensor] → return tensor
+    - optional(sequence): [[t1, t2, ...]] → return [t1, t2, ...]
+    - sequence (plain): [t1, t2, ...] → return as-is (sequence IS the value)
+    """
+    input_name = node.input[0]
+    optional_input = builder.get_value(input_name)
+
+    # Check if the input is declared as optional type in the model
+    is_optional = builder.is_optional_type(input_name)
+
+    if is_optional:
+        # Input is optional type - need to unwrap
+
+        def _get_element_from_optional(opt):
+            if isinstance(opt, list):
+                if len(opt) == 0:
+                    raise ValueError("Cannot get element from empty optional")
+                # Unwrap the optional: return the first (and only) element
+                return opt[0]
+            if opt is None:
+                raise ValueError("Cannot get element from empty optional")
+            return opt
+
+        return builder.call_function(_get_element_from_optional, args=(optional_input,))
+    else:
+        # Input is a sequence type - return as-is
+        # (The sequence itself is used as the "element" of an implicit optional)
+
+        def _get_element_from_sequence(seq):
+            if seq is None:
+                raise ValueError("Cannot get element from empty optional")
+            # Return sequence as-is
+            return seq
+
+        return builder.call_function(_get_element_from_sequence, args=(optional_input,))

@@ -470,6 +470,33 @@ class GraphBuilder:
             )
         return info_map
 
+    def is_optional_type(self, name: str) -> bool:
+        """Check if a value has optional type in the ONNX model.
+
+        Parameters
+        ----------
+        name : str
+            The name of the value to check.
+
+        Returns
+        -------
+        bool
+            True if the value has optional type, False otherwise.
+        """
+        # Search in graph inputs
+        for value_info in self.model.graph.input:
+            if value_info.name == name:
+                return value_info.type.HasField("optional_type")
+        # Search in value_info
+        for value_info in self.model.graph.value_info:
+            if value_info.name == name:
+                return value_info.type.HasField("optional_type")
+        # Search in outputs
+        for value_info in self.model.graph.output:
+            if value_info.name == name:
+                return value_info.type.HasField("optional_type")
+        return False
+
     def _create_initializer_map(self) -> Dict[str, torch.Tensor]:
         """Build a mapping from initializer names to PyTorch tensors."""
         init_map = {}
