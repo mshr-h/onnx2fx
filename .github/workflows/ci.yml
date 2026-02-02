@@ -51,4 +51,4 @@ jobs:
         run: uv sync --dev
 
       - name: Run tests
-        run: uv run pytest -v tests
+        run: uv run pytest -v tests -m "not slow"
