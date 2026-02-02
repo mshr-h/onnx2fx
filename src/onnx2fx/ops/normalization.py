@@ -9,6 +9,7 @@ import torch.nn.functional as F
 
 from ..op_registry import register
 from ..utils.attributes import get_attribute
+from ..utils.dtype import stash_type_to_torch_dtype
 from ..utils.op_helpers import get_optional_input
 
 if TYPE_CHECKING:
@@ -117,16 +118,7 @@ def layer_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.
             axis = x.dim() + axis
 
         # Determine stash dtype for mean/invstddev computation
-        if stash_type == 1:
-            stash_dtype = torch.float32
-        elif stash_type == 11:
-            stash_dtype = torch.float64
-        elif stash_type == 10:
-            stash_dtype = torch.float16
-        elif stash_type == 16:
-            stash_dtype = torch.bfloat16
-        else:
-            stash_dtype = torch.float32
+        stash_dtype = stash_type_to_torch_dtype(stash_type)
 
         # Cast input to stash dtype for computing statistics
         original_dtype = x.dtype
@@ -187,16 +179,7 @@ def rms_normalization(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
 
     def _rms_norm(x, scale, axis, epsilon, stash_type):
         # Determine stash dtype for computation
-        if stash_type == 1:
-            stash_dtype = torch.float32
-        elif stash_type == 11:
-            stash_dtype = torch.float64
-        elif stash_type == 10:
-            stash_dtype = torch.float16
-        elif stash_type == 16:
-            stash_dtype = torch.bfloat16
-        else:
-            stash_dtype = torch.float32
+        stash_dtype = stash_type_to_torch_dtype(stash_type)
 
         # Normalize axis
         if axis < 0:

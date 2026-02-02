@@ -58,9 +58,42 @@ def torch_dtype_to_onnx(torch_dtype: torch.dtype) -> Optional[int]:
     return TORCH_TO_ONNX_DTYPE.get(torch_dtype)
 
 
+# ONNX stash_type to PyTorch dtype mapping (used in normalization ops)
+_STASH_TYPE_MAP: Dict[int, torch.dtype] = {
+    1: torch.float32,
+    10: torch.float16,
+    11: torch.float64,
+    16: torch.bfloat16,
+}
+
+
+def stash_type_to_torch_dtype(stash_type: int) -> torch.dtype:
+    """Convert ONNX stash_type attribute to PyTorch dtype.
+
+    The stash_type attribute specifies the floating-point precision
+    for intermediate computations in normalization operations.
+
+    Parameters
+    ----------
+    stash_type : int
+        ONNX stash_type value:
+        - 1: float32
+        - 10: float16
+        - 11: float64
+        - 16: bfloat16
+
+    Returns
+    -------
+    torch.dtype
+        Corresponding PyTorch dtype. Defaults to float32 for unknown values.
+    """
+    return _STASH_TYPE_MAP.get(stash_type, torch.float32)
+
+
 __all__ = [
     "DTYPE_MAP",
     "TORCH_TO_ONNX_DTYPE",
     "onnx_dtype_to_torch",
+    "stash_type_to_torch_dtype",
     "torch_dtype_to_onnx",
 ]
