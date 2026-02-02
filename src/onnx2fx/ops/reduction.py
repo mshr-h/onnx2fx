@@ -389,45 +389,38 @@ def reduce_sum_square(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx
 # =============================================================================
 
 
+def _make_arg_extremum_handler(torch_fn):
+    """Factory for ArgMax/ArgMin operator handlers."""
+
+    def _arg_extremum(t, axis, keepdims, select_last_index):
+        if select_last_index:
+            flipped = torch.flip(t, [axis])
+            idx = torch_fn(flipped, dim=axis, keepdim=keepdims)
+            return t.size(axis) - 1 - idx
+        return torch_fn(t, dim=axis, keepdim=keepdims)
+
+    def handler(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
+        x = builder.get_value(node.input[0])
+        axis = get_attribute(node, "axis", 0)
+        keepdims = get_attribute(node, "keepdims", 1)
+        select_last_index = get_attribute(node, "select_last_index", 0)
+        return builder.call_function(
+            _arg_extremum, args=(x, axis, bool(keepdims), bool(select_last_index))
+        )
+
+    return handler
+
+
 @register("ArgMax")
 def argmax(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Index of maximum value."""
-    x = builder.get_value(node.input[0])
-    axis = get_attribute(node, "axis", 0)
-    keepdims = get_attribute(node, "keepdims", 1)
-    select_last_index = get_attribute(node, "select_last_index", 0)
-
-    def _argmax(t, axis, keepdims, select_last_index):
-        if select_last_index:
-            # Flip, argmax, then adjust index
-            flipped = torch.flip(t, [axis])
-            idx = torch.argmax(flipped, dim=axis, keepdim=keepdims)
-            return t.size(axis) - 1 - idx
-        return torch.argmax(t, dim=axis, keepdim=keepdims)
-
-    return builder.call_function(
-        _argmax, args=(x, axis, bool(keepdims), bool(select_last_index))
-    )
+    return _make_arg_extremum_handler(torch.argmax)(builder, node)
 
 
 @register("ArgMin")
 def argmin(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Index of minimum value."""
-    x = builder.get_value(node.input[0])
-    axis = get_attribute(node, "axis", 0)
-    keepdims = get_attribute(node, "keepdims", 1)
-    select_last_index = get_attribute(node, "select_last_index", 0)
-
-    def _argmin(t, axis, keepdims, select_last_index):
-        if select_last_index:
-            flipped = torch.flip(t, [axis])
-            idx = torch.argmin(flipped, dim=axis, keepdim=keepdims)
-            return t.size(axis) - 1 - idx
-        return torch.argmin(t, dim=axis, keepdim=keepdims)
-
-    return builder.call_function(
-        _argmin, args=(x, axis, bool(keepdims), bool(select_last_index))
-    )
+    return _make_arg_extremum_handler(torch.argmin)(builder, node)
 
 
 # =============================================================================
