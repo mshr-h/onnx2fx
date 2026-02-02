@@ -8,7 +8,6 @@ import torch
 from onnxscript import opset13, opset14, opset15, opset16, opset17
 from onnxscript import opset18, opset19, opset20, opset21, opset22, opset23
 
-from onnx2fx import convert
 from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
@@ -129,9 +128,13 @@ class TestDynamicQuantizeLinear:
         graph = helper.make_graph([node], "test", [x], [y, y_scale, y_zero_point])
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
-        fx_module = convert(model)
-
         test_input = torch.randn(2, 3) * 10  # Larger range
+        expected = (
+            torch.empty_like(test_input, dtype=torch.uint8),
+            torch.empty((), dtype=torch.float32),
+            torch.empty((), dtype=torch.uint8),
+        )
+        fx_module = run_onnx_test(model, test_input, expected, check_shape_only=True)
         result = fx_module(test_input)
 
         # Result is a tuple (y, scale, zero_point)
@@ -166,11 +169,13 @@ class TestQLinearMatMul:
             [node], "test", [a, b], [y], [a_scale, a_zp, b_scale, b_zp, y_scale, y_zp]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
-
-        fx_module = convert(model)
-
         a_input = torch.randint(0, 256, (2, 3), dtype=torch.uint8)
         b_input = torch.randint(0, 256, (3, 4), dtype=torch.uint8)
+
+        expected = torch.empty(2, 4, dtype=torch.uint8)
+        fx_module = run_onnx_test(
+            model, (a_input, b_input), expected, check_shape_only=True
+        )
         result = fx_module(a_input, b_input)
 
         assert result.dtype == torch.uint8
@@ -205,11 +210,13 @@ class TestQLinearConv:
             [node], "test", [x, w], [y], [x_scale, x_zp, w_scale, w_zp, y_scale, y_zp]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
-
-        fx_module = convert(model)
-
         x_input = torch.randint(0, 256, (1, 3, 8, 8), dtype=torch.uint8)
         w_input = torch.randint(0, 256, (16, 3, 3, 3), dtype=torch.uint8)
+
+        expected = torch.empty(1, 16, 6, 6, dtype=torch.uint8)
+        fx_module = run_onnx_test(
+            model, (x_input, w_input), expected, check_shape_only=True
+        )
         result = fx_module(x_input, w_input)
 
         assert result.dtype == torch.uint8
@@ -239,10 +246,10 @@ class TestQLinearActivations:
             [node], "test", [x], [y], [x_scale, x_zp, y_scale, y_zp]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
-
-        fx_module = convert(model)
-
         x_input = torch.randint(0, 256, (2, 3), dtype=torch.uint8)
+
+        expected = torch.empty(2, 3, dtype=torch.uint8)
+        fx_module = run_onnx_test(model, x_input, expected, check_shape_only=True)
         result = fx_module(x_input)
 
         assert result.dtype == torch.uint8
@@ -269,10 +276,10 @@ class TestQLinearActivations:
             [node], "test", [x], [y], [x_scale, x_zp, y_scale, y_zp]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
-
-        fx_module = convert(model)
-
         x_input = torch.randint(0, 256, (2, 3), dtype=torch.uint8)
+
+        expected = torch.empty(2, 3, dtype=torch.uint8)
+        fx_module = run_onnx_test(model, x_input, expected, check_shape_only=True)
         result = fx_module(x_input)
 
         assert result.dtype == torch.uint8
@@ -302,10 +309,10 @@ class TestQLinearGlobalAveragePool:
             [node], "test", [x], [y], [x_scale, x_zp, y_scale, y_zp]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
-
-        fx_module = convert(model)
-
         x_input = torch.randint(0, 256, (1, 64, 7, 7), dtype=torch.uint8)
+
+        expected = torch.empty(1, 64, 1, 1, dtype=torch.uint8)
+        fx_module = run_onnx_test(model, x_input, expected, check_shape_only=True)
         result = fx_module(x_input)
 
         assert result.dtype == torch.uint8
@@ -365,11 +372,13 @@ class TestConvInteger:
 
         graph = helper.make_graph([node], "test", [x, w], [y], [x_zp, w_zp])
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
-
-        fx_module = convert(model)
-
         x_input = torch.randint(0, 256, (1, 3, 8, 8), dtype=torch.uint8)
         w_input = torch.randint(0, 256, (16, 3, 3, 3), dtype=torch.uint8)
+
+        expected = torch.empty(1, 16, 6, 6, dtype=torch.int32)
+        fx_module = run_onnx_test(
+            model, (x_input, w_input), expected, check_shape_only=True
+        )
         result = fx_module(x_input, w_input)
 
         assert result.dtype == torch.int32

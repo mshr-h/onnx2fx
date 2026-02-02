@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import onnx
 
-from onnx2fx import convert
+from conftest import run_onnx_test, convert_onnx_model
 
 
 def export_to_onnx_dynamic(
@@ -57,16 +57,18 @@ class TestDynamicBatchSize:
             input_shape=(2, 64),
             dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         # Test with different batch sizes
         for batch_size in [1, 4, 8, 16]:
             test_input = torch.randn(batch_size, 64)
-            with torch.inference_mode():
-                expected = model(test_input)
-                result = fx_module(test_input)
-            torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+            run_onnx_test(
+                fx_module,
+                test_input,
+                lambda x: model(x),
+                rtol=1e-4,
+                atol=1e-5,
+            )
 
     def test_conv_dynamic_batch(self):
         """Test CNN with dynamic batch size."""
@@ -94,16 +96,18 @@ class TestDynamicBatchSize:
             input_shape=(2, 3, 32, 32),
             dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         # Test with different batch sizes
         for batch_size in [1, 4, 8]:
             test_input = torch.randn(batch_size, 3, 32, 32)
-            with torch.inference_mode():
-                expected = model(test_input)
-                result = fx_module(test_input)
-            torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+            run_onnx_test(
+                fx_module,
+                test_input,
+                lambda x: model(x),
+                rtol=1e-4,
+                atol=1e-5,
+            )
 
 
 class TestDynamicSequenceLength:
@@ -135,16 +139,18 @@ class TestDynamicSequenceLength:
                 "output": {0: "batch", 1: "seq_len"},
             },
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         # Test with different sequence lengths
         for seq_len in [5, 10, 20, 50]:
             test_input = torch.randn(2, seq_len, 64)
-            with torch.inference_mode():
-                expected = model(test_input)
-                result = fx_module(test_input)
-            torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+            run_onnx_test(
+                fx_module,
+                test_input,
+                lambda x: model(x),
+                rtol=1e-4,
+                atol=1e-5,
+            )
 
     def test_attention_dynamic_sequence(self):
         """Test attention with dynamic sequence length."""
@@ -171,16 +177,18 @@ class TestDynamicSequenceLength:
                 "output": {0: "batch", 1: "seq_len"},
             },
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         # Test with different sequence lengths
         for seq_len in [5, 10, 20]:
             test_input = torch.randn(2, seq_len, 64)
-            with torch.inference_mode():
-                expected = model(test_input)
-                result = fx_module(test_input)
-            torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-4)
+            run_onnx_test(
+                fx_module,
+                test_input,
+                lambda x: model(x),
+                rtol=1e-4,
+                atol=1e-4,
+            )
 
 
 class TestDynamicImageSize:
@@ -214,16 +222,18 @@ class TestDynamicImageSize:
                 "output": {0: "batch", 2: "height", 3: "width"},
             },
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         # Test with different image sizes
         for h, w in [(32, 32), (64, 64), (128, 96)]:
             test_input = torch.randn(1, 3, h, w)
-            with torch.inference_mode():
-                expected = model(test_input)
-                result = fx_module(test_input)
-            torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+            run_onnx_test(
+                fx_module,
+                test_input,
+                lambda x: model(x),
+                rtol=1e-4,
+                atol=1e-5,
+            )
 
 
 class TestDynamicReshape:
@@ -251,16 +261,18 @@ class TestDynamicReshape:
             input_shape=(2, 3, 8, 8),
             dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         # Test with different batch sizes
         for batch_size in [1, 4, 8]:
             test_input = torch.randn(batch_size, 3, 8, 8)
-            with torch.inference_mode():
-                expected = model(test_input)
-                result = fx_module(test_input)
-            torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+            run_onnx_test(
+                fx_module,
+                test_input,
+                lambda x: model(x),
+                rtol=1e-4,
+                atol=1e-5,
+            )
 
     def test_reshape_preserve_batch(self):
         """Test reshape that preserves batch dimension."""
@@ -282,16 +294,18 @@ class TestDynamicReshape:
             input_shape=(2, 64),
             dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         # Test with different batch sizes
         for batch_size in [1, 4, 8]:
             test_input = torch.randn(batch_size, 64)
-            with torch.inference_mode():
-                expected = model(test_input)
-                result = fx_module(test_input)
-            torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-6)
+            run_onnx_test(
+                fx_module,
+                test_input,
+                lambda x: model(x),
+                rtol=1e-5,
+                atol=1e-6,
+            )
 
 
 class TestDynamicCat:
@@ -319,15 +333,17 @@ class TestDynamicCat:
             input_shape=(2, 32),
             dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         for batch_size in [1, 4, 8]:
             test_input = torch.randn(batch_size, 32)
-            with torch.inference_mode():
-                expected = model(test_input)
-                result = fx_module(test_input)
-            torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+            run_onnx_test(
+                fx_module,
+                test_input,
+                lambda x: model(x),
+                rtol=1e-4,
+                atol=1e-5,
+            )
 
 
 class TestDynamicReduce:
@@ -349,15 +365,17 @@ class TestDynamicReduce:
             input_shape=(2, 64, 7, 7),
             dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         for batch_size in [1, 4, 8]:
             test_input = torch.randn(batch_size, 64, 7, 7)
-            with torch.inference_mode():
-                expected = model(test_input)
-                result = fx_module(test_input)
-            torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+            run_onnx_test(
+                fx_module,
+                test_input,
+                lambda x: model(x),
+                rtol=1e-4,
+                atol=1e-5,
+            )
 
     def test_sum_dynamic_sequence(self):
         """Test sum reduction with dynamic sequence length."""
@@ -377,15 +395,17 @@ class TestDynamicReduce:
                 "output": {0: "batch"},
             },
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         for seq_len in [5, 10, 20]:
             test_input = torch.randn(2, seq_len, 64)
-            with torch.inference_mode():
-                expected = model(test_input)
-                result = fx_module(test_input)
-            torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+            run_onnx_test(
+                fx_module,
+                test_input,
+                lambda x: model(x),
+                rtol=1e-4,
+                atol=1e-5,
+            )
 
 
 class TestDynamicBroadcast:
@@ -414,16 +434,18 @@ class TestDynamicBroadcast:
                 "output": {0: "batch", 1: "seq_len"},
             },
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         for batch_size in [1, 4]:
             for seq_len in [5, 10, 20]:
                 test_input = torch.randn(batch_size, seq_len, 64)
-                with torch.inference_mode():
-                    expected = model(test_input)
-                    result = fx_module(test_input)
-                torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-6)
+                run_onnx_test(
+                    fx_module,
+                    test_input,
+                    lambda x: model(x),
+                    rtol=1e-5,
+                    atol=1e-6,
+                )
 
 
 class TestDynamicSlice:
@@ -449,15 +471,17 @@ class TestDynamicSlice:
                 "output": {0: "batch", 1: "half_seq"},
             },
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         for seq_len in [10, 20, 40]:
             test_input = torch.randn(2, seq_len, 64)
-            with torch.inference_mode():
-                expected = model(test_input)
-                result = fx_module(test_input)
-            torch.testing.assert_close(result, expected, rtol=1e-5, atol=1e-6)
+            run_onnx_test(
+                fx_module,
+                test_input,
+                lambda x: model(x),
+                rtol=1e-5,
+                atol=1e-6,
+            )
 
 
 class TestComplexDynamicModels:
@@ -495,16 +519,18 @@ class TestComplexDynamicModels:
                 "output": {0: "batch", 1: "seq_len"},
             },
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         for batch_size in [1, 4]:
             for seq_len in [5, 10, 20]:
                 test_input = torch.randn(batch_size, seq_len, 64)
-                with torch.inference_mode():
-                    expected = model(test_input)
-                    result = fx_module(test_input)
-                torch.testing.assert_close(result, expected, rtol=1e-3, atol=1e-4)
+                run_onnx_test(
+                    fx_module,
+                    test_input,
+                    lambda x: model(x),
+                    rtol=1e-3,
+                    atol=1e-4,
+                )
 
     def test_encoder_decoder_dynamic(self):
         """Test encoder-decoder like model with dynamic dimensions."""
@@ -542,13 +568,15 @@ class TestComplexDynamicModels:
                 "output": {0: "batch", 2: "height", 3: "width"},
             },
         )
-
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         for batch_size in [1, 2]:
             for size in [(64, 64), (128, 128)]:
                 test_input = torch.randn(batch_size, 3, *size)
-                with torch.inference_mode():
-                    expected = model(test_input)
-                    result = fx_module(test_input)
-                torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+                run_onnx_test(
+                    fx_module,
+                    test_input,
+                    lambda x: model(x),
+                    rtol=1e-4,
+                    atol=1e-5,
+                )

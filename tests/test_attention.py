@@ -10,7 +10,6 @@ from onnxscript import opset16, opset17, opset18, opset19, opset20
 from onnxscript import opset21, opset22, opset23
 from onnxscript import opset23 as op
 
-from onnx2fx import convert
 from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
@@ -67,14 +66,11 @@ class TestSequenceOps:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
         pos = torch.tensor(1, dtype=torch.int64)
 
-        result = fx_module(a, b, pos)
-        torch.testing.assert_close(result, b)
+        run_onnx_test(model, (a, b, pos), b)
 
     def test_sequence_length(self):
         from onnx import TensorProto, helper
@@ -96,14 +92,12 @@ class TestSequenceOps:
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 21)])
 
-        fx_module = convert(model)
-
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
         c = torch.randn(2, 3)
 
-        result = fx_module(a, b, c)
-        assert result.item() == 3
+        expected = torch.tensor(3, dtype=torch.int64)
+        run_onnx_test(model, (a, b, c), expected)
 
 
 class TestConcatFromSequence:
@@ -592,11 +586,14 @@ class TestGroupQueryAttention:
             ],
         )
 
-        fx_module = convert(model)
-
         query = torch.randn(batch_size, seq_len, hidden_size)
         key = torch.randn(batch_size, seq_len, kv_hidden_size)
         value = torch.randn(batch_size, seq_len, kv_hidden_size)
+
+        expected = torch.empty(batch_size, seq_len, hidden_size)
+        fx_module = run_onnx_test(
+            model, (query, key, value), expected, check_shape_only=True
+        )
 
         result = fx_module(query, key, value)
 
@@ -658,8 +655,6 @@ class TestRotaryEmbedding:
             ],
         )
 
-        fx_module = convert(model)
-
         # Create test inputs
         input_tensor = torch.randn(batch_size, seq_len, hidden_size)
         position_ids = torch.tensor([0], dtype=torch.int64)
@@ -672,6 +667,14 @@ class TestRotaryEmbedding:
         freqs = torch.outer(positions, inv_freq)
         cos_cache = torch.cos(freqs)
         sin_cache = torch.sin(freqs)
+
+        expected = torch.empty_like(input_tensor)
+        fx_module = run_onnx_test(
+            model,
+            (input_tensor, position_ids, cos_cache, sin_cache),
+            expected,
+            check_shape_only=True,
+        )
 
         result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
 
@@ -726,8 +729,6 @@ class TestRotaryEmbedding:
             ],
         )
 
-        fx_module = convert(model)
-
         input_tensor = torch.randn(batch_size, num_heads, seq_len, head_size)
         position_ids = torch.arange(seq_len, dtype=torch.int64)
 
@@ -738,6 +739,14 @@ class TestRotaryEmbedding:
         freqs = torch.outer(positions, inv_freq)
         cos_cache = torch.cos(freqs)
         sin_cache = torch.sin(freqs)
+
+        expected = torch.empty_like(input_tensor)
+        fx_module = run_onnx_test(
+            model,
+            (input_tensor, position_ids, cos_cache, sin_cache),
+            expected,
+            check_shape_only=True,
+        )
 
         result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
 
@@ -791,8 +800,6 @@ class TestRotaryEmbedding:
             ],
         )
 
-        fx_module = convert(model)
-
         input_tensor = torch.randn(batch_size, num_heads, seq_len, head_size)
         position_ids = torch.arange(seq_len, dtype=torch.int64)
 
@@ -803,6 +810,14 @@ class TestRotaryEmbedding:
         freqs = torch.outer(positions, inv_freq)
         cos_cache = torch.cos(freqs)
         sin_cache = torch.sin(freqs)
+
+        expected = torch.empty_like(input_tensor)
+        fx_module = run_onnx_test(
+            model,
+            (input_tensor, position_ids, cos_cache, sin_cache),
+            expected,
+            check_shape_only=True,
+        )
 
         result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
 
@@ -858,8 +873,6 @@ class TestRotaryEmbedding:
             ],
         )
 
-        fx_module = convert(model)
-
         input_tensor = torch.randn(batch_size, num_heads, seq_len, head_size)
         position_ids = torch.arange(seq_len, dtype=torch.int64)
 
@@ -870,6 +883,14 @@ class TestRotaryEmbedding:
         freqs = torch.outer(positions, inv_freq)
         cos_cache = torch.cos(freqs)
         sin_cache = torch.sin(freqs)
+
+        expected = torch.empty_like(input_tensor)
+        fx_module = run_onnx_test(
+            model,
+            (input_tensor, position_ids, cos_cache, sin_cache),
+            expected,
+            check_shape_only=True,
+        )
 
         result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
 
@@ -924,8 +945,6 @@ class TestRotaryEmbedding:
             ],
         )
 
-        fx_module = convert(model)
-
         input_tensor = torch.randn(batch_size, num_heads, seq_len, head_size)
         position_ids = torch.arange(seq_len, dtype=torch.int64)
 
@@ -937,6 +956,14 @@ class TestRotaryEmbedding:
         freqs = torch.outer(positions, inv_freq)
         cos_cache = torch.cos(freqs)
         sin_cache = torch.sin(freqs)
+
+        expected = torch.empty_like(input_tensor)
+        fx_module = run_onnx_test(
+            model,
+            (input_tensor, position_ids, cos_cache, sin_cache),
+            expected,
+            check_shape_only=True,
+        )
 
         result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
 
@@ -997,8 +1024,6 @@ class TestRotaryEmbedding:
             ],
         )
 
-        fx_module = convert(model)
-
         input_tensor = torch.randn(batch_size, num_heads, seq_len, head_size)
         # 2D position_ids with same positions for each batch
         position_ids = (
@@ -1012,6 +1037,14 @@ class TestRotaryEmbedding:
         freqs = torch.outer(positions, inv_freq)
         cos_cache = torch.cos(freqs)
         sin_cache = torch.sin(freqs)
+
+        expected = torch.empty_like(input_tensor)
+        fx_module = run_onnx_test(
+            model,
+            (input_tensor, position_ids, cos_cache, sin_cache),
+            expected,
+            check_shape_only=True,
+        )
 
         result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
 
@@ -1073,8 +1106,6 @@ class TestRotaryEmbedding:
             ],
         )
 
-        fx_module = convert(model)
-
         # Create test inputs
         input_tensor = torch.randn(batch_size, seq_len, hidden_size)
         position_ids = torch.tensor([0], dtype=torch.int64)
@@ -1087,6 +1118,14 @@ class TestRotaryEmbedding:
         freqs = torch.outer(positions, inv_freq)
         cos_cache = torch.cos(freqs)
         sin_cache = torch.sin(freqs)
+
+        expected = torch.empty_like(input_tensor)
+        fx_module = run_onnx_test(
+            model,
+            (input_tensor, position_ids, cos_cache, sin_cache),
+            expected,
+            check_shape_only=True,
+        )
 
         result = fx_module(input_tensor, position_ids, cos_cache, sin_cache)
 

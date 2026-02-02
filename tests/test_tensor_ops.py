@@ -9,7 +9,6 @@ from onnx import TensorProto, helper
 from onnxscript import FLOAT, INT64, script
 from onnxscript import opset23 as op
 
-from onnx2fx import convert
 from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
@@ -56,23 +55,22 @@ class TestTensorOps:
 
     def test_flatten(self):
         x = torch.randn(2, 3, 4)
-        fx_model = convert(self.flatten_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
+        fx_model = run_onnx_test(self.flatten_script.to_model_proto, x, x.flatten(1))
+        result = fx_model(x)
         assert result.shape == (2, 12)
 
     def test_squeeze(self):
         x = torch.randn(2, 1, 4)
-        fx_model = convert(self.squeeze_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
+        fx_model = run_onnx_test(self.squeeze_script.to_model_proto, x, x.squeeze(1))
+        result = fx_model(x)
         assert result.shape == (2, 4)
 
     def test_unsqueeze(self):
         x = torch.randn(2, 4)
-        fx_model = convert(self.unsqueeze_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
+        fx_model = run_onnx_test(
+            self.unsqueeze_script.to_model_proto, x, x.unsqueeze(0)
+        )
+        result = fx_model(x)
         assert result.shape == (1, 2, 4)
 
 
@@ -87,11 +85,13 @@ class TestCastOps:
         """Test CastLike converts to target tensor's dtype."""
         x = torch.tensor([1.5, 2.7, 3.2], dtype=torch.float32)
         target = torch.tensor([0, 1, 2], dtype=torch.int64)
-        fx_model = convert(self.cast_like_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, target)
+        expected = torch.tensor([1, 2, 3], dtype=torch.int64)
+        fx_model = run_onnx_test(
+            self.cast_like_script.to_model_proto, (x, target), expected
+        )
+        result = fx_model(x, target)
         assert result.dtype == torch.int64
-        assert torch.equal(result, torch.tensor([1, 2, 3], dtype=torch.int64))
+        assert torch.equal(result, expected)
 
     def test_cast_like_float_to_float(self):
         """Test CastLike between float types."""
@@ -102,11 +102,11 @@ class TestCastOps:
 
         x = torch.tensor([1.0, 2.0, 3.0], dtype=torch.float32)
         target = torch.tensor([0.0], dtype=torch.float64)
-        fx_model = convert(cast_like_float.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x, target)
+        expected = x.to(torch.float64)
+        fx_model = run_onnx_test(cast_like_float.to_model_proto, (x, target), expected)
+        result = fx_model(x, target)
         assert result.dtype == torch.float64
-        torch.testing.assert_close(result, x.to(torch.float64))
+        torch.testing.assert_close(result, expected)
 
 
 class TestReductionOps:
@@ -180,10 +180,10 @@ class TestTensorOpsMultiOpset:
             return opset.Flatten(x, axis=1)
 
         model = flatten_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 3, 4)
-        result = fx_model(x)
-        assert result.shape == (2, 12)
+        expected = x.flatten(1)
+        fx_model = run_onnx_test(model, x, expected)
+        assert fx_model(x).shape == (2, 12)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_reshape_all_opsets(self, opset):
@@ -194,11 +194,11 @@ class TestTensorOpsMultiOpset:
             return opset.Reshape(x, shape)
 
         model = reshape_script.to_model_proto()
-        fx_model = convert(model)
         x = torch.randn(2, 3, 4)
         shape = torch.tensor([2, 12], dtype=torch.int64)
-        result = fx_model(x, shape)
-        assert result.shape == (2, 12)
+        expected = x.reshape(2, 12)
+        fx_model = run_onnx_test(model, (x, shape), expected)
+        assert fx_model(x, shape).shape == (2, 12)
 
     @pytest.mark.parametrize("opset", OPSET_MODULES, ids=opset_id)
     def test_expand_all_opsets(self, opset):
@@ -411,21 +411,15 @@ class TestMultiOutputOps:
             return a, b, c
 
         model = split_model.to_model_proto()
-        fx_module = convert(model)
-
         x = torch.randn(6, 4)
-        result = fx_module(x)
+        expected = torch.split(x, 2, dim=0)
+        fx_module = run_onnx_test(model, x, expected)
 
-        # Result should be a tuple of 3 tensors
+        result = fx_module(x)
         assert len(result) == 3
         assert result[0].shape == (2, 4)
         assert result[1].shape == (2, 4)
         assert result[2].shape == (2, 4)
-
-        # Verify split is correct
-        expected = torch.split(x, 2, dim=0)
-        for i in range(3):
-            torch.testing.assert_close(result[i], expected[i])
 
     def test_topk_multi_output(self):
         """Test TopK operator with multiple outputs (values and indices)."""

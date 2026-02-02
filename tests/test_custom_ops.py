@@ -6,7 +6,6 @@ from onnx import helper, TensorProto
 import torch
 
 from onnx2fx import (
-    convert,
     register_op,
     unregister_op,
     get_supported_ops,
@@ -14,6 +13,8 @@ from onnx2fx import (
     get_registered_domains,
     is_supported,
 )
+
+from conftest import run_onnx_test
 
 pytestmark = pytest.mark.usefixtures("registry_context")
 
@@ -68,13 +69,11 @@ class TestCustomOpRegistration:
 
             # Create and convert model
             model = make_simple_onnx_model("TestCustomRelu")
-            fx_module = convert(model)
 
             # Test
             test_input = torch.randn(2, 3)
-            result = fx_module(test_input)
             expected = torch.relu(test_input)
-            torch.testing.assert_close(result, expected)
+            run_onnx_test(model, test_input, expected)
         finally:
             unregister_op("TestCustomRelu")
 
@@ -91,12 +90,10 @@ class TestCustomOpRegistration:
             assert is_supported("TestCustomSigmoid")
 
             model = make_simple_onnx_model("TestCustomSigmoid")
-            fx_module = convert(model)
 
             test_input = torch.randn(2, 3)
-            result = fx_module(test_input)
             expected = torch.sigmoid(test_input)
-            torch.testing.assert_close(result, expected)
+            run_onnx_test(model, test_input, expected)
         finally:
             unregister_op("TestCustomSigmoid")
 
@@ -119,13 +116,11 @@ class TestCustomOpRegistration:
                 input_shapes=[[2, 3], [3]],
                 output_shape=[2, 3],
             )
-            fx_module = convert(model)
 
             x = torch.randn(2, 3)
             bias = torch.randn(3)
-            result = fx_module(x, bias)
             expected = x + bias
-            torch.testing.assert_close(result, expected)
+            run_onnx_test(model, (x, bias), expected)
         finally:
             unregister_op("BiasAdd", domain="com.test")
 
@@ -162,12 +157,10 @@ class TestCustomOpRegistration:
 
         try:
             model = make_simple_onnx_model("Relu")
-            fx_module = convert(model)
 
             test_input = torch.randn(2, 3)
-            result = fx_module(test_input)
             expected = torch.relu(test_input) * 2
-            torch.testing.assert_close(result, expected)
+            run_onnx_test(model, test_input, expected)
         finally:
             # Restore original Relu (re-import ops to reset)
 
@@ -202,13 +195,11 @@ class TestMultiInputCustomOp:
                 input_shapes=[[2, 3], [2, 3]],
                 output_shape=[2, 3],
             )
-            fx_module = convert(model)
 
             x = torch.randn(2, 3)
             y = torch.randn(2, 3)
-            result = fx_module(x, y)
             expected = 0.7 * x + 0.3 * y
-            torch.testing.assert_close(result, expected)
+            run_onnx_test(model, (x, y), expected)
         finally:
             unregister_op("WeightedAdd")
 
@@ -242,12 +233,9 @@ class TestMultiInputCustomOp:
                 graph, opset_imports=[helper.make_opsetid("", 17)]
             )
 
-            fx_module = convert(model)
-
             test_input = torch.randn(2, 3)
-            result = fx_module(test_input)
             expected = test_input * 2.5
-            torch.testing.assert_close(result, expected)
+            run_onnx_test(model, test_input, expected)
         finally:
             unregister_op("ScaleOp")
 
@@ -321,13 +309,11 @@ class TestMicrosoftDomainOps:
                 input_shapes=[[2, 64], [64]],
                 output_shape=[2, 64],
             )
-            fx_module = convert(model)
 
             x = torch.randn(2, 64)
             bias = torch.randn(64)
-            result = fx_module(x, bias)
             expected = torch.nn.functional.gelu(x + bias)
-            torch.testing.assert_close(result, expected)
+            run_onnx_test(model, (x, bias), expected)
         finally:
             unregister_op("BiasGelu", domain="com.microsoft")
 
@@ -379,13 +365,10 @@ class TestMicrosoftDomainOps:
             )
             model.opset_import.append(helper.make_opsetid("com.microsoft", 1))
 
-            fx_module = convert(model)
-
             a = torch.randn(2, 3)
             b = torch.randn(3, 4)
-            result = fx_module(a, b)
             expected = 2.0 * torch.matmul(a, b)
-            torch.testing.assert_close(result, expected)
+            run_onnx_test(model, (a, b), expected)
         finally:
             unregister_op("FusedMatMul", domain="com.microsoft")
 
@@ -417,11 +400,8 @@ class TestCustomOpIntegration:
                 graph, opset_imports=[helper.make_opsetid("", 17)]
             )
 
-            fx_module = convert(model)
-
             test_input = torch.randn(2, 3)
-            result = fx_module(test_input)
             expected = torch.sigmoid(torch.relu(test_input) * 2)
-            torch.testing.assert_close(result, expected)
+            run_onnx_test(model, test_input, expected)
         finally:
             unregister_op("DoubleScale")

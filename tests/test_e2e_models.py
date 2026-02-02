@@ -4,13 +4,12 @@
 import io
 import tempfile
 
-import numpy as np
 import onnx
 import onnxruntime as ort
 import torch
 import torch.nn as nn
 
-from onnx2fx import convert
+from conftest import run_onnx_test
 
 
 def export_to_onnx(
@@ -50,22 +49,17 @@ def compare_outputs(
     input_name = session.get_inputs()[0].name
     ort_outputs = session.run(None, {input_name: test_input.numpy()})
 
-    # Run FX module
-    fx_module.eval()
-    with torch.inference_mode():
-        fx_output = fx_module(test_input)
+    expected = torch.from_numpy(ort_outputs[0].copy())
+    run_onnx_test(
+        fx_module,
+        test_input,
+        expected,
+        rtol=rtol,
+        atol=atol,
+        output_transform=lambda out: out[0] if isinstance(out, (tuple, list)) else out,
+    )
 
-    # Compare
-    if isinstance(fx_output, torch.Tensor):
-        fx_output = fx_output.numpy()
-    else:
-        fx_output = (
-            fx_output[0].numpy()
-            if isinstance(fx_output[0], torch.Tensor)
-            else fx_output[0]
-        )
-
-    return np.allclose(ort_outputs[0], fx_output, rtol=rtol, atol=atol)
+    return True
 
 
 class TestSimpleCNN:
@@ -100,15 +94,14 @@ class TestSimpleCNN:
         input_shape = (1, 3, 32, 32)
         onnx_model = export_to_onnx(model, input_shape)
 
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
     def test_residual_block(self):
         """Test a residual block pattern."""
@@ -136,15 +129,14 @@ class TestSimpleCNN:
         input_shape = (1, 16, 32, 32)
         onnx_model = export_to_onnx(model, input_shape)
 
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
 
 class TestMLP:
@@ -173,16 +165,14 @@ class TestMLP:
 
         input_shape = (1, 784)
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
     def test_mlp_with_dropout(self):
         """Test MLP with dropout (inference mode)."""
@@ -207,16 +197,14 @@ class TestMLP:
 
         input_shape = (2, 256)
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
 
 class TestTransformerComponents:
@@ -241,16 +229,14 @@ class TestTransformerComponents:
 
         input_shape = (2, 10, 64)  # batch, seq_len, embed_dim
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-3, atol=1e-4)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-3,
+            atol=1e-4,
+        )
 
     def test_transformer_encoder_layer(self):
         """Test TransformerEncoderLayer."""
@@ -273,16 +259,14 @@ class TestTransformerComponents:
 
         input_shape = (2, 10, 64)  # batch, seq_len, d_model
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-3, atol=1e-4)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-3,
+            atol=1e-4,
+        )
 
 
 class TestNormalizationLayers:
@@ -304,16 +288,14 @@ class TestNormalizationLayers:
 
         input_shape = (2, 16, 8, 8)
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
     def test_layer_norm(self):
         """Test LayerNorm."""
@@ -331,16 +313,14 @@ class TestNormalizationLayers:
 
         input_shape = (2, 10, 64)
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
     def test_instance_norm(self):
         """Test InstanceNorm2d."""
@@ -358,16 +338,14 @@ class TestNormalizationLayers:
 
         input_shape = (2, 16, 8, 8)
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
 
 class TestPoolingLayers:
@@ -389,16 +367,8 @@ class TestPoolingLayers:
 
         input_shape = (1, 3, 16, 16)
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(onnx_model, test_input, lambda input: model(input))
 
     def test_avg_pool(self):
         """Test AvgPool2d."""
@@ -416,16 +386,8 @@ class TestPoolingLayers:
 
         input_shape = (1, 3, 16, 16)
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(onnx_model, test_input, lambda input: model(input))
 
     def test_global_avg_pool(self):
         """Test Global Average Pooling."""
@@ -443,16 +405,14 @@ class TestPoolingLayers:
 
         input_shape = (2, 64, 7, 7)
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
 
 class TestActivations:
@@ -484,16 +444,14 @@ class TestActivations:
 
         input_shape = (2, 64)
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
 
 class TestComplexModels:
@@ -538,16 +496,14 @@ class TestComplexModels:
 
         input_shape = (1, 3, 32, 32)
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
     def test_inception_module(self):
         """Test an Inception-like module."""
@@ -584,13 +540,11 @@ class TestComplexModels:
 
         input_shape = (1, 32, 14, 14)
         onnx_model = export_to_onnx(model, input_shape)
-
-        fx_module = convert(onnx_model)
-
         test_input = torch.randn(*input_shape)
-
-        with torch.inference_mode():
-            expected = model(test_input)
-            result = fx_module(test_input)
-
-        torch.testing.assert_close(result, expected, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            onnx_model,
+            test_input,
+            lambda input: model(input),
+            rtol=1e-4,
+            atol=1e-5,
+        )

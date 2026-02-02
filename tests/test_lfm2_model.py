@@ -11,7 +11,7 @@ import onnxruntime as ort
 import pytest
 import torch
 
-from onnx2fx import convert
+from conftest import run_onnx_test, convert_onnx_model
 
 # Check if huggingface_hub is available
 try:
@@ -164,7 +164,7 @@ class TestLFM2Model:
     @pytest.mark.slow
     def test_model_conversion(self, lfm2_onnx_model):
         """Test that the model can be converted to FX."""
-        fx_module = convert(lfm2_onnx_model)
+        fx_module = convert_onnx_model(lfm2_onnx_model)
         assert fx_module is not None
         assert hasattr(fx_module, "forward")
 
@@ -172,8 +172,6 @@ class TestLFM2Model:
     @pytest.mark.skipif(not HAS_TRANSFORMERS, reason="transformers not available")
     def test_model_forward_pass(self, lfm2_model_path, lfm2_onnx_model):
         """Test forward pass of converted model matches ONNX Runtime."""
-        fx_module = convert(lfm2_onnx_model)
-
         # Create inputs from actual text
         test_prompt = "Hello, how are you today?"
         np_inputs, torch_inputs = create_lfm2_inputs(text=test_prompt, past_seq_len=0)
@@ -185,24 +183,14 @@ class TestLFM2Model:
         )
         ort_outputs = ort_session.run(None, np_inputs)
 
-        # Run FX module
-        with torch.inference_mode():
-            fx_outputs = fx_module(*torch_inputs)
-
-        # Compare first output (logits)
-        fx_logits = fx_outputs[0] if isinstance(fx_outputs, tuple) else fx_outputs
-
-        # Convert to numpy for comparison
-        fx_numpy = fx_logits.float().numpy()
-        ort_logits = ort_outputs[0].astype(np.float32)
-
-        # Use relaxed tolerance for FP16 models
-        # FP16 has limited precision, and slight implementation differences
-        # in attention, RoPE, and LayerNorm can accumulate through 16 layers
-        np.testing.assert_allclose(
-            fx_numpy,
+        ort_logits = torch.from_numpy(ort_outputs[0].astype(np.float32))
+        run_onnx_test(
+            lfm2_onnx_model,
+            tuple(torch_inputs),
             ort_logits,
             rtol=0.05,
             atol=0.1,
-            err_msg="Logits mismatch between FX and ONNX Runtime",
+            output_transform=lambda out: (
+                out[0] if isinstance(out, tuple) else out
+            ).float(),
         )

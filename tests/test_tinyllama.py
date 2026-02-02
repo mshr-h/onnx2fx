@@ -23,7 +23,7 @@ from onnxscript import FLOAT, INT64, opset14 as op
 from onnxscript import script
 
 import onnx
-from onnx2fx import convert
+from conftest import run_onnx_test, convert_onnx_model
 
 
 def run_and_compare(
@@ -33,10 +33,6 @@ def run_and_compare(
     atol: float = 1e-4,
 ) -> None:
     """Run model through ONNX Runtime and FX, compare outputs."""
-    # Convert to FX
-    fx_module = convert(model)
-    fx_module.eval()
-
     # Run ONNX Runtime
     with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as f:
         onnx.save(model, f.name)
@@ -46,20 +42,21 @@ def run_and_compare(
 
     # Run FX module - use ONNX model input order
     input_names = [inp.name for inp in model.graph.input]
-    torch_inputs = [torch.from_numpy(inputs[name]) for name in input_names]
-    with torch.inference_mode():
-        fx_outputs = fx_module(*torch_inputs)
+    torch_inputs = tuple(torch.from_numpy(inputs[name]) for name in input_names)
 
-    # Compare outputs
-    if isinstance(fx_outputs, torch.Tensor):
-        fx_outputs = [fx_outputs]
-    elif not isinstance(fx_outputs, (list, tuple)):
-        fx_outputs = [fx_outputs]
+    # Normalize expected structure to match FX outputs
+    if len(ort_outputs) == 1:
+        expected = torch.from_numpy(ort_outputs[0])
+    else:
+        expected = tuple(torch.from_numpy(out) for out in ort_outputs)
 
-    for ort_out, fx_out in zip(ort_outputs, fx_outputs):
-        if isinstance(fx_out, torch.Tensor):
-            fx_out = fx_out.numpy()
-        np.testing.assert_allclose(ort_out, fx_out, rtol=rtol, atol=atol)
+    run_onnx_test(
+        model,
+        torch_inputs[0] if len(torch_inputs) == 1 else torch_inputs,
+        expected,
+        rtol=rtol,
+        atol=atol,
+    )
 
 
 class TestRMSNorm:
@@ -398,7 +395,7 @@ class TestTinyLlamaE2E:
     def test_conversion_success(self, tinyllama_model_path):
         """Test that TinyLlama model converts without errors."""
         model = onnx.load(tinyllama_model_path)
-        fx_module = convert(model)
+        fx_module = convert_onnx_model(model)
 
         assert fx_module is not None
         assert isinstance(fx_module, torch.fx.GraphModule)
@@ -417,7 +414,7 @@ class TestTinyLlamaE2E:
     def test_inference_basic(self, tinyllama_model_path):
         """Test basic inference on converted TinyLlama model."""
         model = onnx.load(tinyllama_model_path)
-        fx_module = convert(model)
+        fx_module = convert_onnx_model(model)
         fx_module.eval()
 
         # TinyLlama model parameters
@@ -453,14 +450,16 @@ class TestTinyLlamaE2E:
             safe_name = name.replace(".", "_").replace("/", "_").replace("-", "_")
             fx_inputs[safe_name] = tensor
 
-        with torch.inference_mode():
-            try:
-                output = fx_module(**fx_inputs)
-                assert output is not None
-                # Check output structure
-                assert isinstance(output, tuple)
-                assert len(output) == 45  # logits + 44 present key/values
-                # Check logits shape
-                assert output[0].shape == torch.Size([batch_size, seq_len, 32000])
-            except Exception as e:
-                pytest.fail(f"Inference failed: {e}")
+        # Expected shapes: logits + 2 * num_layers present key/values
+        present_seq_len = past_seq_len + seq_len
+        expected_outputs = [torch.empty(batch_size, seq_len, 32000)] + [
+            torch.empty(batch_size, num_kv_heads, present_seq_len, head_dim)
+            for _ in range(num_layers * 2)
+        ]
+
+        run_onnx_test(
+            fx_module,
+            fx_inputs,
+            tuple(expected_outputs),
+            check_shape_only=True,
+        )

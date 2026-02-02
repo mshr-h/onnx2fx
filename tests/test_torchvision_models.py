@@ -10,7 +10,7 @@ import torch.nn as nn
 import onnx
 import pytest
 
-from onnx2fx import convert
+from conftest import run_onnx_test, convert_onnx_model
 
 # Check if torchvision is available
 try:
@@ -46,14 +46,16 @@ def validate_model_output(model, input_shape=(1, 3, 224, 224), rtol=1e-3, atol=1
 
     onnx_model = export_to_onnx(model, input_shape)
     model = model.to(device)
-    fx_module = convert(onnx_model).to(device)
+    fx_module = convert_onnx_model(onnx_model).to(device)
 
     test_input = torch.randn(*input_shape, device=device)
-    with torch.inference_mode():
-        expected = model(test_input)
-        result = fx_module(test_input)
-
-    torch.testing.assert_close(result, expected, rtol=rtol, atol=atol)
+    run_onnx_test(
+        fx_module,
+        test_input,
+        lambda x: model(x),
+        rtol=rtol,
+        atol=atol,
+    )
 
 
 @pytest.mark.slow

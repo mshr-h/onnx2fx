@@ -6,7 +6,6 @@ from onnxscript import FLOAT, INT64, script
 from onnxscript import opset23 as op
 
 from conftest import run_onnx_test
-from onnx2fx import convert
 
 
 class TestSequenceOps:
@@ -90,16 +89,12 @@ class TestSequenceOps:
         a = torch.randn(2, 3)
         b = torch.randn(2, 3)
         c = torch.randn(2, 3)
-        fx_model = convert(self.sequence_length_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(a, b, c)
-        assert result.item() == 3
+        expected = torch.tensor(3, dtype=torch.int64)
+        run_onnx_test(self.sequence_length_script.to_model_proto, (a, b, c), expected)
 
     def test_sequence_empty(self):
-        fx_model = convert(self.sequence_empty_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model()
-        assert result.item() == 0
+        expected = torch.tensor(0, dtype=torch.int64)
+        run_onnx_test(self.sequence_empty_script.to_model_proto, (), expected)
 
     def test_sequence_insert(self):
         a = torch.randn(2, 3)

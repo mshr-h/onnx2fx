@@ -6,7 +6,7 @@ import torch
 from onnx import TensorProto, helper, numpy_helper
 import numpy as np
 
-from onnx2fx import convert
+from conftest import run_onnx_test
 
 
 class TestLoopOp:
@@ -66,23 +66,12 @@ class TestLoopOp:
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
         model = onnx.shape_inference.infer_shapes(model)
 
-        # Convert and test
-        fx_module = convert(model)
-
         # Loop 5 times: sum = 0 + 1 + 2 + 3 + 4 = 10
         max_count = torch.tensor(5, dtype=torch.int64)
         cond = torch.tensor(True, dtype=torch.bool)
         init_sum = torch.tensor(0.0, dtype=torch.float32)
-
-        with torch.inference_mode():
-            result = fx_module(max_count, cond, init_sum)
-
-        # Loop returns a tuple, first element is the final loop-carried value
-        if isinstance(result, tuple):
-            result = result[0]
-
         expected = torch.tensor(10.0, dtype=torch.float32)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (max_count, cond, init_sum), expected)
 
     def test_loop_with_condition(self):
         """Test loop that terminates based on condition."""
@@ -143,23 +132,13 @@ class TestLoopOp:
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
         model = onnx.shape_inference.infer_shapes(model)
 
-        fx_module = convert(model)
-
         # Start with 1.0, double each iteration until >= 100
         # 1 -> 2 -> 4 -> 8 -> 16 -> 32 -> 64 -> 128 (stop, 128 >= 100)
         max_count = torch.tensor(100, dtype=torch.int64)  # High limit
         cond = torch.tensor(True, dtype=torch.bool)
         init_val = torch.tensor(1.0, dtype=torch.float32)
-
-        with torch.inference_mode():
-            result = fx_module(max_count, cond, init_val)
-
-        # Loop returns a tuple, first element is the final loop-carried value
-        if isinstance(result, tuple):
-            result = result[0]
-
         expected = torch.tensor(128.0, dtype=torch.float32)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (max_count, cond, init_val), expected)
 
 
 class TestIfOp:
@@ -221,19 +200,13 @@ class TestIfOp:
 
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
-        fx_module = convert(model)
-
         x_val = torch.ones(2, 3, dtype=torch.float32)
 
         # Test with condition = True (then branch: * 2)
-        with torch.inference_mode():
-            result_true = fx_module(torch.tensor(True), x_val)
-        torch.testing.assert_close(result_true, x_val * 2)
+        run_onnx_test(model, (torch.tensor(True), x_val), x_val * 2)
 
         # Test with condition = False (else branch: * 3)
-        with torch.inference_mode():
-            result_false = fx_module(torch.tensor(False), x_val)
-        torch.testing.assert_close(result_false, x_val * 3)
+        run_onnx_test(model, (torch.tensor(False), x_val), x_val * 3)
 
     def test_if_with_outer_scope(self):
         """Test if with references to outer scope values."""
@@ -285,19 +258,13 @@ class TestIfOp:
 
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
-        fx_module = convert(model)
-
         val = torch.tensor(50.0, dtype=torch.float32)
 
         # Test with condition = True (then branch: + 10)
-        with torch.inference_mode():
-            result_true = fx_module(torch.tensor(True), val)
-        torch.testing.assert_close(result_true, torch.tensor(60.0))
+        run_onnx_test(model, (torch.tensor(True), val), torch.tensor(60.0))
 
         # Test with condition = False (else branch: - 10)
-        with torch.inference_mode():
-            result_false = fx_module(torch.tensor(False), val)
-        torch.testing.assert_close(result_false, torch.tensor(40.0))
+        run_onnx_test(model, (torch.tensor(False), val), torch.tensor(40.0))
 
 
 class TestNestedControlFlow:
@@ -392,8 +359,6 @@ class TestNestedControlFlow:
 
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 17)])
 
-        fx_module = convert(model)
-
         # Loop 6 times starting from 0:
         # i=0 (even): 0 + 1 = 1
         # i=1 (odd): 1 - 1 = 0
@@ -404,13 +369,5 @@ class TestNestedControlFlow:
         max_count = torch.tensor(6, dtype=torch.int64)
         cond = torch.tensor(True, dtype=torch.bool)
         init_val = torch.tensor(0.0, dtype=torch.float32)
-
-        with torch.inference_mode():
-            result = fx_module(max_count, cond, init_val)
-
-        # Loop returns a tuple, first element is the final loop-carried value
-        if isinstance(result, tuple):
-            result = result[0]
-
         expected = torch.tensor(0.0, dtype=torch.float32)
-        torch.testing.assert_close(result, expected)
+        run_onnx_test(model, (max_count, cond, init_val), expected)

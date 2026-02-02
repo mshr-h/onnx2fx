@@ -11,11 +11,16 @@ from onnxscript import opset11, opset13, opset14, opset15
 from onnxscript import opset16, opset17, opset18, opset19, opset20
 from onnxscript import opset21, opset22, opset23
 
-from onnx2fx import convert
 from onnx2fx.exceptions import ConversionError
 from onnx2fx.op_registry import get_handler, get_handler_versions
 
-from conftest import OPSET_MODULES, EINSUM_OPSET_MODULES, opset_id, run_onnx_test
+from conftest import (
+    OPSET_MODULES,
+    EINSUM_OPSET_MODULES,
+    opset_id,
+    run_onnx_test,
+    convert_onnx_model,
+)
 
 
 class TestOpsetVersionRegistry:
@@ -233,7 +238,7 @@ class TestReduceSumOpsets:
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 18)])
 
         with pytest.raises(ConversionError):
-            convert(model)
+            convert_onnx_model(model)
 
 
 class TestUnsqueezeOpsets:
@@ -315,9 +320,10 @@ class TestSplitOpsets:
         )
         graph = helper.make_graph([split_node], "test", [x_info], [y1_info, y2_info])
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 11)])
-
-        fx_model = convert(model)
         x = torch.randn(2, 4)
+
+        expected = (x[:, :2], x[:, 2:])
+        fx_model = run_onnx_test(model, x, expected)
         y1, y2 = fx_model(x)
 
         assert y1.shape == (2, 2)
@@ -338,10 +344,11 @@ class TestSplitOpsets:
             [split_node], "test", [x_info, split_info], [y1_info, y2_info]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
-
-        fx_model = convert(model)
         x = torch.randn(2, 4)
         split = torch.tensor([2, 2], dtype=torch.int64)
+
+        expected = (x[:, :2], x[:, 2:])
+        fx_model = run_onnx_test(model, (x, split), expected)
         y1, y2 = fx_model(x, split)
 
         assert y1.shape == (2, 2)
@@ -362,14 +369,16 @@ class TestSplitOpsets:
             [split_node], "test", [x_info, split_info], [y1_info, y2_info]
         )
         model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 23)])
-
-        fx_model = convert(model)
         x = torch.randn(2, 4)
         split = torch.tensor([2, 2], dtype=torch.int64)
+
+        expected = (x[:, :2], x[:, 2:])
+        fx_model = run_onnx_test(model, (x, split), expected)
         y1, y2 = fx_model(x, split)
 
         assert y1.shape == (2, 2)
         assert y2.shape == (2, 2)
+        torch.testing.assert_close(torch.cat([y1, y2], dim=1), x)
 
 
 class TestReluAllOpsets:

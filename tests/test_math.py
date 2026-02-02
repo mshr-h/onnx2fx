@@ -6,7 +6,6 @@ import torch
 from onnxscript import FLOAT, script
 from onnxscript import opset23 as op
 
-from onnx2fx import convert
 from conftest import run_onnx_test
 
 
@@ -67,10 +66,7 @@ class TestMathOps:
 
     def test_isnan(self):
         x = torch.tensor([1.0, float("nan"), 2.0, float("nan")])
-        fx_model = convert(self.isnan_script.to_model_proto())
-        with torch.inference_mode():
-            result = fx_model(x)
-        assert torch.equal(result, torch.isnan(x))
+        run_onnx_test(self.isnan_script.to_model_proto, x, torch.isnan(x))
 
 
 # =============================================================================

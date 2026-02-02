@@ -22,10 +22,11 @@ dev = [
     "huggingface-hub>=0.36.0",
     "onnxruntime>=1.23.2",
     "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.25.2",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.14.4",
     "torchvision>=0.24.0",
-    "pytest>=9.0.2",
-    "pytest-xdist>=3.8.0",
     "transformers>=5.0.0rc2",
 ]
 
@@ -33,4 +34,17 @@ dev = [
 pythonpath = ["src"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+# Asyncio mode for pytest-asyncio (auto mode for convenience)
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# Additional pytest settings inspired by datasette-enrichments
+testpaths = ["tests"]
+# Treat warnings as errors to catch issues early
+filterwarnings = [
+    "error",
+    # Allow specific warnings if needed
+    "ignore::DeprecationWarning:torch.*:",
+    "ignore::UserWarning:torch.*:",
+    "ignore::DeprecationWarning:onnxscript.*:",
 ]

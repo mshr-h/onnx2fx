@@ -8,7 +8,6 @@ import onnx
 from onnxscript import FLOAT, script
 from onnxscript import opset23 as op
 
-from onnx2fx import convert
 from conftest import OPSET_MODULES, opset_id, run_onnx_test
 
 
@@ -171,25 +170,22 @@ class TestPoolingOps:
         )
         model.ir_version = 6  # Compatible with ONNX Runtime
 
-        fx_model = convert(model)
-
         x = torch.randn(1, 3, 7, 7)
 
-        with torch.inference_mode():
-            result = fx_model(x)
-
-        # SAME_UPPER should preserve spatial dimensions
-        assert result.shape == x.shape, f"Expected {x.shape}, got {result.shape}"
-
         # Compare with ONNX Runtime
-        import numpy as np
         import onnxruntime as ort
 
         ort_session = ort.InferenceSession(
             model.SerializeToString(), providers=["CPUExecutionProvider"]
         )
         ort_output = ort_session.run(None, {"X": x.numpy()})[0]
-        np.testing.assert_allclose(result.numpy(), ort_output, rtol=1e-5, atol=1e-5)
+
+        expected = torch.from_numpy(ort_output.copy())
+        fx_model = run_onnx_test(model, x, expected, rtol=1e-5, atol=1e-5)
+
+        # SAME_UPPER should preserve spatial dimensions
+        result = fx_model(x)
+        assert result.shape == x.shape, f"Expected {x.shape}, got {result.shape}"
 
     def test_max_pool2d_auto_pad_same_lower(self):
         """Test MaxPool2D with auto_pad=SAME_LOWER."""
@@ -213,12 +209,7 @@ class TestPoolingOps:
         )
         model.ir_version = 6  # Compatible with ONNX Runtime
 
-        fx_model = convert(model)
-
         x = torch.randn(1, 3, 7, 7)
-
-        with torch.inference_mode():
-            result = fx_model(x)
 
         # Compare with ONNX Runtime
         import numpy as np
@@ -228,6 +219,11 @@ class TestPoolingOps:
             model.SerializeToString(), providers=["CPUExecutionProvider"]
         )
         ort_output = ort_session.run(None, {"X": x.numpy()})[0]
+
+        expected = torch.from_numpy(ort_output.copy())
+        fx_model = run_onnx_test(model, x, expected, rtol=1e-5, atol=1e-5)
+
+        result = fx_model(x)
         np.testing.assert_allclose(result.numpy(), ort_output, rtol=1e-5, atol=1e-5)
 
     def test_average_pool2d(self):

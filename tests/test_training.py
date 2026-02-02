@@ -15,7 +15,8 @@ import pytest
 import torch
 import torch.nn as nn
 
-from onnx2fx import convert, make_trainable
+from conftest import run_onnx_test, convert_onnx_model
+from onnx2fx import make_trainable
 
 
 def export_to_onnx(
@@ -79,7 +80,7 @@ class TestInputGradients:
         model.eval()
 
         onnx_model = export_to_onnx(model, (1, 32))
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
         fx_module.eval()
 
         # Use same input for both models
@@ -110,7 +111,7 @@ class TestInputGradients:
         model.eval()
 
         onnx_model = export_to_onnx(model, (4, 32))
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
         fx_module.eval()
 
         torch.manual_seed(42)
@@ -142,7 +143,7 @@ class TestMakeTrainable:
         model.eval()
 
         onnx_model = export_to_onnx(model, (1, 32))
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         # Before: should have buffers, no parameters
         num_buffers_before = len(list(fx_module.buffers()))
@@ -165,7 +166,7 @@ class TestMakeTrainable:
         model.eval()
 
         onnx_model = export_to_onnx(model, (1, 32))
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
 
         # Store buffer values before conversion
         buffer_values = {name: buf.clone() for name, buf in fx_module.named_buffers()}
@@ -187,7 +188,7 @@ class TestParameterGradients:
         model.eval()
 
         onnx_model = export_to_onnx(model, (1, 32))
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
         fx_module = make_trainable(fx_module)
         fx_module.eval()
 
@@ -234,7 +235,7 @@ class TestOptimizerUpdate:
         model.eval()
 
         onnx_model = export_to_onnx(model, (1, 32))
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
         fx_module = make_trainable(fx_module)
 
         # Store initial parameter values
@@ -266,7 +267,7 @@ class TestOptimizerUpdate:
         model.eval()
 
         onnx_model = export_to_onnx(model, (1, 32))
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
         fx_module = make_trainable(fx_module)
 
         # Same learning rate and optimizer settings
@@ -311,17 +312,19 @@ class TestTrainEvalModes:
         model.eval()
 
         onnx_model = export_to_onnx(model, (4, 32))
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
         fx_module.eval()
 
         torch.manual_seed(42)
         test_input = torch.randn(4, 32)
 
-        with torch.inference_mode():
-            output_orig = model(test_input)
-            output_fx = fx_module(test_input)
-
-        torch.testing.assert_close(output_fx, output_orig, rtol=1e-4, atol=1e-5)
+        run_onnx_test(
+            fx_module,
+            test_input,
+            lambda x: model(x),
+            rtol=1e-4,
+            atol=1e-5,
+        )
 
     def test_gradient_flow_with_batchnorm(self):
         """Test gradient flow through BatchNorm layer."""
@@ -329,7 +332,7 @@ class TestTrainEvalModes:
         model.eval()
 
         onnx_model = export_to_onnx(model, (4, 32))
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
         fx_module = make_trainable(fx_module)
         fx_module.eval()
 
@@ -369,7 +372,7 @@ class TestSlowTrainingModels:
 
         input_shape = (1, 3, 224, 224)
         onnx_model = export_to_onnx(model, input_shape)
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
         fx_module.eval()
 
         torch.manual_seed(42)
@@ -404,7 +407,7 @@ class TestSlowTrainingModels:
 
         input_shape = (2, 3, 224, 224)
         onnx_model = export_to_onnx(model, input_shape)
-        fx_module = convert(onnx_model)
+        fx_module = convert_onnx_model(onnx_model)
         fx_module = make_trainable(fx_module)
 
         # Verify we can do a training step

@@ -4,7 +4,7 @@
 import onnx
 import torch
 
-from onnx2fx import convert
+from conftest import run_onnx_test
 
 
 class TestResizeOp:
@@ -34,16 +34,19 @@ class TestResizeOp:
             graph, opset_imports=[onnx.helper.make_opsetid("", 23)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(1, 1, 2, 2)
         roi = torch.tensor([])
         scales = torch.tensor([1.0, 1.0, 2.0, 2.0])
 
-        with torch.inference_mode():
-            result = fx_model(x, roi, scales)
+        expected = torch.empty(1, 1, 4, 4)
+        fx_model = run_onnx_test(
+            model,
+            (x, roi, scales),
+            expected,
+            check_shape_only=True,
+        )
 
-        assert result.shape == (1, 1, 4, 4)
+        assert fx_model(x, roi, scales).shape == (1, 1, 4, 4)
 
 
 class TestSpaceDepthOps:
@@ -63,14 +66,11 @@ class TestSpaceDepthOps:
             graph, opset_imports=[onnx.helper.make_opsetid("", 23)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(1, 4, 2, 2)
 
-        with torch.inference_mode():
-            result = fx_model(x)
-
-        assert result.shape == (1, 1, 4, 4)
+        expected = torch.empty(1, 1, 4, 4)
+        fx_model = run_onnx_test(model, x, expected, check_shape_only=True)
+        assert fx_model(x).shape == (1, 1, 4, 4)
 
     def test_space_to_depth(self):
         """Test SpaceToDepth."""
@@ -86,11 +86,8 @@ class TestSpaceDepthOps:
             graph, opset_imports=[onnx.helper.make_opsetid("", 23)]
         )
 
-        fx_model = convert(model)
-
         x = torch.randn(1, 1, 4, 4)
 
-        with torch.inference_mode():
-            result = fx_model(x)
-
-        assert result.shape == (1, 4, 2, 2)
+        expected = torch.empty(1, 4, 2, 2)
+        fx_model = run_onnx_test(model, x, expected, check_shape_only=True)
+        assert fx_model(x).shape == (1, 4, 2, 2)

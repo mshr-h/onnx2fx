@@ -16,7 +16,7 @@ import onnxruntime as ort
 import pytest
 import torch
 
-from onnx2fx import convert
+from conftest import run_onnx_test
 
 # Base URL for model downloads
 MODEL_BASE_URL = "https://github.com/Kazuhito00/PaddleOCRv5-ONNX-Sample/raw/main"
@@ -190,9 +190,6 @@ class TestPaddleOCRv5Inference:
         self, mobile_det_model_path, mobile_det_onnx_model, sample_image_path
     ):
         """Test mobile detection model inference matches ONNX Runtime."""
-        # Convert to FX
-        fx_module = convert(mobile_det_onnx_model)
-
         # Load and preprocess sample image
         test_input = load_and_preprocess_image(sample_image_path, 640, 640)
         np_input = test_input.numpy()
@@ -204,31 +201,23 @@ class TestPaddleOCRv5Inference:
         input_name = ort_session.get_inputs()[0].name
         ort_outputs = ort_session.run(None, {input_name: np_input})
 
-        # Run FX module
-        with torch.inference_mode():
-            fx_outputs = fx_module(test_input)
-
-        # Handle tuple/list outputs
-        if isinstance(fx_outputs, (tuple, list)):
-            fx_output = fx_outputs[0]
-        else:
-            fx_output = fx_outputs
-
-        fx_numpy = fx_output.numpy()
-
-        # Compare with tolerance
-        # Note: Mobile detection model shows some numerical differences
-        # due to complex operations, but overall output is close
-        np.testing.assert_allclose(fx_numpy, ort_outputs[0], rtol=0.1, atol=1.0)
+        expected = torch.from_numpy(ort_outputs[0].copy())
+        run_onnx_test(
+            mobile_det_onnx_model,
+            test_input,
+            expected,
+            rtol=0.1,
+            atol=1.0,
+            output_transform=lambda out: out[0]
+            if isinstance(out, (tuple, list))
+            else out,
+        )
 
     @pytest.mark.slow
     def test_mobile_rec_inference(
         self, mobile_rec_model_path, mobile_rec_onnx_model, sample_image_path
     ):
         """Test mobile recognition model inference matches ONNX Runtime."""
-        # Convert to FX
-        fx_module = convert(mobile_rec_onnx_model)
-
         # Load and preprocess sample image (recognition uses different size)
         test_input = load_and_preprocess_image(sample_image_path, 48, 320)
         np_input = test_input.numpy()
@@ -240,29 +229,23 @@ class TestPaddleOCRv5Inference:
         input_name = ort_session.get_inputs()[0].name
         ort_outputs = ort_session.run(None, {input_name: np_input})
 
-        # Run FX module
-        with torch.inference_mode():
-            fx_outputs = fx_module(test_input)
-
-        # Handle tuple/list outputs
-        if isinstance(fx_outputs, (tuple, list)):
-            fx_output = fx_outputs[0]
-        else:
-            fx_output = fx_outputs
-
-        fx_numpy = fx_output.numpy()
-
-        # Compare with tolerance
-        np.testing.assert_allclose(fx_numpy, ort_outputs[0], rtol=0.05, atol=0.1)
+        expected = torch.from_numpy(ort_outputs[0].copy())
+        run_onnx_test(
+            mobile_rec_onnx_model,
+            test_input,
+            expected,
+            rtol=0.05,
+            atol=0.1,
+            output_transform=lambda out: out[0]
+            if isinstance(out, (tuple, list))
+            else out,
+        )
 
     @pytest.mark.slow
     def test_server_det_inference(
         self, server_det_model_path, server_det_onnx_model, sample_image_path
     ):
         """Test server detection model inference matches ONNX Runtime."""
-        # Convert to FX
-        fx_module = convert(server_det_onnx_model)
-
         # Load and preprocess sample image
         test_input = load_and_preprocess_image(sample_image_path, 640, 640)
         np_input = test_input.numpy()
@@ -274,29 +257,23 @@ class TestPaddleOCRv5Inference:
         input_name = ort_session.get_inputs()[0].name
         ort_outputs = ort_session.run(None, {input_name: np_input})
 
-        # Run FX module
-        with torch.inference_mode():
-            fx_outputs = fx_module(test_input)
-
-        # Handle tuple/list outputs
-        if isinstance(fx_outputs, (tuple, list)):
-            fx_output = fx_outputs[0]
-        else:
-            fx_output = fx_outputs
-
-        fx_numpy = fx_output.numpy()
-
-        # Compare with tolerance
-        np.testing.assert_allclose(fx_numpy, ort_outputs[0], rtol=0.05, atol=0.1)
+        expected = torch.from_numpy(ort_outputs[0].copy())
+        run_onnx_test(
+            server_det_onnx_model,
+            test_input,
+            expected,
+            rtol=0.05,
+            atol=0.1,
+            output_transform=lambda out: out[0]
+            if isinstance(out, (tuple, list))
+            else out,
+        )
 
     @pytest.mark.slow
     def test_server_rec_inference(
         self, server_rec_model_path, server_rec_onnx_model, sample_image_path
     ):
         """Test server recognition model inference matches ONNX Runtime."""
-        # Convert to FX
-        fx_module = convert(server_rec_onnx_model)
-
         # Load and preprocess sample image (recognition uses different size)
         test_input = load_and_preprocess_image(sample_image_path, 48, 320)
         np_input = test_input.numpy()
@@ -308,17 +285,14 @@ class TestPaddleOCRv5Inference:
         input_name = ort_session.get_inputs()[0].name
         ort_outputs = ort_session.run(None, {input_name: np_input})
 
-        # Run FX module
-        with torch.inference_mode():
-            fx_outputs = fx_module(test_input)
-
-        # Handle tuple/list outputs
-        if isinstance(fx_outputs, (tuple, list)):
-            fx_output = fx_outputs[0]
-        else:
-            fx_output = fx_outputs
-
-        fx_numpy = fx_output.numpy()
-
-        # Compare with tolerance
-        np.testing.assert_allclose(fx_numpy, ort_outputs[0], rtol=0.05, atol=0.1)
+        expected = torch.from_numpy(ort_outputs[0].copy())
+        run_onnx_test(
+            server_rec_onnx_model,
+            test_input,
+            expected,
+            rtol=0.05,
+            atol=0.1,
+            output_transform=lambda out: out[0]
+            if isinstance(out, (tuple, list))
+            else out,
+        )

@@ -8,7 +8,7 @@ import onnx.backend.test
 import pytest
 import torch
 
-import onnx2fx
+from conftest import convert_onnx_model
 
 node_testcases = onnx.backend.test.loader.load_model_tests(kind="node")
 simple_testcases = onnx.backend.test.loader.load_model_tests(kind="simple")
@@ -274,7 +274,7 @@ def test_pytorch_operator(testcase: onnx.backend.test.case.test_case.TestCase):
     test_data = load_test_data(testcase.model_dir + "/test_data_set_0/")
     inputs, expected_outputs = test_data["input"], test_data["output"]
 
-    fx_module = onnx2fx.convert(model)
+    fx_module = convert_onnx_model(model)
 
     # Convert numpy arrays to tensors for the FX module (handle string types)
     torch_inputs = [_convert_input(inp) for inp in inputs]
