@@ -1,6 +1,6 @@
 [project]
 name = "onnx2fx"
-version = "0.1.0"
+version = "0.0.0"
 description = "Yet another ONNX to PyTorch FX converter"
 readme = "README.md"
 authors = [
