@@ -738,7 +738,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "onnx" },
-    { name = "onnxscript" },
     { name = "torch" },
 ]
 
@@ -746,6 +745,7 @@ dependencies = [
 dev = [
     { name = "huggingface-hub" },
     { name = "onnxruntime" },
+    { name = "onnxscript" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -758,7 +758,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "onnx", specifier = ">=1.19.1" },
-    { name = "onnxscript", specifier = ">=0.5.7" },
     { name = "torch", specifier = ">=2.9.0" },
 ]
 
@@ -766,6 +765,7 @@ requires-dist = [
 dev = [
     { name = "huggingface-hub", specifier = ">=0.36.0" },
     { name = "onnxruntime", specifier = ">=1.23.2" },
+    { name = "onnxscript", specifier = ">=0.5.7" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=0.25.2" },

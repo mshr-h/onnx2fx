@@ -9,7 +9,6 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "onnx>=1.19.1",
-    "onnxscript>=0.5.7",
     "torch>=2.9.0",
 ]
 
@@ -20,6 +19,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "huggingface-hub>=0.36.0",
+    "onnxscript>=0.5.7",
     "onnxruntime>=1.23.2",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",

@@ -40,6 +40,7 @@ onnx2fx/
 │       ├── analyze.py     # Model analysis utilities
 │       ├── attributes.py  # ONNX attribute parsing
 │       ├── dtype.py       # ONNX to PyTorch dtype mapping
+│       ├── external_data.py # External data utilities
 │       ├── names.py       # Name sanitization utilities
 │       ├── op_helpers.py  # Op helper utilities
 │       └── training.py    # Training utilities (make_trainable)
@@ -63,7 +64,6 @@ Core Requirements:
 - Python >= 3.11
 - PyTorch >= 2.9.0
 - ONNX >= 1.19.1
-- onnxscript >= 0.3.0
 
 Development Tools:
 - uv (recommended for development)
@@ -147,7 +147,7 @@ def bias_gelu(builder, node):
 - `builder.has_value(name)` - Check if value exists in environment
 - `builder.call_function(func, args, kwargs)` - Create function call node
 - `builder.call_module(module_name, args, kwargs)` - Create module call node
-- `builder.add_submodule(name, module)` - Register a submodule (returns safe name)
+- `builder.register_submodule(name, module)` - Register a submodule (returns safe name)
 - `builder.opset_version` - Get current opset version for default domain
 - `builder.get_opset_version(domain)` - Get opset version for specific domain
 
@@ -161,7 +161,7 @@ For parsing ONNX node attributes, use functions from `onnx2fx.utils.attributes`:
 ### Public API
 
 #### Core Functions
-- `convert(model)` - Convert ONNX model to FX GraphModule
+- `convert(model, *, base_dir=None, memmap_external_data=False)` - Convert ONNX model to FX GraphModule
 - `make_trainable(module)` - Convert buffers to trainable parameters for training
 
 #### Model Analysis

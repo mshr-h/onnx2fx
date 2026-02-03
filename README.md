@@ -9,7 +9,7 @@ Yet another ONNX to PyTorch FX converter.
 ## Features
 
 - **Simple API**: Convert ONNX models with a single function call
-- **Extensive Operator Support**: 170+ ONNX operators including standard and Microsoft domain operators
+- **Extensive Operator Support**: Wide ONNX operator coverage including standard and Microsoft domain operators
 - **Multi-Opset Version Support**: Automatic selection of version-specific operator handlers based on model opset
 - **Custom Operator Registration**: Easily extend support for unsupported or custom ONNX operators
 - **PyTorch FX Output**: Get a `torch.fx.GraphModule` for easy inspection, optimization, and compilation
@@ -36,14 +36,13 @@ The following models have been tested and verified to work with onnx2fx:
 - Python >= 3.11
 - PyTorch >= 2.9.0
 - ONNX >= 1.19.1
-- onnxscript >= 0.3.0
 
 ### From Source
 
 ```bash
 git clone https://github.com/mshr-h/onnx2fx.git
 cd onnx2fx
-pip install .
+uv sync
 ```
 
 ### Development Installation
@@ -51,7 +50,7 @@ pip install .
 ```bash
 git clone https://github.com/mshr-h/onnx2fx.git
 cd onnx2fx
-pip install -e ".[dev]"
+uv sync --dev
 ```
 
 ## Quick Start
@@ -69,6 +68,10 @@ fx_module = convert("model.onnx")
 # Or from onnx.ModelProto
 onnx_model = onnx.load("model.onnx")
 fx_module = convert(onnx_model)
+
+# For models with external data, you can pass base_dir.
+# memmap_external_data avoids loading external data into memory.
+fx_module = convert("model.onnx", base_dir="/path/to/model_dir", memmap_external_data=True)
 
 # Run inference
 input_tensor = torch.randn(1, 3, 224, 224)
