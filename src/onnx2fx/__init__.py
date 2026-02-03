@@ -41,6 +41,8 @@ Example
 >>> output = fx_module(input_tensor)
 """
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
 from .converter import convert
 from .exceptions import (
     Onnx2FxError,
@@ -62,7 +64,13 @@ from .op_registry import (
 from .utils.analyze import analyze_model, AnalysisResult
 from .utils.training import make_trainable
 
+try:
+    __version__ = _pkg_version("onnx2fx")
+except PackageNotFoundError:  # pragma: no cover
+    __version__ = "0.0.0"
+
 __all__ = [
+    "__version__",
     # Core API
     "convert",
     # Training utilities
