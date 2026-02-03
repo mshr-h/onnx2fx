@@ -2,14 +2,17 @@
 from collections import deque
 from typing import Any, Callable, Dict, List, Optional, Tuple, Sequence, Union
 
+import numpy as np
+
 import torch
 import torch.fx
 import onnx
 from onnx import numpy_helper
 
-from .exceptions import UnsupportedOpError, ValueNotFoundError
+from .exceptions import UnsupportedDTypeError, UnsupportedOpError, ValueNotFoundError
 from .op_registry import get_handler
 from .utils.dtype import DTYPE_MAP
+from .utils.external_data import resolve_external_data
 from .utils.names import sanitize_name
 
 # Import ops module to register all operators
@@ -178,7 +181,13 @@ class GraphBuilder:
         The opset version for the default ONNX domain.
     """
 
-    def __init__(self, model: onnx.ModelProto) -> None:
+    def __init__(
+        self,
+        model: onnx.ModelProto,
+        *,
+        base_dir: Optional[str] = None,
+        memmap_external_data: bool = False,
+    ) -> None:
         # Try shape inference but preserve original model if it fails
         # (shape_inference may drop graph contents for large models with external data)
         try:
@@ -191,6 +200,8 @@ class GraphBuilder:
             pass
         self.model: onnx.ModelProto = model
         self.graph: torch.fx.Graph = torch.fx.Graph()
+        self._base_dir = base_dir
+        self._memmap_external_data = memmap_external_data
         self.value_info_map = self._create_value_info_map()
         self.initializer_map = self._create_initializer_map()
         self.input_names: List[str] = []
@@ -299,6 +310,8 @@ class GraphBuilder:
         for name, submod in self._submodules.items():
             root_module.add_module(name, submod)
         module = torch.fx.GraphModule(root_module, self.graph)
+        if self._memmap_external_data:
+            module._onnx2fx_inference_only = True
         module.graph.lint()
         return module
 
@@ -456,7 +469,19 @@ class GraphBuilder:
         def extract_tensor_dtype(value: onnx.ValueInfoProto) -> Optional[torch.dtype]:
             """Extract the Torch dtype that corresponds to a value info."""
 
-            return DTYPE_MAP.get(value.type.tensor_type.elem_type)
+            onnx_dtype = value.type.tensor_type.elem_type
+            if onnx_dtype == 0:
+                return None
+            torch_dtype = DTYPE_MAP.get(onnx_dtype)
+            if torch_dtype is None:
+                if onnx_dtype == onnx.TensorProto.STRING:
+                    return None
+                raise UnsupportedDTypeError(
+                    onnx_dtype=onnx_dtype,
+                    tensor_name=value.name,
+                    details="value_info dtype not supported",
+                )
+            return torch_dtype
 
         info_map = {}
         for value_info in (
@@ -501,9 +526,38 @@ class GraphBuilder:
         """Build a mapping from initializer names to PyTorch tensors."""
         init_map = {}
         for initializer in self.model.graph.initializer:
-            np_array = numpy_helper.to_array(initializer)
-            init_map[initializer.name] = torch.from_numpy(np_array.copy())
+            init_map[initializer.name] = self.load_tensor(initializer)
         return init_map
+
+    def load_tensor(self, tensor: onnx.TensorProto) -> torch.Tensor:
+        """Load an ONNX TensorProto into a Torch tensor."""
+        onnx_dtype = tensor.data_type
+        if DTYPE_MAP.get(onnx_dtype) is None:
+            raise UnsupportedDTypeError(
+                onnx_dtype=onnx_dtype,
+                tensor_name=tensor.name or "<unnamed>",
+                details="initializer dtype not supported",
+            )
+
+        if self._memmap_external_data and (
+            tensor.data_location == onnx.TensorProto.EXTERNAL or tensor.external_data
+        ):
+            info = resolve_external_data(
+                tensor,
+                base_dir=self._base_dir,
+                strict=True,
+            )
+            memmap_array = np.memmap(
+                info.path,
+                dtype=info.numpy_dtype,
+                mode="r",
+                offset=info.offset,
+                shape=info.shape,
+            )
+            return torch.from_numpy(memmap_array)
+
+        np_array = numpy_helper.to_array(tensor)
+        return torch.from_numpy(np_array.copy())
 
     def _load_initializers(self) -> None:
         """Load ONNX initializers as constant nodes in the FX graph."""

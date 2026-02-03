@@ -47,6 +47,9 @@ from .exceptions import (
     UnsupportedOpError,
     ConversionError,
     ValueNotFoundError,
+    UnsupportedDTypeError,
+    ExternalDataError,
+    InferenceOnlyError,
 )
 from .op_registry import (
     register_op,
@@ -79,4 +82,7 @@ __all__ = [
     "UnsupportedOpError",
     "ConversionError",
     "ValueNotFoundError",
+    "UnsupportedDTypeError",
+    "ExternalDataError",
+    "InferenceOnlyError",
 ]

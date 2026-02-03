@@ -7,10 +7,10 @@ and verifies that onnx2fx can convert and run it correctly.
 
 import numpy as np
 import onnx
-import onnxruntime as ort
 import pytest
 import torch
 
+from conftest import run_onnxruntime_iobinding
 from conftest import run_onnx_test, convert_onnx_model
 
 # Check if huggingface_hub is available
@@ -170,18 +170,18 @@ class TestLFM2Model:
 
     @pytest.mark.slow
     @pytest.mark.skipif(not HAS_TRANSFORMERS, reason="transformers not available")
-    def test_model_forward_pass(self, lfm2_model_path, lfm2_onnx_model):
+    def test_model_forward_pass(self, lfm2_onnx_model):
         """Test forward pass of converted model matches ONNX Runtime."""
         # Create inputs from actual text
         test_prompt = "Hello, how are you today?"
         np_inputs, torch_inputs = create_lfm2_inputs(text=test_prompt, past_seq_len=0)
 
         # Run ONNX Runtime
-        ort_session = ort.InferenceSession(
-            lfm2_model_path,
+        ort_outputs = run_onnxruntime_iobinding(
+            lfm2_onnx_model,
+            np_inputs,
             providers=["CPUExecutionProvider"],
         )
-        ort_outputs = ort_session.run(None, np_inputs)
 
         ort_logits = torch.from_numpy(ort_outputs[0].astype(np.float32))
         run_onnx_test(

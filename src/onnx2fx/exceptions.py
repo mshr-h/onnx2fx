@@ -106,3 +106,50 @@ class ValueNotFoundError(Onnx2FxError):
         if available:
             message += f". Available: {available}"
         super().__init__(message)
+
+
+class UnsupportedDTypeError(Onnx2FxError):
+    """Raised when an ONNX tensor dtype is not supported.
+
+    Parameters
+    ----------
+    onnx_dtype : int
+        ONNX TensorProto data type enum value.
+    tensor_name : str
+        Name of the tensor.
+    details : str, optional
+        Additional details about the failure.
+    """
+
+    def __init__(self, onnx_dtype: int, tensor_name: str, details: str | None = None):
+        self.onnx_dtype = onnx_dtype
+        self.tensor_name = tensor_name
+        self.details = details
+
+        dtype_name = f"{onnx_dtype}"
+        try:
+            import onnx
+
+            dtype_name = onnx.TensorProto.DataType.Name(onnx_dtype)
+        except Exception:
+            pass
+
+        message = f"Unsupported dtype for tensor '{tensor_name}': {dtype_name}"
+        if details:
+            message += f" ({details})"
+        super().__init__(message)
+
+
+class ExternalDataError(Onnx2FxError):
+    """Raised when external data metadata is invalid or inaccessible."""
+
+    def __init__(self, tensor_name: str, message: str):
+        self.tensor_name = tensor_name
+        super().__init__(f"External data error for '{tensor_name}': {message}")
+
+
+class InferenceOnlyError(Onnx2FxError):
+    """Raised when an inference-only model is used for training."""
+
+    def __init__(self, message: str):
+        super().__init__(message)

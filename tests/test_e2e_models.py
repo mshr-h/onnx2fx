@@ -2,14 +2,13 @@
 """End-to-end tests with real models."""
 
 import io
-import tempfile
 
 import onnx
-import onnxruntime as ort
 import torch
 import torch.nn as nn
 
 from conftest import run_onnx_test
+from conftest import run_onnxruntime_iobinding
 
 
 def export_to_onnx(
@@ -41,13 +40,12 @@ def compare_outputs(
     atol: float = 1e-5,
 ) -> bool:
     """Compare outputs between ONNX Runtime and FX module."""
-    # Run ONNX Runtime
-    with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as f:
-        onnx.save(onnx_model, f.name)
-        session = ort.InferenceSession(f.name, providers=["CPUExecutionProvider"])
-
-    input_name = session.get_inputs()[0].name
-    ort_outputs = session.run(None, {input_name: test_input.numpy()})
+    # Run ONNX Runtime with io_binding
+    ort_outputs = run_onnxruntime_iobinding(
+        onnx_model,
+        test_input,
+        providers=["CPUExecutionProvider"],
+    )
 
     expected = torch.from_numpy(ort_outputs[0].copy())
     run_onnx_test(

@@ -7,7 +7,7 @@ import onnx
 import torch
 
 # ONNX TensorProto data type to PyTorch dtype mapping
-DTYPE_MAP: Dict[int, torch.dtype] = {
+DTYPE_MAP: Dict[int, Optional[torch.dtype]] = {
     onnx.TensorProto.FLOAT: torch.float32,
     onnx.TensorProto.FLOAT16: torch.float16,
     onnx.TensorProto.BFLOAT16: torch.bfloat16,
@@ -17,13 +17,21 @@ DTYPE_MAP: Dict[int, torch.dtype] = {
     onnx.TensorProto.INT32: torch.int32,
     onnx.TensorProto.INT64: torch.int64,
     onnx.TensorProto.UINT8: torch.uint8,
+    onnx.TensorProto.UINT16: torch.uint16,
+    onnx.TensorProto.UINT32: torch.uint32,
+    onnx.TensorProto.UINT64: torch.uint64,
     onnx.TensorProto.BOOL: torch.bool,
     onnx.TensorProto.COMPLEX64: torch.complex64,
     onnx.TensorProto.COMPLEX128: torch.complex128,
+    onnx.TensorProto.STRING: None,
 }
 
 # Reverse mapping: PyTorch dtype to ONNX TensorProto data type
-TORCH_TO_ONNX_DTYPE: Dict[torch.dtype, int] = {v: k for k, v in DTYPE_MAP.items()}
+TORCH_TO_ONNX_DTYPE: Dict[torch.dtype, int] = {
+    torch_dtype: onnx_dtype
+    for onnx_dtype, torch_dtype in DTYPE_MAP.items()
+    if torch_dtype is not None
+}
 
 
 def onnx_dtype_to_torch(onnx_dtype: int) -> Optional[torch.dtype]:

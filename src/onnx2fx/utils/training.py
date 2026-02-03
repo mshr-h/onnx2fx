@@ -8,6 +8,8 @@ by converting buffers to trainable parameters.
 import torch
 import torch.fx
 
+from ..exceptions import InferenceOnlyError
+
 
 def make_trainable(module: torch.fx.GraphModule) -> torch.fx.GraphModule:
     """Convert all buffers to trainable parameters.
@@ -31,6 +33,11 @@ def make_trainable(module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         >>> fx_module = make_trainable(fx_module)
         >>> optimizer = torch.optim.SGD(fx_module.parameters(), lr=0.01)
     """
+    if getattr(module, "_onnx2fx_inference_only", False):
+        raise InferenceOnlyError(
+            "make_trainable is not supported for memmap-based inference-only models"
+        )
+
     # Collect all buffer names and tensors first to avoid modifying dict during iteration
     buffers_to_convert = list(module.named_buffers())
 

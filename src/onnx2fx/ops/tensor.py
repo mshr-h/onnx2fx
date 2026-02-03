@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 @register("Constant")
 def constant(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Create a constant tensor."""
-    value = get_attribute(node, "value")
+    value = get_attribute(node, "value", tensor_loader=builder.load_tensor)
     if value is None:
         value_float = get_attribute(node, "value_float")
         if value_float is not None:
@@ -781,7 +781,7 @@ def size(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
 def constant_of_shape(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     """Create tensor filled with constant value."""
     shape = builder.get_value(node.input[0])
-    value = get_attribute(node, "value")
+    value = get_attribute(node, "value", tensor_loader=builder.load_tensor)
 
     if value is not None:
         fill_value = (

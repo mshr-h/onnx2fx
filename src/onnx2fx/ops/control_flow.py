@@ -4,7 +4,7 @@
 This module implements ONNX control flow operators like Loop and If.
 """
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 import onnx
 import torch
@@ -70,6 +70,7 @@ def _build_subgraph_module(
     parent_env: Dict[str, torch.fx.Node],
     parent_opset_versions: Dict[str, int],
     parent_type_info: Optional[Dict[str, bool]] = None,
+    tensor_loader: Optional[Callable[[onnx.TensorProto], torch.Tensor]] = None,
 ) -> Tuple[torch.fx.GraphModule, List[str], List[str], List[str]]:
     """Build an FX GraphModule from an ONNX subgraph.
 
@@ -106,8 +107,11 @@ def _build_subgraph_module(
     # Load initializers from subgraph
     initializer_map: Dict[str, torch.Tensor] = {}
     for initializer in body_graph.initializer:
-        np_array = numpy_helper.to_array(initializer)
-        initializer_map[initializer.name] = torch.from_numpy(np_array.copy())
+        if tensor_loader is not None:
+            initializer_map[initializer.name] = tensor_loader(initializer)
+        else:
+            np_array = numpy_helper.to_array(initializer)
+            initializer_map[initializer.name] = torch.from_numpy(np_array.copy())
 
     # Register initializers as constants
     for name, tensor in initializer_map.items():
@@ -159,8 +163,15 @@ def _build_subgraph_module(
             self.initializer_map = initializer_map
             self._body_graph = body_graph
             self._parent_type_info = parent_type_info
+            self._tensor_loader = tensor_loader
             # Build type info for this subgraph (to pass to nested subgraphs)
             self._type_info = self._build_type_info()
+
+        def load_tensor(self, tensor: onnx.TensorProto) -> torch.Tensor:
+            if self._tensor_loader is not None:
+                return self._tensor_loader(tensor)
+            np_array = numpy_helper.to_array(tensor)
+            return torch.from_numpy(np_array.copy())
 
         def _build_type_info(self) -> Dict[str, bool]:
             """Build a mapping of value names to whether they are optional types."""
@@ -437,7 +448,11 @@ def loop_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     # Build subgraph module
     body_module, body_input_names, body_output_names, outer_refs = (
         _build_subgraph_module(
-            body_graph, builder.env, builder._opset_versions, parent_type_info
+            body_graph,
+            builder.env,
+            builder._opset_versions,
+            parent_type_info,
+            tensor_loader=builder.load_tensor,
         )
     )
 
@@ -628,7 +643,11 @@ def scan_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     # Build subgraph module
     body_module, body_input_names, body_output_names, outer_refs = (
         _build_subgraph_module(
-            body_graph, builder.env, builder._opset_versions, parent_type_info
+            body_graph,
+            builder.env,
+            builder._opset_versions,
+            parent_type_info,
+            tensor_loader=builder.load_tensor,
         )
     )
 
@@ -712,7 +731,11 @@ def scan_op_v8(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     # Build subgraph module
     body_module, body_input_names, body_output_names, outer_refs = (
         _build_subgraph_module(
-            body_graph, builder.env, builder._opset_versions, parent_type_info
+            body_graph,
+            builder.env,
+            builder._opset_versions,
+            parent_type_info,
+            tensor_loader=builder.load_tensor,
         )
     )
 
@@ -884,12 +907,20 @@ def if_op(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     # Build subgraph modules for both branches
     then_module, then_input_names, then_output_names, then_outer_refs = (
         _build_subgraph_module(
-            then_graph, builder.env, builder._opset_versions, parent_type_info
+            then_graph,
+            builder.env,
+            builder._opset_versions,
+            parent_type_info,
+            tensor_loader=builder.load_tensor,
         )
     )
     else_module, else_input_names, else_output_names, else_outer_refs = (
         _build_subgraph_module(
-            else_graph, builder.env, builder._opset_versions, parent_type_info
+            else_graph,
+            builder.env,
+            builder._opset_versions,
+            parent_type_info,
+            tensor_loader=builder.load_tensor,
         )
     )
 

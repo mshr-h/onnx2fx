@@ -17,6 +17,7 @@ class TestDtypeMapping:
         assert onnx.TensorProto.INT32 in DTYPE_MAP
         assert onnx.TensorProto.INT64 in DTYPE_MAP
         assert onnx.TensorProto.BOOL in DTYPE_MAP
+        assert onnx.TensorProto.STRING in DTYPE_MAP
 
     def test_onnx_dtype_to_torch(self):
         """onnx_dtype_to_torch should return correct PyTorch types."""
@@ -24,6 +25,10 @@ class TestDtypeMapping:
         assert onnx_dtype_to_torch(onnx.TensorProto.FLOAT16) == torch.float16
         assert onnx_dtype_to_torch(onnx.TensorProto.INT64) == torch.int64
         assert onnx_dtype_to_torch(onnx.TensorProto.BOOL) == torch.bool
+
+    def test_onnx_dtype_to_torch_string(self):
+        """onnx_dtype_to_torch should return None for STRING tensors."""
+        assert onnx_dtype_to_torch(onnx.TensorProto.STRING) is None
 
     def test_onnx_dtype_to_torch_unknown(self):
         """onnx_dtype_to_torch should return None for unknown types."""

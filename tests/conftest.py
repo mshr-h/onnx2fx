@@ -1,19 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Shared fixtures and utilities for onnx2fx tests.
+"""Shared fixtures and utilities for onnx2fx tests."""
 
-This module provides shared fixtures and testing patterns inspired by datasette-enrichments:
-- Auto-use fixtures for global test setup/teardown
-- Isolated registry contexts for operator testing
-- Shared helper functions for common test patterns
-- Parametrized opset testing utilities
-"""
-
-from typing import Any, Callable, Dict, Tuple, Union
+from typing import Any, Callable, Dict, List, Tuple, Union
 import warnings
+import tempfile
 
 import onnx
 import pytest
 import torch
+import numpy as np
 
 from onnx2fx import convert
 from onnx2fx.op_registry import registry_context as _registry_context
@@ -386,3 +381,75 @@ def convert_onnx_model(
     if callable(model) and not isinstance(model, onnx.ModelProto):
         model = model()
     return convert(model)
+
+
+def run_onnxruntime_iobinding(
+    model: onnx.ModelProto,
+    inputs: Union[torch.Tensor, Tuple[torch.Tensor, ...], Dict[str, torch.Tensor]],
+    *,
+    providers: List[str] | None = None,
+):
+    """Run ONNX Runtime using io_binding to minimize copies.
+
+    Parameters
+    ----------
+    model : onnx.ModelProto
+        The ONNX model to run.
+    inputs : Union[Tensor, Tuple[Tensor, ...], Dict[str, Tensor]]
+        Input tensor(s) - single tensor, tuple for positional, or dict for named.
+    providers : List[str], optional
+        ONNX Runtime execution providers.
+
+    Returns
+    -------
+    list
+        Outputs as NumPy arrays.
+    """
+    import onnxruntime as ort
+
+    import os
+
+    if isinstance(inputs, torch.Tensor):
+        input_tuple = (inputs,)
+    elif isinstance(inputs, dict):
+        input_tuple = inputs
+    else:
+        input_tuple = inputs
+
+    with tempfile.NamedTemporaryFile(suffix=".onnx", delete=False) as f:
+        onnx.save(model, f.name)
+        model_path = f.name
+
+    try:
+        session = ort.InferenceSession(
+            model_path, providers=providers or ["CPUExecutionProvider"]
+        )
+    finally:
+        # The session loads the model into memory, so we can delete the temp file.
+        try:
+            os.unlink(model_path)
+        except OSError:
+            pass
+
+    io_binding = session.io_binding()
+
+    if isinstance(input_tuple, dict):
+        input_items = input_tuple.items()
+    else:
+        input_names = [i.name for i in session.get_inputs()]
+        input_items = zip(input_names, input_tuple)
+
+    for name, value in input_items:
+        if isinstance(value, torch.Tensor):
+            value = value.detach().cpu().numpy()
+        if not isinstance(value, np.ndarray):
+            value = np.asarray(value)
+
+        # onnxruntime 1.23+ API
+        io_binding.bind_cpu_input(name, value)
+
+    for output in session.get_outputs():
+        io_binding.bind_output(output.name, "cpu")
+
+    session.run_with_iobinding(io_binding)
+    return io_binding.copy_outputs_to_cpu()

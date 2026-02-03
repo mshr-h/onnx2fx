@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """Utilities for parsing ONNX node attributes."""
 
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 import onnx
+
+from ..exceptions import UnsupportedDTypeError
+from .dtype import DTYPE_MAP
 
 if TYPE_CHECKING:
     import torch
@@ -13,6 +16,8 @@ def get_attribute(
     node: onnx.NodeProto,
     name: str,
     default: Optional[Any] = None,
+    *,
+    tensor_loader: Optional[Callable[[onnx.TensorProto], "torch.Tensor"]] = None,
 ) -> Any:
     """Get a single attribute value from an ONNX node.
 
@@ -32,7 +37,7 @@ def get_attribute(
     """
     for attr in node.attribute:
         if attr.name == name:
-            return _parse_attribute_value(attr)
+            return _parse_attribute_value(attr, tensor_loader=tensor_loader)
     return default
 
 
@@ -52,7 +57,11 @@ def get_attributes(node: onnx.NodeProto) -> Dict[str, Any]:
     return {attr.name: _parse_attribute_value(attr) for attr in node.attribute}
 
 
-def _parse_attribute_value(attr: onnx.AttributeProto) -> Any:
+def _parse_attribute_value(
+    attr: onnx.AttributeProto,
+    *,
+    tensor_loader: Optional[Callable[[onnx.TensorProto], "torch.Tensor"]] = None,
+) -> Any:
     """Parse an ONNX attribute into a Python value.
 
     Parameters
@@ -73,7 +82,7 @@ def _parse_attribute_value(attr: onnx.AttributeProto) -> Any:
         case onnx.AttributeProto.STRING:
             return attr.s.decode("utf-8") if isinstance(attr.s, bytes) else attr.s
         case onnx.AttributeProto.TENSOR:
-            return _parse_tensor(attr.t)
+            return _parse_tensor(attr.t, tensor_loader=tensor_loader)
         case onnx.AttributeProto.GRAPH:
             return attr.g
         case onnx.AttributeProto.FLOATS:
@@ -85,7 +94,7 @@ def _parse_attribute_value(attr: onnx.AttributeProto) -> Any:
                 s.decode("utf-8") if isinstance(s, bytes) else s for s in attr.strings
             ]
         case onnx.AttributeProto.TENSORS:
-            return [_parse_tensor(t) for t in attr.tensors]
+            return [_parse_tensor(t, tensor_loader=tensor_loader) for t in attr.tensors]
         case onnx.AttributeProto.GRAPHS:
             return list(attr.graphs)
         case onnx.AttributeProto.SPARSE_TENSOR:
@@ -100,7 +109,11 @@ def _parse_attribute_value(attr: onnx.AttributeProto) -> Any:
             raise ValueError(f"Unsupported attribute type: {attr.type}")
 
 
-def _parse_tensor(tensor: onnx.TensorProto) -> "torch.Tensor":
+def _parse_tensor(
+    tensor: onnx.TensorProto,
+    *,
+    tensor_loader: Optional[Callable[[onnx.TensorProto], "torch.Tensor"]] = None,
+) -> "torch.Tensor":
     """Convert an ONNX TensorProto to a PyTorch tensor.
 
     Parameters
@@ -113,8 +126,19 @@ def _parse_tensor(tensor: onnx.TensorProto) -> "torch.Tensor":
     torch.Tensor
         The converted PyTorch tensor.
     """
+    if tensor_loader is not None:
+        return tensor_loader(tensor)
+
     import torch
     from onnx import numpy_helper
+
+    onnx_dtype = tensor.data_type
+    if DTYPE_MAP.get(onnx_dtype) is None:
+        raise UnsupportedDTypeError(
+            onnx_dtype=onnx_dtype,
+            tensor_name=tensor.name or "<unnamed>",
+            details="attribute tensor dtype not supported",
+        )
 
     np_array = numpy_helper.to_array(tensor)
     return torch.from_numpy(np_array.copy())
