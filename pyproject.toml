@@ -1,20 +1,24 @@
 [project]
 name = "onnx2fx"
-version = "0.0.0"
+dynamic = ["version"]
 description = "Yet another ONNX to PyTorch FX converter"
 readme = "README.md"
-authors = [
-    { name = "Masahiro Hiramori", email = "contact@mshr-h.com" }
-]
+urls = { "Homepage" = "https://github.com/mshr-h/onnx2fx" }
+authors = [{ name = "Masahiro Hiramori", email = "contact@mshr-h.com" }]
 requires-python = ">=3.11"
-dependencies = [
-    "onnx>=1.19.1",
-    "torch>=2.9.0",
-]
+dependencies = ["onnx>=1.19.1", "torch>=2.9.0"]
+license-files = ["LICENSE"]
 
 [build-system]
-requires = ["uv_build>=0.8.19,<0.9.0"]
-build-backend = "uv_build"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/onnx2fx"]
 
 [dependency-groups]
 dev = [
@@ -32,9 +36,7 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 # Asyncio mode for pytest-asyncio (auto mode for convenience)
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
