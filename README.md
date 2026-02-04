@@ -37,6 +37,14 @@ The following models have been tested and verified to work with onnx2fx:
 - PyTorch >= 2.9.0
 - ONNX >= 1.19.1
 
+### From PyPI
+
+```bash
+pip install onnx2fx
+# or
+uv pip install onnx2fx
+```
+
 ### From Source
 
 ```bash
