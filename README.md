@@ -6,6 +6,12 @@ Yet another ONNX to PyTorch FX converter.
 
 `onnx2fx` converts ONNX models into PyTorch FX `GraphModule`s, enabling seamless integration with PyTorch's ecosystem for optimization, analysis, and deployment.
 
+![GitHub](https://img.shields.io/github/license/mshr-h/onnx2fx?color=2BAF2B)
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-2BAF2B)](https://img.shields.io/badge/Python-3.11-2BAF2B)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-2BAF2B)](https://img.shields.io/badge/Python-3.12-2BAF2B)
+[![Python 3.13](https://img.shields.io/badge/Python-3.13-2BAF2B)](https://img.shields.io/badge/Python-3.13-2BAF2B)
+[![PyPI](https://img.shields.io/pypi/v/onnx2fx?color=2BAF2B)](https://pypi.org/project/onnx2fx/)
+
 ## Features
 
 - **Simple API**: Convert ONNX models with a single function call
