@@ -51,7 +51,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --dev
-          uv pip install torch==${{ matrix.python-version }}
+          uv pip install torch==${{ matrix.pytorch-version }}
 
       - name: Run tests
         run: uv run pytest -v tests -m "not slow"
