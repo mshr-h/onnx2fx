@@ -142,7 +142,10 @@ def transpose(builder: "GraphBuilder", node: onnx.NodeProto) -> torch.fx.Node:
     perm = get_attribute(node, "perm")
     if perm is None:
         # Default: reverse all dimensions
-        return builder.call_function(lambda t: t.T, args=(x,))
+        return builder.call_function(
+            lambda t: torch.permute(t, tuple(range(t.ndim - 1, -1, -1))),
+            args=(x,),
+        )
     return builder.call_function(torch.permute, args=(x, perm))
 
 
