@@ -10,6 +10,7 @@ Yet another ONNX to PyTorch FX converter.
 [![Python 3.11](https://img.shields.io/badge/Python-3.11-2BAF2B)](https://img.shields.io/badge/Python-3.11-2BAF2B)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-2BAF2B)](https://img.shields.io/badge/Python-3.12-2BAF2B)
 [![Python 3.13](https://img.shields.io/badge/Python-3.13-2BAF2B)](https://img.shields.io/badge/Python-3.13-2BAF2B)
+[![Python 3.14](https://img.shields.io/badge/Python-3.14-2BAF2B)](https://img.shields.io/badge/Python-3.14-2BAF2B)
 [![PyPI](https://img.shields.io/pypi/v/onnx2fx?color=2BAF2B)](https://pypi.org/project/onnx2fx/)
 
 ## Features
