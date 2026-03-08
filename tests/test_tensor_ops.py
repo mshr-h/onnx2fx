@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for tensor manipulation operators."""
 
+import warnings
+
 import onnxscript
 import pytest
 import torch
@@ -18,6 +20,10 @@ class TestTensorOps:
     @script()
     def transpose_script(x: FLOAT) -> FLOAT:
         return op.Transpose(x, perm=[1, 0])
+
+    @script()
+    def transpose_default_script(x: FLOAT) -> FLOAT:
+        return op.Transpose(x)
 
     @script()
     def concat_script(x: FLOAT, y: FLOAT) -> FLOAT:
@@ -45,6 +51,18 @@ class TestTensorOps:
     def test_transpose(self):
         x = torch.randn(2, 4)
         run_onnx_test(self.transpose_script.to_model_proto, x, x.T)
+
+    def test_transpose_default(self):
+        x = torch.randn(2, 3, 4)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            run_onnx_test(
+                self.transpose_default_script.to_model_proto,
+                x,
+                x.permute(2, 1, 0),
+            )
+
+        assert not any("The use of `x.T`" in str(w.message) for w in caught)
 
     def test_concat(self):
         x = torch.randn(2, 4)
