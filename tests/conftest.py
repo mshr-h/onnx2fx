@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Shared fixtures and utilities for onnx2fx tests."""
 
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple, Union
 import tempfile
 import warnings
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import onnx
 import pytest
@@ -261,9 +261,26 @@ def export_torch_model_to_onnx(
     input_shape: Tuple[int, ...],
     *,
     opset_version: int = 23,
-    dynamic_axes: Dict[str, Dict[int, str]] | None = None,
+    dynamic_axes: Optional[Dict[str, Dict[int, str]]] = None,
 ) -> onnx.ModelProto:
-    """Export a PyTorch model to ONNX format using a temporary file path."""
+    """Export a PyTorch model to ONNX using a temporary file path.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The PyTorch module to export.
+    input_shape : Tuple[int, ...]
+        Shape used to create the dummy input tensor for export.
+    opset_version : int
+        ONNX opset version used for export.
+    dynamic_axes : Dict[str, Dict[int, str]] | None
+        Optional dynamic axes mapping passed through to ``torch.onnx.export``.
+
+    Returns
+    -------
+    onnx.ModelProto
+        The exported ONNX model loaded from the temporary file.
+    """
     model.eval()
     dummy_input = torch.randn(*input_shape)
 
@@ -272,13 +289,13 @@ def export_torch_model_to_onnx(
         torch.onnx.export(
             model,
             dummy_input,
-            str(model_path),
+            model_path,
             opset_version=opset_version,
             input_names=["input"],
             output_names=["output"],
             dynamic_axes=dynamic_axes,
         )
-        return onnx.load(str(model_path))
+        return onnx.load(model_path)
 
 
 def run_onnx_test(

@@ -3,6 +3,7 @@
 
 import torch
 import torch.nn as nn
+import onnx
 
 from conftest import convert_onnx_model, export_torch_model_to_onnx, run_onnx_test
 
@@ -11,7 +12,7 @@ def export_to_onnx_dynamic(
     model: nn.Module,
     input_shape: tuple,
     dynamic_axes: dict,
-):
+) -> onnx.ModelProto:
     """Export PyTorch model to ONNX with dynamic axes."""
     return export_torch_model_to_onnx(
         model,

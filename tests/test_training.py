@@ -11,12 +11,15 @@ This module tests that converted FX modules can:
 import pytest
 import torch
 import torch.nn as nn
+import onnx
 
 from conftest import convert_onnx_model, export_torch_model_to_onnx, run_onnx_test
 from onnx2fx import make_trainable
 
 
-def export_to_onnx(model: nn.Module, input_shape: tuple, opset_version: int = 23):
+def export_to_onnx(
+    model: nn.Module, input_shape: tuple, opset_version: int = 23
+) -> onnx.ModelProto:
     """Export a PyTorch model to ONNX format."""
     return export_torch_model_to_onnx(
         model,
