@@ -1,35 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 """End-to-end tests with real models."""
 
-import io
-
 import onnx
 import torch
 import torch.nn as nn
 
-from conftest import run_onnx_test
-from conftest import run_onnxruntime_iobinding
+from conftest import (
+    export_torch_model_to_onnx,
+    run_onnx_test,
+    run_onnxruntime_iobinding,
+)
 
 
 def export_to_onnx(
     model: nn.Module, input_shape: tuple, opset_version: int = 23
 ) -> onnx.ModelProto:
     """Export a PyTorch model to ONNX format."""
-    model.eval()
-    dummy_input = torch.randn(*input_shape)
-
-    buffer = io.BytesIO()
-    torch.onnx.export(
+    return export_torch_model_to_onnx(
         model,
-        dummy_input,
-        buffer,
+        input_shape,
         opset_version=opset_version,
-        input_names=["input"],
-        output_names=["output"],
-        dynamic_axes=None,
     )
-    buffer.seek(0)
-    return onnx.load(buffer)
 
 
 def compare_outputs(

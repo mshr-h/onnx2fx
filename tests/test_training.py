@@ -8,36 +8,21 @@ This module tests that converted FX modules can:
 4. Handle train/eval modes correctly
 """
 
-import io
-
-import onnx
 import pytest
 import torch
 import torch.nn as nn
 
-from conftest import run_onnx_test, convert_onnx_model
+from conftest import convert_onnx_model, export_torch_model_to_onnx, run_onnx_test
 from onnx2fx import make_trainable
 
 
-def export_to_onnx(
-    model: nn.Module, input_shape: tuple, opset_version: int = 23
-) -> onnx.ModelProto:
+def export_to_onnx(model: nn.Module, input_shape: tuple, opset_version: int = 23):
     """Export a PyTorch model to ONNX format."""
-    model.eval()
-    dummy_input = torch.randn(*input_shape)
-
-    buffer = io.BytesIO()
-    torch.onnx.export(
+    return export_torch_model_to_onnx(
         model,
-        dummy_input,
-        buffer,
+        input_shape,
         opset_version=opset_version,
-        input_names=["input"],
-        output_names=["output"],
-        dynamic_axes=None,
     )
-    buffer.seek(0)
-    return onnx.load(buffer)
 
 
 class SimpleMLP(nn.Module):

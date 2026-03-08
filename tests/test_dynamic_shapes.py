@@ -1,37 +1,24 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for dynamic shape support."""
 
-import io
-
-
 import torch
 import torch.nn as nn
-import onnx
 
-from conftest import run_onnx_test, convert_onnx_model
+from conftest import convert_onnx_model, export_torch_model_to_onnx, run_onnx_test
 
 
 def export_to_onnx_dynamic(
     model: nn.Module,
     input_shape: tuple,
     dynamic_axes: dict,
-) -> onnx.ModelProto:
+):
     """Export PyTorch model to ONNX with dynamic axes."""
-    model.eval()
-    dummy_input = torch.randn(*input_shape)
-
-    buffer = io.BytesIO()
-    torch.onnx.export(
+    return export_torch_model_to_onnx(
         model,
-        dummy_input,
-        buffer,
-        input_names=["input"],
-        output_names=["output"],
+        input_shape,
         dynamic_axes=dynamic_axes,
         opset_version=17,
     )
-    buffer.seek(0)
-    return onnx.load(buffer)
 
 
 class TestDynamicBatchSize:

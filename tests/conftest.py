@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Shared fixtures and utilities for onnx2fx tests."""
 
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple, Union
-import warnings
 import tempfile
+import warnings
 
 import onnx
 import pytest
@@ -253,6 +254,31 @@ def create_simple_model(
     )
 
     return model
+
+
+def export_torch_model_to_onnx(
+    model: torch.nn.Module,
+    input_shape: Tuple[int, ...],
+    *,
+    opset_version: int = 23,
+    dynamic_axes: Dict[str, Dict[int, str]] | None = None,
+) -> onnx.ModelProto:
+    """Export a PyTorch model to ONNX format using a temporary file path."""
+    model.eval()
+    dummy_input = torch.randn(*input_shape)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        model_path = Path(temp_dir) / "model.onnx"
+        torch.onnx.export(
+            model,
+            dummy_input,
+            str(model_path),
+            opset_version=opset_version,
+            input_names=["input"],
+            output_names=["output"],
+            dynamic_axes=dynamic_axes,
+        )
+        return onnx.load(str(model_path))
 
 
 def run_onnx_test(
