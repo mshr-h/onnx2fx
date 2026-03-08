@@ -1,6 +1,6 @@
 # onnx2fx
 
-Yet another ONNX to PyTorch FX converter.
+Turn ONNX models into inspectable, transformable, and trainable PyTorch FX GraphModules.
 
 > **⚠️ Note:** This project is under active development. The public API may change at any time.
 
