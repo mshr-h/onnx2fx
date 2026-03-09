@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """End-to-end tests with real models."""
 
-import io
+import tempfile
 
 import onnx
 import torch
@@ -18,18 +18,17 @@ def export_to_onnx(
     model.eval()
     dummy_input = torch.randn(*input_shape)
 
-    buffer = io.BytesIO()
-    torch.onnx.export(
-        model,
-        dummy_input,
-        buffer,
-        opset_version=opset_version,
-        input_names=["input"],
-        output_names=["output"],
-        dynamic_axes=None,
-    )
-    buffer.seek(0)
-    return onnx.load(buffer)
+    with tempfile.NamedTemporaryFile(suffix=".onnx") as f:
+        torch.onnx.export(
+            model,
+            dummy_input,
+            f.name,
+            opset_version=opset_version,
+            input_names=["input"],
+            output_names=["output"],
+            dynamic_axes=None,
+        )
+        return onnx.load(f.name)
 
 
 def compare_outputs(

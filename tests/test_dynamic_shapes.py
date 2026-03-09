@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for dynamic shape support."""
 
-import io
+import tempfile
 
 
 import torch
@@ -20,18 +20,17 @@ def export_to_onnx_dynamic(
     model.eval()
     dummy_input = torch.randn(*input_shape)
 
-    buffer = io.BytesIO()
-    torch.onnx.export(
-        model,
-        dummy_input,
-        buffer,
-        input_names=["input"],
-        output_names=["output"],
-        dynamic_axes=dynamic_axes,
-        opset_version=17,
-    )
-    buffer.seek(0)
-    return onnx.load(buffer)
+    with tempfile.NamedTemporaryFile(suffix=".onnx") as f:
+        torch.onnx.export(
+            model,
+            dummy_input,
+            f.name,
+            input_names=["input"],
+            output_names=["output"],
+            dynamic_axes=dynamic_axes,
+            opset_version=17,
+        )
+        return onnx.load(f.name)
 
 
 class TestDynamicBatchSize:
